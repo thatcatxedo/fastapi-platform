@@ -15,15 +15,28 @@ import ast
 import re
 from contextlib import asynccontextmanager
 
+# MongoDB setup (must be before lifespan)
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+client = AsyncIOMotorClient(MONGO_URI)
+db = client.fastapi_platform_db
+users_collection = db.users
+apps_collection = db.apps
+templates_collection = db.templates
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: seed templates
-    from seed_templates import seed_templates
+    import logging
+    logger = logging.getLogger("uvicorn")
     try:
-        await seed_templates()
-        print("✓ Template seeding completed on startup")
+        from seed_templates import seed_templates
+        logger.info("Starting template seeding...")
+        await seed_templates(client)
+        logger.info("✓ Template seeding completed on startup")
     except Exception as e:
-        print(f"Warning: Template seeding failed: {e}")
+        logger.error(f"Warning: Template seeding failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
     
     yield
     # Shutdown (if needed)
@@ -38,14 +51,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# MongoDB setup
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-client = AsyncIOMotorClient(MONGO_URI)
-db = client.fastapi_platform_db
-users_collection = db.users
-apps_collection = db.apps
-templates_collection = db.templates
 
 # JWT settings
 SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))

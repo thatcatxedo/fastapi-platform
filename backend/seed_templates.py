@@ -4,10 +4,12 @@ Seed script to populate templates collection with initial templates
 """
 import os
 import asyncio
+import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime
 from bson import ObjectId
 
+logger = logging.getLogger("uvicorn")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
 SIMPLE_TEMPLATE = {
@@ -520,12 +522,12 @@ async def seed_templates(client=None):
         })
         
         if existing:
-            print(f"Template '{template['name']}' already exists, skipping...")
+            logger.info(f"Template '{template['name']}' already exists, skipping...")
         else:
             result = await templates_collection.insert_one(template)
-            print(f"✓ Seeded template: {template['name']} (ID: {result.inserted_id})")
+            logger.info(f"✓ Seeded template: {template['name']} (ID: {result.inserted_id})")
     
-    print("\nTemplate seeding complete!")
+    logger.info("Template seeding complete!")
     
     if close_client:
         client.close()
