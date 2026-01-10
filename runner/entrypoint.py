@@ -78,28 +78,34 @@ def main():
             return {"status": "healthy"}
     
     # Patch Swagger UI to use correct path for OpenAPI schema
-    # Since Traefik strips the path prefix, /openapi.json works, but we need to ensure
-    # Swagger UI loads it correctly. The issue is Swagger UI uses absolute paths.
-    # We'll replace it with the same absolute path since the middleware handles routing.
+    # Since Traefik strips the path prefix, we need Swagger UI to load openapi.json
+    # relative to the current path, not from root
     from starlette.middleware.base import BaseHTTPMiddleware
     from fastapi.responses import HTMLResponse
+    from starlette.responses import Response
     
     class SwaggerUIPatchMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             response = await call_next(request)
-            if request.url.path == "/docs" and isinstance(response, HTMLResponse):
-                # Get HTML content
+            # Check if this is the /docs endpoint
+            if request.url.path == "/docs":
+                # Read the response body
                 body = b""
-                async for chunk in response.body_iterator:
-                    body += chunk
-                html = body.decode('utf-8')
-                # The path /openapi.json should work after Traefik strips prefix
-                # But Swagger UI might need the full path. Let's try keeping it absolute
-                # since the middleware will route it correctly
-                # Actually, let's use a relative path that works: just 'openapi.json'
-                html = html.replace("url: '/openapi.json'", "url: 'openapi.json'")
-                html = html.replace('url: "/openapi.json"', 'url: "openapi.json"')
-                return HTMLResponse(content=html, status_code=response.status_code)
+                if hasattr(response, 'body_iterator'):
+                    async for chunk in response.body_iterator:
+                        body += chunk
+                elif hasattr(response, 'body'):
+                    body = response.body
+                
+                # Check if it's HTML (Swagger UI)
+                content_type = response.headers.get('content-type', '')
+                if 'text/html' in content_type or body.startswith(b'<!'):
+                    html = body.decode('utf-8')
+                    # Replace absolute /openapi.json with relative openapi.json
+                    # This ensures it loads from the same path as /docs
+                    html = html.replace("url: '/openapi.json'", "url: 'openapi.json'")
+                    html = html.replace('url: "/openapi.json"', 'url: "openapi.json"')
+                    return HTMLResponse(content=html, status_code=response.status_code, headers=dict(response.headers))
             return response
     
     app.add_middleware(SwaggerUIPatchMiddleware)
