@@ -370,10 +370,13 @@ async def update_app_deployment(app_doc: dict, user: dict):
                 namespace=PLATFORM_NAMESPACE
             )
             
-            # Update annotation to force restart
-            if not deployment.metadata.annotations:
-                deployment.metadata.annotations = {}
-            deployment.metadata.annotations["kubectl.kubernetes.io/restartedAt"] = datetime.utcnow().isoformat()
+            # Update annotation on pod template to force restart
+            # This triggers a rolling update, creating new pods that mount the updated ConfigMap
+            if not deployment.spec.template.metadata:
+                deployment.spec.template.metadata = k8s_client.V1ObjectMeta()
+            if not deployment.spec.template.metadata.annotations:
+                deployment.spec.template.metadata.annotations = {}
+            deployment.spec.template.metadata.annotations["kubectl.kubernetes.io/restartedAt"] = datetime.utcnow().isoformat()
             
             apps_v1.patch_namespaced_deployment(
                 name=deployment_name,
