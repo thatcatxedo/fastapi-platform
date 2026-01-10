@@ -32,12 +32,48 @@ function EditorPage({ user }) {
   const [deployingAppId, setDeployingAppId] = useState(null)
   const [editorHeight, setEditorHeight] = useState(500)
   const editorContainerRef = useRef(null)
+  const [templates, setTemplates] = useState([])
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [selectedComplexity, setSelectedComplexity] = useState('all')
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
 
   useEffect(() => {
     if (appId) {
       fetchApp()
+    } else {
+      fetchTemplates()
     }
   }, [appId])
+
+  const fetchTemplates = async () => {
+    setLoadingTemplates(true)
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}/api/templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setTemplates(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch templates:', err)
+    } finally {
+      setLoadingTemplates(false)
+    }
+  }
+
+  const handleUseTemplate = (template) => {
+    setCode(template.code)
+    setName(template.name)
+    setSuccess(`Template "${template.name}" loaded! You can edit the code before deploying.`)
+    setError('')
+    setSidebarOpen(false)
+  }
+
+  const filteredTemplates = templates.filter(t => 
+    selectedComplexity === 'all' || t.complexity === selectedComplexity
+  )
 
   useEffect(() => {
     const updateEditorHeight = () => {
@@ -233,9 +269,27 @@ function EditorPage({ user }) {
         marginBottom: '1rem',
         flexShrink: 0
       }}>
-        <h1 style={{ margin: 0 }}>
-          {isEditing ? 'Edit App' : 'Create New App'}
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {!isEditing && (
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              style={{
+                padding: '0.5rem',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.5rem',
+                cursor: 'pointer',
+                fontSize: '1.2rem'
+              }}
+              title="Toggle Templates"
+            >
+              {sidebarOpen ? '📚' : '📖'}
+            </button>
+          )}
+          <h1 style={{ margin: 0 }}>
+            {isEditing ? 'Edit App' : 'Create New App'}
+          </h1>
+        </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button
             className="btn btn-primary"
@@ -302,30 +356,140 @@ function EditorPage({ user }) {
         )}
       </div>
 
-      {/* App Name input - compact */}
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem', flexShrink: 0 }}>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label style={{ marginBottom: '0.375rem', fontSize: '0.875rem' }}>App Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My FastAPI App"
-            required
-            style={{ padding: '0.5rem', fontSize: '0.875rem' }}
-          />
-        </div>
-      </div>
-
-      {/* Code Editor - takes remaining space */}
-      <div className="card" style={{ 
-        padding: '1rem', 
-        flex: 1, 
+      {/* Main content area with sidebar */}
+      <div style={{ 
         display: 'flex', 
-        flexDirection: 'column',
+        gap: '1rem', 
+        flex: 1, 
         overflow: 'hidden',
         minHeight: 0
       }}>
+        {/* Templates Sidebar */}
+        {!isEditing && sidebarOpen && (
+          <div style={{
+            width: '300px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: '0.5rem',
+            padding: '1rem',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0
+          }}>
+            <div style={{ marginBottom: '1rem' }}>
+              <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>Templates</h2>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {['all', 'simple', 'medium', 'complex'].map(comp => (
+                  <button
+                    key={comp}
+                    onClick={() => setSelectedComplexity(comp)}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.75rem',
+                      background: selectedComplexity === comp ? 'var(--primary)' : 'var(--bg)',
+                      color: selectedComplexity === comp ? 'white' : 'var(--text)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '0.25rem',
+                      cursor: 'pointer',
+                      textTransform: 'capitalize'
+                    }}
+                  >
+                    {comp}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {loadingTemplates ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                  Loading templates...
+                </div>
+              ) : filteredTemplates.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                  No templates found
+                </div>
+              ) : (
+                filteredTemplates.map(template => (
+                  <div
+                    key={template.id}
+                    style={{
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '0.5rem',
+                      padding: '0.75rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border)'}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
+                      <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '600' }}>{template.name}</h3>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '0.15rem 0.4rem',
+                        background: template.complexity === 'simple' ? '#10b981' : template.complexity === 'medium' ? '#f59e0b' : '#ef4444',
+                        color: 'white',
+                        borderRadius: '0.25rem',
+                        textTransform: 'capitalize'
+                      }}>
+                        {template.complexity}
+                      </span>
+                    </div>
+                    <p style={{ 
+                      margin: '0 0 0.75rem 0', 
+                      fontSize: '0.75rem', 
+                      color: 'var(--text-muted)',
+                      lineHeight: '1.4'
+                    }}>
+                      {template.description}
+                    </p>
+                    <button
+                      onClick={() => handleUseTemplate(template)}
+                      className="btn btn-primary"
+                      style={{ 
+                        width: '100%', 
+                        padding: '0.5rem', 
+                        fontSize: '0.75rem' 
+                      }}
+                    >
+                      Use Template
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Main editor area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+          {/* App Name input - compact */}
+          <div className="card" style={{ marginBottom: '1rem', padding: '1rem', flexShrink: 0 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ marginBottom: '0.375rem', fontSize: '0.875rem' }}>App Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My FastAPI App"
+                required
+                style={{ padding: '0.5rem', fontSize: '0.875rem' }}
+              />
+            </div>
+          </div>
+
+          {/* Code Editor - takes remaining space */}
+          <div className="card" style={{ 
+            padding: '1rem', 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minHeight: 0
+          }}>
         <div style={{ marginBottom: '0.75rem', flexShrink: 0 }}>
           <h2 style={{ marginBottom: '0.25rem', fontSize: '1rem' }}>Code Editor</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0 }}>
@@ -358,6 +522,8 @@ function EditorPage({ user }) {
               automaticLayout: true,
             }}
           />
+        </div>
+          </div>
         </div>
       </div>
     </div>
