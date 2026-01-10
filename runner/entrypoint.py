@@ -97,8 +97,8 @@ def main():
     class SwaggerUIPatchMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             response = await call_next(request)
-            # Check if this is the /docs endpoint
-            if request.url.path == "/docs":
+            # Check if this is the /docs endpoint and response is successful
+            if request.url.path == "/docs" and response.status_code == 200:
                 # Read the response body
                 body = b""
                 if hasattr(response, 'body_iterator'):
