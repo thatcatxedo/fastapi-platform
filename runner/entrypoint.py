@@ -77,11 +77,11 @@ def main():
         async def health():
             return {"status": "healthy"}
     
-    # Patch Swagger UI to use relative paths for OpenAPI schema
-    # This fixes the issue where /docs tries to load /openapi.json from root
-    # Instead, it will load ./openapi.json relative to the current path
+    # Patch Swagger UI to use correct path for OpenAPI schema
+    # Since Traefik strips the path prefix, /openapi.json works, but we need to ensure
+    # Swagger UI loads it correctly. The issue is Swagger UI uses absolute paths.
+    # We'll replace it with the same absolute path since the middleware handles routing.
     from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.responses import Response
     from fastapi.responses import HTMLResponse
     
     class SwaggerUIPatchMiddleware(BaseHTTPMiddleware):
@@ -93,8 +93,12 @@ def main():
                 async for chunk in response.body_iterator:
                     body += chunk
                 html = body.decode('utf-8')
-                # Replace absolute /openapi.json with relative ./openapi.json
-                html = html.replace("url: '/openapi.json'", "url: './openapi.json'")
+                # The path /openapi.json should work after Traefik strips prefix
+                # But Swagger UI might need the full path. Let's try keeping it absolute
+                # since the middleware will route it correctly
+                # Actually, let's use a relative path that works: just 'openapi.json'
+                html = html.replace("url: '/openapi.json'", "url: 'openapi.json'")
+                html = html.replace('url: "/openapi.json"', 'url: "openapi.json"')
                 return HTMLResponse(content=html, status_code=response.status_code)
             return response
     
