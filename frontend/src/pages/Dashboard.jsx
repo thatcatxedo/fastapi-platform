@@ -147,16 +147,33 @@ function Dashboard({ user }) {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: '1rem' }}>
-          {apps.map((app) => (
-            <div key={app.id} className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                <div style={{ flex: 1 }}>
-                  <h2 style={{ marginBottom: '0.5rem' }}>{app.name}</h2>
-                  <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.875rem' }}>
-                    ID: {app.app_id}
-                  </p>
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <div className="table-container">
+          <table className="apps-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>App ID</th>
+                <th>Status</th>
+                <th>Last Activity</th>
+                <th>Links</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {apps.map((app) => (
+                <tr key={app.id}>
+                  <td>
+                    <div style={{ fontWeight: '500' }}>{app.name}</div>
+                    {app.status === 'error' && app.error_message && (
+                      <div className="error" style={{ marginTop: '0.5rem', padding: '0.5rem', fontSize: '0.75rem' }}>
+                        {app.error_message}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <code style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{app.app_id}</code>
+                  </td>
+                  <td>
                     <span className={`status-badge status-${app.status}`}>
                       {app.status === 'running' && '●'}
                       {app.status === 'deploying' && (
@@ -166,71 +183,75 @@ function Dashboard({ user }) {
                       {' '}{app.status}
                     </span>
                     {app.status === 'deploying' && (
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontStyle: 'italic' }}>
-                        Deploying... This may take a minute.
-                      </span>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', fontStyle: 'italic' }}>
+                        Deploying...
+                      </div>
                     )}
-                    {app.last_activity && app.status !== 'deploying' && (
+                  </td>
+                  <td>
+                    {app.last_activity && app.status !== 'deploying' ? (
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                        Last active: {new Date(app.last_activity).toLocaleString()}
+                        {new Date(app.last_activity).toLocaleString()}
                       </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>—</span>
                     )}
-                  </div>
-                  {app.status === 'error' && app.error_message && (
-                    <div className="error" style={{ marginBottom: '1rem', padding: '0.75rem', fontSize: '0.875rem' }}>
-                      <strong>Error:</strong> {app.error_message}
-                    </div>
-                  )}
-                  {app.status === 'running' && (
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <a
-                        href={app.deployment_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'var(--primary)', textDecoration: 'none' }}
+                  </td>
+                  <td>
+                    {app.status === 'running' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        <a
+                          href={app.deployment_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.875rem' }}
+                        >
+                          View App
+                        </a>
+                        <a
+                          href={`${app.deployment_url}/docs`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.875rem' }}
+                        >
+                          API Docs
+                        </a>
+                      </div>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {app.status === 'error' && (
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => navigate(`/editor/${app.app_id}`)}
+                          style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
+                        >
+                          Retry
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => navigate(`/editor/${app.app_id}`)}
+                        style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
                       >
-                        {window.location.origin}{app.deployment_url} →
-                      </a>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>|</span>
-                      <a
-                        href={`${app.deployment_url}/docs`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.875rem' }}
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        onClick={() => deleteApp(app.app_id)}
+                        style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
                       >
-                        API Docs
-                      </a>
+                        Delete
+                      </button>
                     </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  {app.status === 'error' && (
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => navigate(`/editor/${app.app_id}`)}
-                      style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
-                    >
-                      Retry
-                    </button>
-                  )}
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => navigate(`/editor/${app.app_id}`)}
-                    style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    onClick={() => deleteApp(app.app_id)}
-                    style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
