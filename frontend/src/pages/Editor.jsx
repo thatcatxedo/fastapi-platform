@@ -237,14 +237,8 @@ function EditorPage({ user }) {
         throw new Error(errorMsg)
       }
 
-      // Set deploying state
-      setDeployingAppId(data.app_id)
-      setDeploymentStatus({ status: 'deploying', deployment_ready: false })
-      
-      // Start polling for deployment status
-      pollDeploymentStatus(data.app_id)
-      
-      // Don't set loading to false yet - polling will handle it
+      // Immediately redirect to dashboard with app_id in URL for status polling
+      navigate(`/dashboard?deploying=${data.app_id}`)
     } catch (err) {
       const errorMsg = parseErrorMessage(err.message)
       setError(errorMsg)

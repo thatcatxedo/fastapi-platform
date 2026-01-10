@@ -77,6 +77,29 @@ def main():
         async def health():
             return {"status": "healthy"}
     
+    # Patch Swagger UI to use relative paths for OpenAPI schema
+    # This fixes the issue where /docs tries to load /openapi.json from root
+    # Instead, it will load ./openapi.json relative to the current path
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import Response
+    from fastapi.responses import HTMLResponse
+    
+    class SwaggerUIPatchMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            if request.url.path == "/docs" and isinstance(response, HTMLResponse):
+                # Get HTML content
+                body = b""
+                async for chunk in response.body_iterator:
+                    body += chunk
+                html = body.decode('utf-8')
+                # Replace absolute /openapi.json with relative ./openapi.json
+                html = html.replace("url: '/openapi.json'", "url: './openapi.json'")
+                return HTMLResponse(content=html, status_code=response.status_code)
+            return response
+    
+    app.add_middleware(SwaggerUIPatchMiddleware)
+    
     print("Starting uvicorn server...")
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

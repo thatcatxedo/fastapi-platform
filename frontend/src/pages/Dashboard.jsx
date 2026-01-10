@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { API_URL } from '../App'
 
 function Dashboard({ user }) {
@@ -7,10 +7,68 @@ function Dashboard({ user }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const deployingAppId = searchParams.get('deploying')
 
   useEffect(() => {
     fetchApps()
-  }, [])
+    // If we have a deploying app, start polling its status
+    if (deployingAppId) {
+      pollDeploymentStatus(deployingAppId)
+      // Remove query param after starting poll
+      navigate('/dashboard', { replace: true })
+    }
+  }, [deployingAppId])
+
+  const pollDeploymentStatus = async (appId) => {
+    const maxAttempts = 60 // 2 minutes max (2 second intervals)
+    let attempts = 0
+    
+    const checkStatus = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const response = await fetch(`${API_URL}/api/apps/${appId}/status`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        
+        if (response.ok) {
+          const status = await response.json()
+          
+          // Update the app in the list
+          setApps(prevApps => 
+            prevApps.map(app => 
+              app.app_id === appId 
+                ? { ...app, status: status.status, error_message: status.error_message }
+                : app
+            )
+          )
+          
+          if (status.status === 'running' && status.deployment_ready) {
+            // Success! Refresh the full list to get latest data
+            fetchApps()
+            return true
+          } else if (status.status === 'error') {
+            // Error - stop polling
+            fetchApps()
+            return true
+          }
+        }
+      } catch (err) {
+        console.error('Error checking status:', err)
+      }
+      
+      attempts++
+      if (attempts < maxAttempts) {
+        setTimeout(checkStatus, 2000) // Check every 2 seconds
+      } else {
+        // Timeout - refresh to get latest status
+        fetchApps()
+      }
+      return false
+    }
+    
+    checkStatus()
+  }
 
   const fetchApps = async () => {
     try {
@@ -101,11 +159,18 @@ function Dashboard({ user }) {
                   <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     <span className={`status-badge status-${app.status}`}>
                       {app.status === 'running' && '✅'}
-                      {app.status === 'deploying' && '⏳'}
+                      {app.status === 'deploying' && (
+                        <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span>
+                      )}
                       {app.status === 'error' && '❌'}
                       {' '}{app.status}
                     </span>
-                    {app.last_activity && (
+                    {app.status === 'deploying' && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontStyle: 'italic' }}>
+                        Deploying... This may take a minute.
+                      </span>
+                    )}
+                    {app.last_activity && app.status !== 'deploying' && (
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
                         Last active: {new Date(app.last_activity).toLocaleString()}
                       </span>
@@ -117,14 +182,25 @@ function Dashboard({ user }) {
                     </div>
                   )}
                   {app.status === 'running' && (
-                    <a
-                      href={app.deployment_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'var(--primary)', textDecoration: 'none' }}
-                    >
-                      {window.location.origin}{app.deployment_url} →
-                    </a>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <a
+                        href={app.deployment_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--primary)', textDecoration: 'none' }}
+                      >
+                        {window.location.origin}{app.deployment_url} →
+                      </a>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>|</span>
+                      <a
+                        href={`${app.deployment_url}/docs`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.875rem' }}
+                      >
+                        📚 API Docs
+                      </a>
+                    </div>
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
