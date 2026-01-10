@@ -135,9 +135,11 @@ docker build -t fastapi-platform-runner:latest .
 
 Deployed via GitOps (Flux) to Kubernetes cluster:
 
-1. Build images with Flux-compatible tags: `ts-{timestamp}-{hash}`
-2. Push to GHCR: `ghcr.io/thatcatxedo/fastapi-platform-{component}`
-3. Flux Image Automation detects new tags and updates deployments
+1. **CI/CD**: GitHub Actions workflow automatically builds and pushes images on every push to `main`
+   - Images tagged with Flux-compatible format: `ts-{timestamp}-{short_sha}`
+   - Pushes to GHCR: `ghcr.io/thatcatxedo/fastapi-platform-{component}`
+2. **GitOps**: Flux Image Automation detects new tags and updates deployments automatically
+3. **Manual**: Can also build/push manually if needed
 4. Backend needs RBAC permissions to create resources in `fastapi-platform` namespace
 
 See `homelab-cluster/apps/fastapi-platform/` for Kubernetes manifests.
