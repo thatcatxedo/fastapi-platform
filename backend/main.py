@@ -250,7 +250,17 @@ async def root():
 async def health():
     try:
         await client.admin.command('ping')
-        return {"status": "healthy", "database": "connected"}
+        # Check that required templates exist
+        template_count = await templates_collection.count_documents({"is_global": True})
+        health_status = {
+            "status": "healthy",
+            "database": "connected",
+            "templates": template_count
+        }
+        # Warn if templates are missing (but don't fail health check)
+        if template_count < 2:
+            health_status["warning"] = f"Only {template_count} global templates found (expected at least 2)"
+        return health_status
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database unhealthy: {str(e)}")
 

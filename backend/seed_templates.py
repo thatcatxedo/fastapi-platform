@@ -502,8 +502,30 @@ async def delete_todo(todo_id: int):
     "tags": ["crud", "rest", "models", "intermediate"]
 }
 
-async def seed_templates(client=None):
-    """Seed templates collection with initial templates"""
+async def ensure_indexes(templates_collection):
+    """Ensure unique index on template name + is_global to prevent duplicates"""
+    try:
+        # Create unique index on name + is_global for global templates
+        # This ensures we can't have duplicate global templates
+        await templates_collection.create_index(
+            [("name", 1), ("is_global", 1)],
+            unique=True,
+            partialFilterExpression={"is_global": True}
+        )
+        logger.info("✓ Template indexes ensured")
+    except Exception as e:
+        # Index might already exist, that's fine
+        logger.debug(f"Index creation note: {e}")
+
+async def seed_templates(client=None, force_update=False):
+    """
+    Seed templates collection with initial templates.
+    Uses upsert to ensure templates are always present and up-to-date.
+    
+    Args:
+        client: Optional MongoDB client (creates new one if None)
+        force_update: If True, always update templates even if they exist
+    """
     close_client = False
     if client is None:
         client = AsyncIOMotorClient(MONGO_URI)
@@ -512,20 +534,46 @@ async def seed_templates(client=None):
     db = client.fastapi_platform_db
     templates_collection = db.templates
     
+    # Ensure indexes for data integrity
+    await ensure_indexes(templates_collection)
+    
     templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE]
     
     for template in templates_to_seed:
-        # Check if template already exists (by name and is_global)
-        existing = await templates_collection.find_one({
+        # Use upsert (replace or insert) to ensure template is always present
+        # This makes templates persistent - they'll be restored even if deleted
+        filter_query = {
             "name": template["name"],
             "is_global": True
-        })
+        }
         
-        if existing:
-            logger.info(f"Template '{template['name']}' already exists, skipping...")
+        # Prepare update document - preserve _id if exists, update everything else
+        update_doc = {
+            "$set": {
+                "description": template["description"],
+                "code": template["code"],
+                "complexity": template["complexity"],
+                "tags": template["tags"],
+                "is_global": template["is_global"],
+                "user_id": template["user_id"]
+            },
+            "$setOnInsert": {
+                "created_at": template["created_at"]
+            }
+        }
+        
+        result = await templates_collection.update_one(
+            filter_query,
+            update_doc,
+            upsert=True
+        )
+        
+        if result.upserted_id:
+            logger.info(f"✓ Created template: {template['name']} (ID: {result.upserted_id})")
+        elif result.modified_count > 0:
+            logger.info(f"✓ Updated template: {template['name']}")
         else:
-            result = await templates_collection.insert_one(template)
-            logger.info(f"✓ Seeded template: {template['name']} (ID: {result.inserted_id})")
+            logger.debug(f"Template '{template['name']}' already exists and is up-to-date")
     
     logger.info("Template seeding complete!")
     

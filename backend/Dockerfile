@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py deployment.py cleanup.py .
+COPY main.py deployment.py cleanup.py seed_templates.py .
 
 EXPOSE 8000
 
