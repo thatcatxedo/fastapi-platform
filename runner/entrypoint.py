@@ -99,13 +99,13 @@ def main():
             response = await call_next(request)
             # Check if this is the /docs endpoint and response is successful
             if request.url.path == "/docs" and response.status_code == 200:
-                # Read the response body
+                # Read the response body completely
                 body = b""
                 if hasattr(response, 'body_iterator'):
                     async for chunk in response.body_iterator:
                         body += chunk
                 elif hasattr(response, 'body'):
-                    body = response.body
+                    body = response.body if isinstance(response.body, bytes) else response.body.encode('utf-8')
                 
                 # Check if it's HTML (Swagger UI)
                 content_type = response.headers.get('content-type', '')
@@ -115,7 +115,11 @@ def main():
                     # This ensures it loads from the same path as /docs
                     html = html.replace("url: '/openapi.json'", "url: 'openapi.json'")
                     html = html.replace('url: "/openapi.json"', 'url: "openapi.json"')
-                    return HTMLResponse(content=html, status_code=response.status_code, headers=dict(response.headers))
+                    # Create new response with updated content and proper headers
+                    new_headers = dict(response.headers)
+                    # Remove Content-Length as HTMLResponse will set it correctly
+                    new_headers.pop('content-length', None)
+                    return HTMLResponse(content=html, status_code=response.status_code, headers=new_headers)
             return response
     
     app.add_middleware(SwaggerUIPatchMiddleware)
