@@ -69,7 +69,7 @@ class TodoResponse(Todo):
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    return """<!DOCTYPE html>
+    return \"\"\"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -456,7 +456,7 @@ async def root():
         loadTodos();
     </script>
 </body>
-</html>"""
+</html>\"\"\"
 
 @app.get("/todos", response_model=List[TodoResponse])
 async def get_todos():
