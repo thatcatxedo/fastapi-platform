@@ -119,7 +119,7 @@ function Dashboard({ user }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h1>My Apps</h1>
+        <h1>Applications</h1>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button 
             className="btn btn-secondary" 
@@ -127,10 +127,10 @@ function Dashboard({ user }) {
             disabled={loading}
             style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
           >
-            {loading ? '⏳' : '🔄'} Refresh
+            {loading ? '...' : 'Refresh'}
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/editor')}>
-            + New App
+            New Application
           </button>
         </div>
       </div>
@@ -140,10 +140,10 @@ function Dashboard({ user }) {
       {apps.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
           <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>
-            You don't have any apps yet. Create your first FastAPI app!
+            No applications found. Create your first FastAPI application.
           </p>
           <button className="btn btn-primary" onClick={() => navigate('/editor')}>
-            Create Your First App
+            Create Application
           </button>
         </div>
       ) : (
@@ -158,11 +158,11 @@ function Dashboard({ user }) {
                   </p>
                   <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     <span className={`status-badge status-${app.status}`}>
-                      {app.status === 'running' && '✅'}
+                      {app.status === 'running' && '●'}
                       {app.status === 'deploying' && (
-                        <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span>
+                        <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>○</span>
                       )}
-                      {app.status === 'error' && '❌'}
+                      {app.status === 'error' && '●'}
                       {' '}{app.status}
                     </span>
                     {app.status === 'deploying' && (
@@ -198,7 +198,7 @@ function Dashboard({ user }) {
                         rel="noopener noreferrer"
                         style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.875rem' }}
                       >
-                        📚 API Docs
+                        API Docs
                       </a>
                     </div>
                   )}
@@ -210,7 +210,7 @@ function Dashboard({ user }) {
                       onClick={() => navigate(`/editor/${app.app_id}`)}
                       style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
                     >
-                      🔄 Retry
+                      Retry
                     </button>
                   )}
                   <button

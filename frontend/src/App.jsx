@@ -66,7 +66,7 @@ function App() {
       <div className="app">
         <header className="app-header">
           <div className="container">
-            <h1><a href="/">🚀 FastAPI Learning Platform</a></h1>
+            <h1><a href="/">FastAPI Platform</a></h1>
             <nav>
               {user ? (
                 <>

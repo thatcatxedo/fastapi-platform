@@ -66,7 +66,7 @@ function EditorPage({ user }) {
   const handleUseTemplate = (template) => {
     setCode(template.code)
     setName(template.name)
-    setSuccess(`Template "${template.name}" loaded! You can edit the code before deploying.`)
+    setSuccess(`Template "${template.name}" loaded. Edit the code before deployment.`)
     setError('')
     setSidebarOpen(false)
   }
@@ -277,11 +277,11 @@ function EditorPage({ user }) {
               }}
               title="Toggle Templates"
             >
-              {sidebarOpen ? '📚' : '📖'}
+              {sidebarOpen ? 'Templates' : 'Show'}
             </button>
           )}
           <h1 style={{ margin: 0 }}>
-            {isEditing ? 'Edit App' : 'Create New App'}
+            {isEditing ? 'Edit Application' : 'Create Application'}
           </h1>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -291,14 +291,14 @@ function EditorPage({ user }) {
             disabled={loading || (deploymentStatus && deploymentStatus.status === 'deploying')}
             style={{ position: 'relative' }}
           >
-            {loading || (deploymentStatus && deploymentStatus.status === 'deploying') ? (
-              <>
-                <span style={{ marginRight: '0.5rem' }}>⏳</span>
-                {isEditing ? 'Updating...' : 'Deploying...'}
-              </>
-            ) : (
-              isEditing ? 'Update App' : 'Deploy App'
-            )}
+                {loading || (deploymentStatus && deploymentStatus.status === 'deploying') ? (
+                  <>
+                    <span style={{ marginRight: '0.5rem' }}>•••</span>
+                    {isEditing ? 'Updating...' : 'Deploying...'}
+                  </>
+                ) : (
+                  isEditing ? 'Update Application' : 'Deploy Application'
+                )}
           </button>
           <button
             className="btn btn-secondary"
@@ -339,7 +339,7 @@ function EditorPage({ user }) {
             gap: '0.5rem',
             fontSize: '0.875rem'
           }}>
-            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span>
+            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>○</span>
             <span>Deploying your app... This may take a minute.</span>
             {deploymentStatus.pod_status && (
               <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>
@@ -372,7 +372,7 @@ function EditorPage({ user }) {
             flexShrink: 0
           }}>
             <div style={{ marginBottom: '1rem' }}>
-              <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>Templates</h2>
+              <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>Application Templates</h2>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {['all', 'simple', 'medium', 'complex'].map(comp => (
                   <button
@@ -449,7 +449,7 @@ function EditorPage({ user }) {
                         fontSize: '0.75rem' 
                       }}
                     >
-                      Use Template
+                      Load Template
                     </button>
                   </div>
                 ))
@@ -483,7 +483,7 @@ function EditorPage({ user }) {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My FastAPI App"
+                placeholder="fastapi-application"
                 required
                 style={{ 
                   flex: 1,
@@ -513,7 +513,7 @@ function EditorPage({ user }) {
         <div style={{ marginBottom: '0.75rem', flexShrink: 0 }}>
           <h2 style={{ marginBottom: '0.25rem', fontSize: '1rem' }}>Code Editor</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0 }}>
-            Write your FastAPI code. Make sure to create a FastAPI app instance (app = FastAPI()).
+            Write FastAPI code. Ensure app = FastAPI() is defined.
           </p>
         </div>
 

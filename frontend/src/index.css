@@ -5,18 +5,18 @@
 }
 
 :root {
-  --primary: #6366f1;
-  --primary-dark: #4f46e5;
-  --secondary: #8b5cf6;
-  --success: #10b981;
-  --error: #ef4444;
-  --warning: #f59e0b;
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --secondary: #6b7280;
+  --success: #059669;
+  --error: #dc2626;
+  --warning: #d97706;
   --bg: #0f172a;
   --bg-light: #1e293b;
-  --bg-lighter: #334155;
-  --text: #f1f5f9;
-  --text-muted: #cbd5e1;
-  --border: #475569;
+  --bg-lighter: #374151;
+  --text: #f9fafb;
+  --text-muted: #d1d5db;
+  --border: #4b5563;
 }
 
 body {
@@ -36,7 +36,7 @@ body {
 .app-header {
   background: var(--bg-light);
   border-bottom: 1px solid var(--border);
-  padding: 1.5rem 0;
+  padding: 1rem 0;
 }
 
 .app-header .container {
@@ -79,14 +79,14 @@ body {
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1rem;
 }
 
 .btn {
-  padding: 0.75rem 1.5rem;
+  padding: 0.5rem 1rem;
   border: none;
-  border-radius: 0.5rem;
-  font-size: 1rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -125,13 +125,13 @@ body {
 .card {
   background: var(--bg-light);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
 }
 
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .form-group label {
@@ -144,12 +144,12 @@ body {
 .form-group input,
 .form-group textarea {
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.5rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   color: var(--text);
-  font-size: 1rem;
+  font-size: 0.875rem;
 }
 
 .form-group input:focus,
@@ -160,9 +160,9 @@ body {
 
 .status-badge {
   display: inline-block;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 
@@ -183,26 +183,26 @@ body {
 
 .loading {
   text-align: center;
-  padding: 2rem;
+  padding: 1rem;
   color: var(--text-muted);
 }
 
 .error {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(220, 38, 38, 0.1);
   border: 1px solid var(--error);
   color: var(--error);
-  padding: 1rem;
-  border-radius: 0.5rem;
-  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  margin-bottom: 0.75rem;
 }
 
 .success {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(5, 150, 105, 0.1);
   border: 1px solid var(--success);
   color: var(--success);
-  padding: 1rem;
-  border-radius: 0.5rem;
-  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  margin-bottom: 0.75rem;
 }
 
 @keyframes spin {
