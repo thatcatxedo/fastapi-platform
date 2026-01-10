@@ -13,8 +13,22 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import ast
 import re
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="FastAPI Learning Platform API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: seed templates
+    from seed_templates import seed_templates
+    try:
+        await seed_templates()
+        print("✓ Template seeding completed on startup")
+    except Exception as e:
+        print(f"Warning: Template seeding failed: {e}")
+    
+    yield
+    # Shutdown (if needed)
+
+app = FastAPI(title="FastAPI Learning Platform API", lifespan=lifespan)
 
 # CORS middleware
 app.add_middleware(

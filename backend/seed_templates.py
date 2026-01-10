@@ -500,9 +500,13 @@ async def delete_todo(todo_id: int):
     "tags": ["crud", "rest", "models", "intermediate"]
 }
 
-async def seed_templates():
+async def seed_templates(client=None):
     """Seed templates collection with initial templates"""
-    client = AsyncIOMotorClient(MONGO_URI)
+    close_client = False
+    if client is None:
+        client = AsyncIOMotorClient(MONGO_URI)
+        close_client = True
+    
     db = client.fastapi_platform_db
     templates_collection = db.templates
     
@@ -522,7 +526,9 @@ async def seed_templates():
             print(f"✓ Seeded template: {template['name']} (ID: {result.inserted_id})")
     
     print("\nTemplate seeding complete!")
-    client.close()
+    
+    if close_client:
+        client.close()
 
 if __name__ == "__main__":
     asyncio.run(seed_templates())
