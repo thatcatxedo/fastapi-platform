@@ -71,6 +71,16 @@ def main():
     print("Executing user code...")
     app = execute_code(code)
     
+    # Ensure docs are enabled (FastAPI enables them by default, but ensure they're accessible)
+    # FastAPI automatically creates /docs, /redoc, and /openapi.json endpoints
+    # We just need to make sure they're not disabled
+    if app.docs_url is None:
+        app.docs_url = "/docs"
+    if app.redoc_url is None:
+        app.redoc_url = "/redoc"
+    if app.openapi_url is None:
+        app.openapi_url = "/openapi.json"
+    
     # Add health endpoint if not present
     if not any(route.path == "/health" for route in app.routes):
         @app.get("/health")
