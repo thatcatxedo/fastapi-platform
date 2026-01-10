@@ -467,16 +467,42 @@ function EditorPage({ user }) {
         {/* Main editor area */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
           {/* App Name input - compact */}
-          <div className="card" style={{ marginBottom: '1rem', padding: '1rem', flexShrink: 0 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ marginBottom: '0.375rem', fontSize: '0.875rem' }}>App Name</label>
+          <div style={{ 
+            marginBottom: '0.75rem', 
+            padding: '0.5rem 0.75rem', 
+            background: 'var(--bg-light)',
+            border: '1px solid var(--border)',
+            borderRadius: '0.5rem',
+            flexShrink: 0 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <label style={{ 
+                margin: 0, 
+                fontSize: '0.75rem', 
+                color: 'var(--text-muted)',
+                whiteSpace: 'nowrap',
+                fontWeight: '500'
+              }}>
+                App Name:
+              </label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My FastAPI App"
                 required
-                style={{ padding: '0.5rem', fontSize: '0.875rem' }}
+                style={{ 
+                  flex: 1,
+                  padding: '0.375rem 0.5rem', 
+                  fontSize: '0.875rem',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.375rem',
+                  color: 'var(--text)',
+                  outline: 'none'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--border)'}
               />
             </div>
           </div>
