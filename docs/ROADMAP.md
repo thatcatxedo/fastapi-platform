@@ -35,10 +35,9 @@ Our niche: **Dead-simple FastAPI prototyping with batteries included.**
   - Per-app environment variables UI
   - Secure storage, injected at runtime
   - *In progress*
-- [ ] Deploy time indicator ("Deployed in 3.2s")
 - [ ] Error line highlighting in editor
 - [ ] OpenGraph meta tags on app URLs (better sharing)
-- [ ] Keyboard shortcuts (Ctrl+S save, Ctrl+Shift+D deploy)
+- [ ] App deletion (self-serve cleanup of throwaway apps)
 
 ## Phase 1b — Platform Database (near-term)
 
@@ -72,6 +71,10 @@ Constraints (document, enforce later):
 - 100MB storage per user
 - No backup guarantees (homelab)
 - Database-level isolation (not bulletproof)
+- Resource limits per app (CPU/memory caps)
+- Network isolation between apps (where feasible)
+- Mongo query limits / timeouts for runaway ops
+- Abuse guardrails (cryptomining or other misuse)
 
 ## Phase 1c — Drafts & Safety
 
@@ -98,6 +101,7 @@ Constraints (document, enforce later):
 - [ ] Build/run model
   - Bundle files into ConfigMap or archive
   - Entrypoint: `main.py` with `app = FastAPI()`
+- [ ] Size limits for bundled projects (guardrail for ConfigMap/archives)
 - [ ] Backward compatibility
   - Single-file mode remains default
   - "Convert to multi-file" scaffolds structure
@@ -110,6 +114,7 @@ Constraints (document, enforce later):
 - [ ] Per-app `requirements.txt` (validated against allow-list)
 - [ ] Build-time install or dynamic runtime install
 - [ ] UI for dependency management
+- [ ] Hard constraints (no native extensions, no system packages)
 
 ## Phase 4 — Auth Templates
 
@@ -128,6 +133,14 @@ Constraints (document, enforce later):
 - [ ] Scaffolding prompts ("Generate CRUD", "Add auth")
 - [ ] Safety model: suggest → preview → confirm → apply
 
+## Phase 6 — Monetization & Limits
+
+**Goal:** Provide sustainable tiers without surprising users.
+
+- [ ] Free tier limits (apps, storage, requests)
+- [ ] Pro tier (higher limits, custom domains)
+- [ ] Team/shared apps (optional)
+
 ---
 
 ## Future / Needs Validation
@@ -144,13 +157,6 @@ These are ideas that need real user feedback before committing:
 
 ---
 
-## Notes on FastHTML
-
-FastHTML is an HTML-first framework favoring server-rendered UI. Could be a
-future template category. Reference: https://www.fastht.ml/docs/llms-ctx.txt
-
----
-
 ## Success Metrics
 
 - **Time from idea → deployed app** (target: under 60 seconds)
@@ -158,3 +164,4 @@ future template category. Reference: https://www.fastht.ml/docs/llms-ctx.txt
 - **Full-stack capability** — can users build HTML + database apps?
 - **Repeat usage** — do builders come back?
 - **Shareability** — are deployed URLs being shared?
+- **Cleanup effectiveness** — inactive apps removed within 24 hours

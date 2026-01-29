@@ -225,7 +225,9 @@ ALLOWED_IMPORTS = {
     'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math', 
     'random', 'string', 'collections', 'itertools', 'functools',
     'operator', 're', 'uuid', 'hashlib', 'base64', 'urllib.parse',
-    'fasthtml', 'fastlite'
+    'fasthtml', 'fastlite', 'os', 'sys', 'pathlib', 'time', 'enum',
+    'dataclasses', 'decimal', 'html', 'http', 'copy', 'textwrap',
+    'calendar', 'locale', 'secrets', 'statistics'
 }
 
 FORBIDDEN_PATTERNS = [

@@ -1,0 +1,1368 @@
+<project title="FastHTML" summary='FastHTML is a python library which brings together Starlette, Uvicorn, HTMX, and fastcore&#39;s `FT` "FastTags" into a library for creating server-rendered hypermedia applications. The `FastHTML` class itself inherits from `Starlette`, and adds decorator-based routing with many additions, Beforeware, automatic `FT` to HTML rendering, and much more.'>Things to remember when writing FastHTML apps:
+
+- Although parts of its API are inspired by FastAPI, it is *not* compatible with FastAPI syntax and is not targeted at creating API services
+- FastHTML includes support for Pico CSS and the fastlite sqlite library, although using both are optional; sqlalchemy can be used directly or via the fastsql library, and any CSS framework can be used. Support for the Surreal and css-scope-inline libraries are also included, but both are optional
+- FastHTML is compatible with JS-native web components and any vanilla JS library, but not with React, Vue, or Svelte
+- Use `serve()` for running uvicorn (`if __name__ == "__main__"` is not needed since it's automatic)
+- When a title is needed with a response, use `Titled`; note that that already wraps children in `Container`, and already includes both the meta title as well as the H1 element.<docs><doc title="FastHTML concise guide" desc="A brief overview of idiomatic FastHTML apps"># Concise reference
+
+
+
+## About FastHTML
+
+``` python
+from fasthtml.common import *
+```
+
+FastHTML is a python library which brings together Starlette, Uvicorn,
+HTMX, and fastcore's `FT` "FastTags" into a library for creating
+server-rendered hypermedia applications. The
+[`FastHTML`](https://www.fastht.ml/docs/api/core.html#fasthtml) class
+itself inherits from `Starlette`, and adds decorator-based routing with
+many additions, Beforeware, automatic `FT` to HTML rendering, and much
+more.
+
+Things to remember when writing FastHTML apps:
+
+- *Not* compatible with FastAPI syntax; FastHTML is for HTML-first apps,
+  not API services (although it can implement APIs too)
+- FastHTML includes support for Pico CSS and the fastlite sqlite
+  library, although using both are optional; sqlalchemy can be used
+  directly or via the fastsql library, and any CSS framework can be
+  used. MonsterUI is a richer FastHTML-first component framework with
+  similar capabilities to shadcn
+- FastHTML is compatible with JS-native web components and any vanilla
+  JS library, but not with React, Vue, or Svelte
+- Use [`serve()`](https://www.fastht.ml/docs/api/core.html#serve) for
+  running uvicorn (`if __name__ == "__main__"` is not needed since it's
+  automatic)
+- When a title is needed with a response, use
+  [`Titled`](https://www.fastht.ml/docs/api/xtend.html#titled); note
+  that that already wraps children in
+  [`Container`](https://www.fastht.ml/docs/api/pico.html#container), and
+  already includes both the meta title as well as the H1 element.
+
+## Minimal App
+
+The code examples here use fast.ai style: prefer ternary op, 1-line
+docstring, minimize vertical space, etc. (Normally fast.ai style uses
+few if any comments, but they're added here as documentation.)
+
+A minimal FastHTML app looks something like this:
+
+``` python
+# Meta-package with all key symbols from FastHTML and Starlette. Import it like this at the start of every FastHTML app.
+from fasthtml.common import *
+# The FastHTML app object and shortcut to `app.route`
+app,rt = fast_app()
+
+# Enums constrain the values accepted for a route parameter
+name = str_enum('names', 'Alice', 'Bev', 'Charlie')
+
+# Passing a path to `rt` is optional. If not passed (recommended), the function name is the route ('/foo')
+# Both GET and POST HTTP methods are handled by default
+# Type-annotated params are passed as query params (recommended) unless a path param is defined (which it isn't here)
+@rt
+def foo(nm: name):
+    # `Title` and `P` here are FastTags: direct m-expression mappings of HTML tags to Python functions with positional and named parameters. All standard HTML tags are included in the common wildcard import.
+    # When a tuple is returned, this returns concatenated HTML partials. HTMX by default will use a title HTML partial to set the current page name. HEAD tags (e.g. Meta, Link, etc) in the returned tuple are automatically placed in HEAD; everything else is placed in BODY.
+    # FastHTML will automatically return a complete HTML document with appropriate headers if a normal HTTP request is received. For an HTMX request, however, just the partials are returned.
+    return Title("FastHTML"), H1("My web app"), P(f"Hello, {name}!")
+# By default `serve` runs uvicorn on port 5001. Never write `if __name__ == "__main__"` since `serve` checks it internally.
+serve()
+```
+
+To run this web app:
+
+``` bash
+python main.py  # access via localhost:5001
+```
+
+## FastTags (aka FT Components or FTs)
+
+FTs are m-expressions plus simple sugar. Positional params map to
+children. Named parameters map to attributes. Aliases must be used for
+Python reserved words.
+
+``` python
+tags = Title("FastHTML"), H1("My web app"), P(f"Let's do this!", cls="myclass")
+tags
+```
+
+    (title(('FastHTML',),{}),
+     h1(('My web app',),{}),
+     p(("Let's do this!",),{'class': 'myclass'}))
+
+This example shows key aspects of how FTs handle attributes:
+
+``` python
+Label(
+    "Choose an option", 
+    Select(
+        Option("one", value="1", selected=True),  # True renders just the attribute name
+        Option("two", value=2, selected=False),   # Non-string values are converted to strings. False omits the attribute entirely
+        cls="selector", id="counter",             # 'cls' becomes 'class'
+        **{'@click':"alert('Clicked');"},         # Dict unpacking for attributes with special chars
+    ),
+    _for="counter",                               # '_for' becomes 'for' (can also use 'fr')
+)
+```
+
+Classes with `__ft__` defined are rendered using that method.
+
+``` python
+class FtTest:
+    def __ft__(self): return P('test')
+    
+to_xml(FtTest())
+```
+
+    '<p>test</p>\n'
+
+You can create new FTs by importing the new component from
+`fasthtml.components`. If the FT doesn't exist within that module,
+FastHTML will create it.
+
+``` python
+from fasthtml.components import Some_never_before_used_tag
+
+Some_never_before_used_tag()
+```
+
+``` html
+<some-never-before-used-tag></some-never-before-used-tag>
+```
+
+FTs can be combined by defining them as a function.
+
+``` python
+def Hero(title, statement): return Div(H1(title),P(statement), cls="hero")
+to_xml(Hero("Hello World", "This is a hero statement"))
+```
+
+    '<div class="hero">\n  <h1>Hello World</h1>\n  <p>This is a hero statement</p>\n</div>\n'
+
+When handling a response, FastHTML will automatically render FTs using
+the `to_xml` function.
+
+``` python
+to_xml(tags)
+```
+
+    '<title>FastHTML</title>\n<h1>My web app</h1>\n<p class="myclass">Let&#x27;s do this!</p>\n'
+
+## JS
+
+The [`Script`](https://www.fastht.ml/docs/api/xtend.html#script)
+function allows you to include JavaScript. You can use Python to
+generate parts of your JS or JSON like this:
+
+``` python
+# In future snippets this import will not be shown, but is required
+from fasthtml.common import * 
+app,rt = fast_app(hdrs=[Script(src="https://cdn.plot.ly/plotly-2.32.0.min.js")])
+# `index` is a special function name which maps to the `/` route. 
+@rt
+def index():
+    data = {'somedata':'fill me in…'}
+    # `Titled` returns a title tag and an h1 tag with the 1st param, with remaining params as children in a `Main` parent.
+    return Titled("Chart Demo", Div(id="myDiv"), Script(f"var data = {data}; Plotly.newPlot('myDiv', data);"))
+# In future snippets `serve() will not be shown, but is required
+serve()
+```
+
+Prefer Python whenever possible over JS. Never use React or shadcn.
+
+## fast_app hdrs
+
+``` python
+# In future snippets we'll skip showing the `fast_app` call if it has no params
+app, rt = fast_app(
+    pico=False, # The Pico CSS framework is included by default, so pass `False` to disable it if needed. No other CSS frameworks are included.
+    # These are added to the `head` part of the page for non-HTMX requests.
+    hdrs=(
+        Link(rel='stylesheet', href='assets/normalize.min.css', type='text/css'),
+        Link(rel='stylesheet', href='assets/sakura.css', type='text/css'),
+        Style("p {color: red;}"),
+        # `MarkdownJS` and `HighlightJS` are available via concise functions
+        MarkdownJS(), HighlightJS(langs=['python', 'javascript', 'html', 'css']),
+        # by default, all standard static extensions are served statically from the web app dir,
+        #   which can be modified using e.g `static_path='public'`
+        )
+)
+
+@rt
+def index(req): return Titled("Markdown rendering example",
+                              # This will be client-side rendered to HTML with highlight-js
+                              Div("*hi* there",cls="marked"),
+                              # This will be syntax highlighted
+                              Pre(Code("def foo(): pass")))
+```
+
+## Responses
+
+Routes can return various types:
+
+1.  FastTags or tuples of FastTags (automatically rendered to HTML)
+2.  Standard Starlette responses (used directly)
+3.  JSON-serializable types (returned as JSON in a plain text response)
+
+``` python
+@rt("/{fname:path}.{ext:static}")
+async def serve_static_file(fname:str, ext:str): return FileResponse(f'public/{fname}.{ext}')
+
+app, rt = fast_app(hdrs=(MarkdownJS(), HighlightJS(langs=['python', 'javascript'])))
+@rt
+def index(): 
+    return Titled("Example",
+                  Div("*markdown* here", cls="marked"),
+                  Pre(Code("def foo(): pass")))
+```
+
+Route functions can be used in attributes like `href` or `action` and
+will be converted to paths. Use `.to()` to generate paths with query
+parameters.
+
+``` python
+@rt
+def profile(email:str): return fill_form(profile_form, profiles[email])
+
+profile_form = Form(action=profile)(
+    Label("Email", Input(name="email")),
+    Button("Save", type="submit")
+)
+
+user_profile_path = profile.to(email="user@example.com")  # '/profile?email=user%40example.com'
+```
+
+``` python
+from dataclasses import dataclass
+
+app,rt = fast_app()
+```
+
+When a route handler function is used as a fasttag attribute (such as
+`href`, `hx_get`, or `action`) it is converted to that route's path.
+[`fill_form`](https://www.fastht.ml/docs/api/components.html#fill_form)
+is used to copy an object's matching attrs into matching-name form
+fields.
+
+``` python
+@dataclass
+class Profile: email:str; phone:str; age:int
+email = 'john@example.com'
+profiles = {email: Profile(email=email, phone='123456789', age=5)}
+@rt
+def profile(email:str): return fill_form(profile_form, profiles[email])
+
+profile_form = Form(method="post", action=profile)(
+        Fieldset(
+            Label('Email', Input(name="email")),
+            Label("Phone", Input(name="phone")),
+            Label("Age", Input(name="age"))),
+        Button("Save", type="submit"))
+```
+
+## Testing
+
+We can use `TestClient` for testing.
+
+``` python
+from starlette.testclient import TestClient
+```
+
+``` python
+path = "/profile?email=john@example.com"
+client = TestClient(app)
+htmx_req = {'HX-Request':'1'}
+print(client.get(path, headers=htmx_req).text)
+```
+
+    <form enctype="multipart/form-data" method="post" action="/profile"><fieldset><label>Email       <input name="email" value="john@example.com">
+    </label><label>Phone       <input name="phone" value="123456789">
+    </label><label>Age       <input name="age" value="5">
+    </label></fieldset><button type="submit">Save</button></form>
+
+## Form Handling and Data Binding
+
+When a dataclass, namedtuple, etc. is used as a type annotation, the
+form body will be unpacked into matching attribute names automatically.
+
+``` python
+@rt
+def edit_profile(profile: Profile):
+    profiles[email]=profile
+    return RedirectResponse(url=path)
+
+new_data = dict(email='john@example.com', phone='7654321', age=25)
+print(client.post("/edit_profile", data=new_data, headers=htmx_req).text)
+```
+
+    <form enctype="multipart/form-data" method="post" action="/profile"><fieldset><label>Email       <input name="email" value="john@example.com">
+    </label><label>Phone       <input name="phone" value="7654321">
+    </label><label>Age       <input name="age" value="25">
+    </label></fieldset><button type="submit">Save</button></form>
+
+## fasttag Rendering Rules
+
+The general rules for rendering children inside tuples or fasttag
+children are: - `__ft__` method will be called (for default components
+like `P`, `H2`, etc. or if you define your own components) - If you pass
+a string, it will be escaped - On other python objects, `str()` will be
+called
+
+If you want to include plain HTML tags directly into e.g. a `Div()` they
+will get escaped by default (as a security measure to avoid code
+injections). This can be avoided by using `Safe(...)`, e.g to show a
+data frame use `Div(NotStr(df.to_html()))`.
+
+## Exceptions
+
+FastHTML allows customization of exception handlers.
+
+``` python
+def not_found(req, exc): return Titled("404: I don't exist!")
+exception_handlers = {404: not_found}
+app, rt = fast_app(exception_handlers=exception_handlers)
+```
+
+## Cookies
+
+We can set cookies using the
+[`cookie()`](https://www.fastht.ml/docs/api/core.html#cookie) function.
+
+``` python
+@rt
+def setcook(): return P(f'Set'), cookie('mycookie', 'foobar')
+print(client.get('/setcook', headers=htmx_req).text)
+```
+
+     <p>Set</p>
+
+``` python
+@rt
+def getcook(mycookie:str): return f'Got {mycookie}'
+# If handlers return text instead of FTs, then a plaintext response is automatically created
+print(client.get('/getcook').text)
+```
+
+    Got foobar
+
+FastHTML provide access to Starlette's request object automatically
+using special `request` parameter name (or any prefix of that name).
+
+``` python
+@rt
+def headers(req): return req.headers['host']
+```
+
+## Request and Session Objects
+
+FastHTML provides access to Starlette's session middleware automatically
+using the special `session` parameter name (or any prefix of that name).
+
+``` python
+@rt
+def profile(req, sess, user_id: int=None):
+    ip = req.client.host
+    sess['last_visit'] = datetime.now().isoformat()
+    visits = sess.setdefault('visit_count', 0) + 1
+    sess['visit_count'] = visits
+    user = get_user(user_id or sess.get('user_id'))
+    return Titled(f"Profile: {user.name}", 
+                  P(f"Visits: {visits}"), 
+                  P(f"IP: {ip}"),
+                  Button("Logout", hx_post=logout))
+```
+
+Handler functions can return the
+[`HtmxResponseHeaders`](https://www.fastht.ml/docs/api/core.html#htmxresponseheaders)
+object to set HTMX-specific response headers.
+
+``` python
+@rt
+def htmlredirect(app): return HtmxResponseHeaders(location="http://example.org")
+```
+
+## APIRouter
+
+[`APIRouter`](https://www.fastht.ml/docs/api/core.html#apirouter) lets
+you organize routes across multiple files in a FastHTML app.
+
+``` python
+# products.py
+ar = APIRouter()
+
+@ar
+def details(pid: int): return f"Here are the product details for ID: {pid}"
+
+@ar
+def all_products(req):
+    return Div(
+        Div(
+            Button("Details",hx_get=details.to(pid=42),hx_target="#products_list",hx_swap="outerHTML",),
+        ), id="products_list")
+```
+
+``` python
+# main.py
+from products import ar,all_products
+
+app, rt = fast_app()
+ar.to_app(app)
+
+@rt
+def index():
+    return Div(
+        "Products",
+        hx_get=all_products, hx_swap="outerHTML")
+```
+
+## Toasts
+
+Toasts can be of four types:
+
+- info
+- success
+- warning
+- error
+
+Toasts require the use of the `setup_toasts()` function, plus every
+handler needs:
+
+- The session argument
+- Must return FT components
+
+``` python
+setup_toasts(app)
+
+@rt
+def toasting(session):
+    add_toast(session, f"cooked", "info")
+    add_toast(session, f"ready", "success")
+    return Titled("toaster")
+```
+
+`setup_toasts(duration)` allows you to specify how long a toast will be
+visible before disappearing.10 seconds.
+
+Authentication and authorization are handled with Beforeware, which
+functions that run before the route handler is called.
+
+## Auth
+
+``` python
+def user_auth_before(req, sess):
+    # `auth` key in the request scope is automatically provided to any handler which requests it and can not be injected
+    auth = req.scope['auth'] = sess.get('auth', None)
+    if not auth: return RedirectResponse('/login', status_code=303)
+
+beforeware = Beforeware(
+    user_auth_before,
+    skip=[r'/favicon\.ico', r'/static/.*', r'.*\.css', r'.*\.js', '/login', '/']
+)
+
+app, rt = fast_app(before=beforeware)
+```
+
+## Server-Side Events (SSE)
+
+FastHTML supports the HTMX SSE extension.
+
+``` python
+import random
+hdrs=(Script(src="https://unpkg.com/htmx-ext-sse@2.2.3/sse.js"),)
+app,rt = fast_app(hdrs=hdrs)
+
+@rt
+def index(): return Div(hx_ext="sse", sse_connect="/numstream", hx_swap="beforeend show:bottom", sse_swap="message")
+
+# `signal_shutdown()` gets an event that is set on shutdown
+shutdown_event = signal_shutdown()
+
+async def number_generator():
+    while not shutdown_event.is_set():
+        data = Article(random.randint(1, 100))
+        yield sse_message(data)
+
+@rt
+async def numstream(): return EventStream(number_generator())
+```
+
+## Websockets
+
+FastHTML provides useful tools for HTMX's websockets extension.
+
+``` python
+# These HTMX extensions are available through `exts`:
+#   head-support preload class-tools loading-states multi-swap path-deps remove-me ws chunked-transfer
+app, rt = fast_app(exts='ws')
+
+def mk_inp(): return Input(id='msg', autofocus=True)
+
+@rt
+async def index(request):
+    # `ws_send` tells HTMX to send a message to the nearest websocket based on the trigger for the form element
+    cts = Div(
+        Div(id='notifications'),
+        Form(mk_inp(), id='form', ws_send=True),
+        hx_ext='ws', ws_connect='/ws')
+    return Titled('Websocket Test', cts)
+
+async def on_connect(send): await send(Div('Hello, you have connected', id="notifications"))
+async def on_disconnect(ws): print('Disconnected!')
+
+@app.ws('/ws', conn=on_connect, disconn=on_disconnect)
+async def ws(msg:str, send):
+    # websocket hander returns/sends are treated as OOB swaps
+    await send(Div('Hello ' + msg, id="notifications"))
+    return Div('Goodbye ' + msg, id="notifications"), mk_inp()
+```
+
+Sample chatbot that uses FastHTML's `setup_ws` function:
+
+``` py
+app = FastHTML(exts='ws')
+rt = app.route
+msgs = []
+
+@rt('/')
+def home():
+    return Div(hx_ext='ws', ws_connect='/ws')(
+        Div(Ul(*[Li(m) for m in msgs], id='msg-list')),
+        Form(Input(id='msg'), id='form', ws_send=True)
+    )
+
+async def ws(msg:str):
+    msgs.append(msg)
+    await send(Ul(*[Li(m) for m in msgs], id='msg-list'))
+
+send = setup_ws(app, ws)
+```
+
+### Single File Uploads
+
+[`Form`](https://www.fastht.ml/docs/api/xtend.html#form) defaults to
+"multipart/form-data". A Starlette UploadFile is passed to the handler.
+
+``` python
+upload_dir = Path("filez")
+
+@rt
+def index():
+    return (
+        Form(hx_post=upload, hx_target="#result")(
+            Input(type="file", name="file"),
+            Button("Upload", type="submit")),
+        Div(id="result")
+    )
+
+# Use `async` handlers where IO is used to avoid blocking other clients
+@rt
+async def upload(file: UploadFile):
+    filebuffer = await file.read()
+    (upload_dir / file.filename).write_bytes(filebuffer)
+    return P('Size: ', file.size)
+```
+
+For multi-file, use `Input(..., multiple=True)`, and a type annotation
+of `list[UploadFile]` in the handler.
+
+## Fastlite
+
+Fastlite and the MiniDataAPI specification it's built on are a
+CRUD-oriented API for working with SQLite. APSW and apswutils is used to
+connect to SQLite, optimized for speed and clean error handling.
+
+``` python
+from fastlite import *
+```
+
+``` python
+db = database(':memory:') # or database('data/app.db')
+```
+
+Tables are normally constructed with classes, field types are specified
+as type hints.
+
+``` python
+class Book: isbn: str; title: str; pages: int; userid: int
+# The transform arg instructs fastlite to change the db schema when fields change.
+# Create only creates a table if the table doesn't exist.
+books = db.create(Book, pk='isbn', transform=True)
+                
+class User: id: int; name: str; active: bool = True
+# If no pk is provided, id is used as the primary key.
+users = db.create(User, transform=True)
+users
+```
+
+    <Table user (id, name, active)>
+
+### Fastlite CRUD operations
+
+Every operation in fastlite returns a full superset of dataclass
+functionality.
+
+``` python
+user = users.insert(name='Alex',active=False)
+user
+```
+
+    User(id=1, name='Alex', active=0)
+
+``` python
+# List all records
+users()
+```
+
+    [User(id=1, name='Alex', active=0)]
+
+``` python
+# Limit, offset, and order results:
+users(order_by='name', limit=2, offset=1)
+
+# Filter on the results
+users(where="name='Alex'")
+
+# Placeholder for avoiding injection attacks
+users("name=?", ('Alex',))
+
+# A single record by pk
+users[user.id]
+```
+
+    User(id=1, name='Alex', active=0)
+
+Test if a record exists by using `in` keyword on primary key:
+
+``` python
+1 in users
+```
+
+    True
+
+Updates (which take a dict or a typed object) return the updated record.
+
+``` python
+user.name='Lauren'
+user.active=True
+users.update(user)
+```
+
+    User(id=1, name='Lauren', active=1)
+
+`.xtra()` to automatically constrain queries, updates, and inserts from
+there on:
+
+``` python
+users.xtra(active=True)
+users()
+```
+
+    [User(id=1, name='Lauren', active=1)]
+
+Deleting by pk:
+
+``` python
+users.delete(user.id)
+```
+
+    <Table user (id, name, active)>
+
+NotFoundError is raised by pk `[]`, updates, and deletes.
+
+``` python
+try: users['Amy']
+except NotFoundError: print('User not found')
+```
+
+    User not found
+
+## MonsterUI
+
+MonsterUI is a shadcn-like component library for FastHTML. It adds the
+Tailwind-based libraries FrankenUI and DaisyUI to FastHTML, as well as
+Python's mistletoe for Markdown, HighlightJS for code highlighting, and
+Katex for latex support, following semantic HTML patterns when possible.
+It is recommended for when you wish to go beyond the basics provided by
+FastHTML's built-in pico support.
+
+A minimal app:
+
+``` python
+from fasthtml.common import *
+from monsterui.all import *
+
+app, rt = fast_app(hdrs=Theme.blue.headers(highlightjs=True)) # Use MonsterUI blue theme and highlight code in markdown
+
+@rt
+def index():
+    socials = (('github','https://github.com/AnswerDotAI/MonsterUI'),)
+    return Titled("App",
+        Card(
+            P("App", cls=TextPresets.muted_sm),
+            # LabelInput, DivLAigned, and UkIconLink are non-semantic MonsterUI FT Components,
+            LabelInput('Email', type='email', required=True),
+            footer=DivLAligned(*[UkIconLink(icon,href=url) for icon,url in socials])))
+```
+
+MonsterUI recommendations:
+
+- Use defaults as much as possible, for example
+  [`Container`](https://www.fastht.ml/docs/api/pico.html#container) in
+  monsterui already has defaults for margins
+- Use `*T` for button styling consistency, for example
+  `cls=ButtonT.destructive` for a red delete button or
+  `cls=ButtonT.primary` for a CTA button
+- Use `Label*` functions for forms as much as possible
+  (e.g. `LabelInput`, `LabelRange`) which creates and links both the
+  `FormLabel` and user input appropriately to avoid boiler plate.
+
+Flex Layout Elements (such as `DivLAligned` and `DivFullySpaced`) can be
+used to create layouts concisely
+
+``` python
+def TeamCard(name, role, location="Remote"):
+    icons = ("mail", "linkedin", "github")
+    return Card(
+        DivLAligned(
+            DiceBearAvatar(name, h=24, w=24),
+            Div(H3(name), P(role))),
+        footer=DivFullySpaced(
+            DivHStacked(UkIcon("map-pin", height=16), P(location)),
+            DivHStacked(*(UkIconLink(icon, height=16) for icon in icons))))
+```
+
+Forms are styled and spaced for you without significant additional
+classes.
+
+``` python
+def MonsterForm():
+    relationship = ["Parent",'Sibling', "Friend", "Spouse", "Significant Other", "Relative", "Child", "Other"]
+    return Div(
+        DivCentered(
+            H3("Emergency Contact Form"),
+            P("Please fill out the form completely", cls=TextPresets.muted_sm)),
+        Form(
+            Grid(LabelInput("Name",id='name'),LabelInput("Email",     id='email')),
+            H3("Relationship to patient"),
+            Grid(*[LabelCheckboxX(o) for o in relationship], cols=4, cls='space-y-3'),
+            DivCentered(Button("Submit Form", cls=ButtonT.primary))),
+        cls='space-y-4')
+```
+
+Text can be styled with markdown automatically with MonsterUI
+
+```` python
+render_md("""
+# My Document
+
+> Important note here
+
++ List item with **bold**
++ Another with `code`
+
+```python
+def hello():
+    print("world")
+```
+""")
+````
+
+    '<div><h1 class="uk-h1 text-4xl font-bold mt-12 mb-6">My Document</h1>\n<blockquote class="uk-blockquote pl-4 border-l-4 border-primary italic mb-6">\n<p class="text-lg leading-relaxed mb-6">Important note here</p>\n</blockquote>\n<ul class="uk-list uk-list-bullet space-y-2 mb-6 ml-6 text-lg">\n<li class="leading-relaxed">List item with <strong>bold</strong></li>\n<li class="leading-relaxed">Another with <code class="uk-codespan px-1">code</code></li>\n</ul>\n<pre class="bg-base-200 rounded-lg p-4 mb-6"><code class="language-python uk-codespan px-1 uk-codespan px-1 block overflow-x-auto">def hello():\n    print("world")\n</code></pre>\n</div>'
+
+Or using semantic HTML:
+
+``` python
+def SemanticText():
+    return Card(
+        H1("MonsterUI's Semantic Text"),
+        P(
+            Strong("MonsterUI"), " brings the power of semantic HTML to life with ",
+            Em("beautiful styling"), " and ", Mark("zero configuration"), "."),
+        Blockquote(
+            P("Write semantic HTML in pure Python, get modern styling for free."),
+            Cite("MonsterUI Team")),
+        footer=Small("Released February 2025"),)
+```</doc><doc title="HTMX reference" desc="Brief description of all HTMX attributes, CSS classes, headers, events, extensions, js lib methods, and config options">+++
+title = "Reference"
++++
+
+## Contents
+
+* [htmx Core Attributes](#attributes)
+* [htmx Additional Attributes](#attributes-additional)
+* [htmx CSS Classes](#classes)
+* [htmx Request Headers](#request_headers)
+* [htmx Response Headers](#response_headers)
+* [htmx Events](#events)
+* [htmx Extensions](/extensions)
+* [JavaScript API](#api)
+* [Configuration Options](#config)
+
+## Core Attribute Reference {#attributes}
+
+The most common attributes when using htmx.
+
+<div class="info-table">
+
+| Attribute                                        | Description                                                                                                        |
+|--------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| [`hx-get`](@/attributes/hx-get.md)               | issues a `GET` to the specified URL                                                                                |
+| [`hx-post`](@/attributes/hx-post.md)             | issues a `POST` to the specified URL                                                                               |
+| [`hx-on*`](@/attributes/hx-on.md)                | handle events with inline scripts on elements                                                                      |
+| [`hx-push-url`](@/attributes/hx-push-url.md)     | push a URL into the browser location bar to create history                                                         |
+| [`hx-select`](@/attributes/hx-select.md)         | select content to swap in from a response                                                                          |
+| [`hx-select-oob`](@/attributes/hx-select-oob.md) | select content to swap in from a response, somewhere other than the target (out of band)                           |
+| [`hx-swap`](@/attributes/hx-swap.md)             | controls how content will swap in (`outerHTML`, `beforeend`, `afterend`, ...)                                      |
+| [`hx-swap-oob`](@/attributes/hx-swap-oob.md)     | mark element to swap in from a response (out of band)                                                              |
+| [`hx-target`](@/attributes/hx-target.md)         | specifies the target element to be swapped                                                                         |
+| [`hx-trigger`](@/attributes/hx-trigger.md)       | specifies the event that triggers the request                                                                      |
+| [`hx-vals`](@/attributes/hx-vals.md)             | add values to submit with the request (JSON format)                                                                |
+
+</div>
+
+## Additional Attribute Reference {#attributes-additional}
+
+All other attributes available in htmx.
+
+<div class="info-table">
+
+| Attribute                                            | Description                                                                                                                        |
+|------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| [`hx-boost`](@/attributes/hx-boost.md)               | add [progressive enhancement](https://en.wikipedia.org/wiki/Progressive_enhancement) for links and forms                           |
+| [`hx-confirm`](@/attributes/hx-confirm.md)           | shows a `confirm()` dialog before issuing a request                                                                                |
+| [`hx-delete`](@/attributes/hx-delete.md)             | issues a `DELETE` to the specified URL                                                                                             |
+| [`hx-disable`](@/attributes/hx-disable.md)           | disables htmx processing for the given node and any children nodes                                                                 |
+| [`hx-disabled-elt`](@/attributes/hx-disabled-elt.md) | adds the `disabled` attribute to the specified elements while a request is in flight                                               |
+| [`hx-disinherit`](@/attributes/hx-disinherit.md)     | control and disable automatic attribute inheritance for child nodes                                                                |
+| [`hx-encoding`](@/attributes/hx-encoding.md)         | changes the request encoding type                                                                                                  |
+| [`hx-ext`](@/attributes/hx-ext.md)                   | extensions to use for this element                                                                                                 |
+| [`hx-headers`](@/attributes/hx-headers.md)           | adds to the headers that will be submitted with the request                                                                        |
+| [`hx-history`](@/attributes/hx-history.md)           | prevent sensitive data being saved to the history cache                                                                            |
+| [`hx-history-elt`](@/attributes/hx-history-elt.md)   | the element to snapshot and restore during history navigation                                                                      |
+| [`hx-include`](@/attributes/hx-include.md)           | include additional data in requests                                                                                                |
+| [`hx-indicator`](@/attributes/hx-indicator.md)       | the element to put the `htmx-request` class on during the request                                                                  |
+| [`hx-inherit`](@/attributes/hx-inherit.md)           | control and enable automatic attribute inheritance for child nodes if it has been disabled by default                            |
+| [`hx-params`](@/attributes/hx-params.md)             | filters the parameters that will be submitted with a request                                                                       |
+| [`hx-patch`](@/attributes/hx-patch.md)               | issues a `PATCH` to the specified URL                                                                                              |
+| [`hx-preserve`](@/attributes/hx-preserve.md)         | specifies elements to keep unchanged between requests                                                                              |
+| [`hx-prompt`](@/attributes/hx-prompt.md)             | shows a `prompt()` before submitting a request                                                                                     |
+| [`hx-put`](@/attributes/hx-put.md)                   | issues a `PUT` to the specified URL                                                                                                |
+| [`hx-replace-url`](@/attributes/hx-replace-url.md)   | replace the URL in the browser location bar                                                                                        |
+| [`hx-request`](@/attributes/hx-request.md)           | configures various aspects of the request                                                                                          |
+| [`hx-sync`](@/attributes/hx-sync.md)                 | control how requests made by different elements are synchronized                                                                   |
+| [`hx-validate`](@/attributes/hx-validate.md)         | force elements to validate themselves before a request                                                                             |
+| [`hx-vars`](@/attributes/hx-vars.md)                 | adds values dynamically to the parameters to submit with the request (deprecated, please use [`hx-vals`](@/attributes/hx-vals.md)) |
+
+</div>
+
+## CSS Class Reference {#classes}
+
+<div class="info-table">
+
+| Class | Description |
+|-----------|-------------|
+| `htmx-added` | Applied to a new piece of content before it is swapped, removed after it is settled.
+| `htmx-indicator` | A dynamically generated class that will toggle visible (opacity:1) when a `htmx-request` class is present
+| `htmx-request` | Applied to either the element or the element specified with [`hx-indicator`](@/attributes/hx-indicator.md) while a request is ongoing
+| `htmx-settling` | Applied to a target after content is swapped, removed after it is settled. The duration can be modified via [`hx-swap`](@/attributes/hx-swap.md).
+| `htmx-swapping` | Applied to a target before any content is swapped, removed after it is swapped. The duration can be modified via [`hx-swap`](@/attributes/hx-swap.md).
+
+</div>
+
+## HTTP Header Reference {#headers}
+
+### Request Headers Reference {#request_headers}
+
+<div class="info-table">
+
+| Header | Description |
+|--------|-------------|
+| `HX-Boosted` | indicates that the request is via an element using [hx-boost](@/attributes/hx-boost.md)
+| `HX-Current-URL` | the current URL of the browser
+| `HX-History-Restore-Request` | "true" if the request is for history restoration after a miss in the local history cache
+| `HX-Prompt` | the user response to an [hx-prompt](@/attributes/hx-prompt.md)
+| `HX-Request` | always "true"
+| `HX-Target` | the `id` of the target element if it exists
+| `HX-Trigger-Name` | the `name` of the triggered element if it exists
+| `HX-Trigger` | the `id` of the triggered element if it exists
+
+</div>
+
+### Response Headers Reference {#response_headers}
+
+<div class="info-table">
+
+| Header                                               | Description |
+|------------------------------------------------------|-------------|
+| [`HX-Location`](@/headers/hx-location.md)            | allows you to do a client-side redirect that does not do a full page reload
+| [`HX-Push-Url`](@/headers/hx-push-url.md)            | pushes a new url into the history stack
+| [`HX-Redirect`](@/headers/hx-redirect.md)            | can be used to do a client-side redirect to a new location
+| `HX-Refresh`                                         | if set to "true" the client-side will do a full refresh of the page
+| [`HX-Replace-Url`](@/headers/hx-replace-url.md)      | replaces the current URL in the location bar
+| `HX-Reswap`                                          | allows you to specify how the response will be swapped. See [hx-swap](@/attributes/hx-swap.md) for possible values
+| `HX-Retarget`                                        | a CSS selector that updates the target of the content update to a different element on the page
+| `HX-Reselect`                                        | a CSS selector that allows you to choose which part of the response is used to be swapped in. Overrides an existing [`hx-select`](@/attributes/hx-select.md) on the triggering element
+| [`HX-Trigger`](@/headers/hx-trigger.md)              | allows you to trigger client-side events
+| [`HX-Trigger-After-Settle`](@/headers/hx-trigger.md) | allows you to trigger client-side events after the settle step
+| [`HX-Trigger-After-Swap`](@/headers/hx-trigger.md)   | allows you to trigger client-side events after the swap step
+
+</div>
+
+## Event Reference {#events}
+
+<div class="info-table">
+
+| Event | Description |
+|-------|-------------|
+| [`htmx:abort`](@/events.md#htmx:abort) | send this event to an element to abort a request
+| [`htmx:afterOnLoad`](@/events.md#htmx:afterOnLoad) | triggered after an AJAX request has completed processing a successful response
+| [`htmx:afterProcessNode`](@/events.md#htmx:afterProcessNode) | triggered after htmx has initialized a node
+| [`htmx:afterRequest`](@/events.md#htmx:afterRequest)  | triggered after an AJAX request has completed
+| [`htmx:afterSettle`](@/events.md#htmx:afterSettle)  | triggered after the DOM has settled
+| [`htmx:afterSwap`](@/events.md#htmx:afterSwap)  | triggered after new content has been swapped in
+| [`htmx:beforeCleanupElement`](@/events.md#htmx:beforeCleanupElement)  | triggered before htmx [disables](@/attributes/hx-disable.md) an element or removes it from the DOM
+| [`htmx:beforeOnLoad`](@/events.md#htmx:beforeOnLoad)  | triggered before any response processing occurs
+| [`htmx:beforeProcessNode`](@/events.md#htmx:beforeProcessNode) | triggered before htmx initializes a node
+| [`htmx:beforeRequest`](@/events.md#htmx:beforeRequest)  | triggered before an AJAX request is made
+| [`htmx:beforeSwap`](@/events.md#htmx:beforeSwap)  | triggered before a swap is done, allows you to configure the swap
+| [`htmx:beforeSend`](@/events.md#htmx:beforeSend)  | triggered just before an ajax request is sent
+| [`htmx:beforeTransition`](@/events.md#htmx:beforeTransition)  | triggered before the [View Transition](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API) wrapped swap occurs
+| [`htmx:configRequest`](@/events.md#htmx:configRequest)  | triggered before the request, allows you to customize parameters, headers
+| [`htmx:confirm`](@/events.md#htmx:confirm)  | triggered after a trigger occurs on an element, allows you to cancel (or delay) issuing the AJAX request
+| [`htmx:historyCacheError`](@/events.md#htmx:historyCacheError)  | triggered on an error during cache writing
+| [`htmx:historyCacheHit`](@/events.md#htmx:historyCacheHit)  | triggered on a cache hit in the history subsystem
+| [`htmx:historyCacheMiss`](@/events.md#htmx:historyCacheMiss)  | triggered on a cache miss in the history subsystem
+| [`htmx:historyCacheMissLoadError`](@/events.md#htmx:historyCacheMissLoadError)  | triggered on a unsuccessful remote retrieval
+| [`htmx:historyCacheMissLoad`](@/events.md#htmx:historyCacheMissLoad)  | triggered on a successful remote retrieval
+| [`htmx:historyRestore`](@/events.md#htmx:historyRestore)  | triggered when htmx handles a history restoration action
+| [`htmx:beforeHistorySave`](@/events.md#htmx:beforeHistorySave)  | triggered before content is saved to the history cache
+| [`htmx:load`](@/events.md#htmx:load)  | triggered when new content is added to the DOM
+| [`htmx:noSSESourceError`](@/events.md#htmx:noSSESourceError)  | triggered when an element refers to a SSE event in its trigger, but no parent SSE source has been defined
+| [`htmx:onLoadError`](@/events.md#htmx:onLoadError)  | triggered when an exception occurs during the onLoad handling in htmx
+| [`htmx:oobAfterSwap`](@/events.md#htmx:oobAfterSwap)  | triggered after an out of band element as been swapped in
+| [`htmx:oobBeforeSwap`](@/events.md#htmx:oobBeforeSwap)  | triggered before an out of band element swap is done, allows you to configure the swap
+| [`htmx:oobErrorNoTarget`](@/events.md#htmx:oobErrorNoTarget)  | triggered when an out of band element does not have a matching ID in the current DOM
+| [`htmx:prompt`](@/events.md#htmx:prompt)  | triggered after a prompt is shown
+| [`htmx:pushedIntoHistory`](@/events.md#htmx:pushedIntoHistory)  | triggered after a url is pushed into history
+| [`htmx:replacedInHistory`](@/events.md#htmx:replacedInHistory)  | triggered after a url is replaced in history
+| [`htmx:responseError`](@/events.md#htmx:responseError)  | triggered when an HTTP response error (non-`200` or `300` response code) occurs
+| [`htmx:sendAbort`](@/events.md#htmx:sendAbort)  | triggered when a request is aborted
+| [`htmx:sendError`](@/events.md#htmx:sendError)  | triggered when a network error prevents an HTTP request from happening
+| [`htmx:sseError`](@/events.md#htmx:sseError)  | triggered when an error occurs with a SSE source
+| [`htmx:sseOpen`](/events#htmx:sseOpen)  | triggered when a SSE source is opened
+| [`htmx:swapError`](@/events.md#htmx:swapError)  | triggered when an error occurs during the swap phase
+| [`htmx:targetError`](@/events.md#htmx:targetError)  | triggered when an invalid target is specified
+| [`htmx:timeout`](@/events.md#htmx:timeout)  | triggered when a request timeout occurs
+| [`htmx:validation:validate`](@/events.md#htmx:validation:validate)  | triggered before an element is validated
+| [`htmx:validation:failed`](@/events.md#htmx:validation:failed)  | triggered when an element fails validation
+| [`htmx:validation:halted`](@/events.md#htmx:validation:halted)  | triggered when a request is halted due to validation errors
+| [`htmx:xhr:abort`](@/events.md#htmx:xhr:abort)  | triggered when an ajax request aborts
+| [`htmx:xhr:loadend`](@/events.md#htmx:xhr:loadend)  | triggered when an ajax request ends
+| [`htmx:xhr:loadstart`](@/events.md#htmx:xhr:loadstart)  | triggered when an ajax request starts
+| [`htmx:xhr:progress`](@/events.md#htmx:xhr:progress)  | triggered periodically during an ajax request that supports progress events
+
+</div>
+
+## JavaScript API Reference {#api}
+
+<div class="info-table">
+
+| Method | Description |
+|-------|-------------|
+| [`htmx.addClass()`](@/api.md#addClass)  | Adds a class to the given element
+| [`htmx.ajax()`](@/api.md#ajax)  | Issues an htmx-style ajax request
+| [`htmx.closest()`](@/api.md#closest)  | Finds the closest parent to the given element matching the selector
+| [`htmx.config`](@/api.md#config)  | A property that holds the current htmx config object
+| [`htmx.createEventSource`](@/api.md#createEventSource)  | A property holding the function to create SSE EventSource objects for htmx
+| [`htmx.createWebSocket`](@/api.md#createWebSocket)  | A property holding the function to create WebSocket objects for htmx
+| [`htmx.defineExtension()`](@/api.md#defineExtension)  | Defines an htmx [extension](https://htmx.org/extensions)
+| [`htmx.find()`](@/api.md#find)  | Finds a single element matching the selector
+| [`htmx.findAll()` `htmx.findAll(elt, selector)`](@/api.md#find)  | Finds all elements matching a given selector
+| [`htmx.logAll()`](@/api.md#logAll)  | Installs a logger that will log all htmx events
+| [`htmx.logger`](@/api.md#logger)  | A property set to the current logger (default is `null`)
+| [`htmx.off()`](@/api.md#off)  | Removes an event listener from the given element
+| [`htmx.on()`](@/api.md#on)  | Creates an event listener on the given element, returning it
+| [`htmx.onLoad()`](@/api.md#onLoad)  | Adds a callback handler for the `htmx:load` event
+| [`htmx.parseInterval()`](@/api.md#parseInterval)  | Parses an interval declaration into a millisecond value
+| [`htmx.process()`](@/api.md#process)  | Processes the given element and its children, hooking up any htmx behavior
+| [`htmx.remove()`](@/api.md#remove)  | Removes the given element
+| [`htmx.removeClass()`](@/api.md#removeClass)  | Removes a class from the given element
+| [`htmx.removeExtension()`](@/api.md#removeExtension)  | Removes an htmx [extension](https://htmx.org/extensions)
+| [`htmx.swap()`](@/api.md#swap)  | Performs swapping (and settling) of HTML content
+| [`htmx.takeClass()`](@/api.md#takeClass)  | Takes a class from other elements for the given element
+| [`htmx.toggleClass()`](@/api.md#toggleClass)  | Toggles a class from the given element
+| [`htmx.trigger()`](@/api.md#trigger)  | Triggers an event on an element
+| [`htmx.values()`](@/api.md#values)  | Returns the input values associated with the given element
+
+</div>
+
+
+## Configuration Reference {#config}
+
+Htmx has some configuration options that can be accessed either programmatically or declaratively.  They are
+listed below:
+
+<div class="info-table">
+
+| Config Variable                        | Info                                                                                                                                                                       |
+|----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `htmx.config.historyEnabled`           | defaults to `true`, really only useful for testing                                                                                                                         |
+| `htmx.config.historyCacheSize`         | defaults to 10                                                                                                                                                             |
+| `htmx.config.refreshOnHistoryMiss`     | defaults to `false`, if set to `true` htmx will issue a full page refresh on history misses rather than use an AJAX request                                                |
+| `htmx.config.defaultSwapStyle`         | defaults to `innerHTML`                                                                                                                                                    |
+| `htmx.config.defaultSwapDelay`         | defaults to 0                                                                                                                                                              |
+| `htmx.config.defaultSettleDelay`       | defaults to 20                                                                                                                                                             |
+| `htmx.config.includeIndicatorStyles`   | defaults to `true` (determines if the indicator styles are loaded)                                                                                                         |
+| `htmx.config.indicatorClass`           | defaults to `htmx-indicator`                                                                                                                                               |
+| `htmx.config.requestClass`             | defaults to `htmx-request`                                                                                                                                                 |
+| `htmx.config.addedClass`               | defaults to `htmx-added`                                                                                                                                                   |
+| `htmx.config.settlingClass`            | defaults to `htmx-settling`                                                                                                                                                |
+| `htmx.config.swappingClass`            | defaults to `htmx-swapping`                                                                                                                                                |
+| `htmx.config.allowEval`                | defaults to `true`, can be used to disable htmx's use of eval for certain features (e.g. trigger filters)                                                                  |
+| `htmx.config.allowScriptTags`          | defaults to `true`, determines if htmx will process script tags found in new content                                                                                       |
+| `htmx.config.inlineScriptNonce`        | defaults to `''`, meaning that no nonce will be added to inline scripts                                                                                                    |
+| `htmx.config.inlineStyleNonce`         | defaults to `''`, meaning that no nonce will be added to inline styles                                                                                                     |
+| `htmx.config.attributesToSettle`       | defaults to `["class", "style", "width", "height"]`, the attributes to settle during the settling phase                                                                    |
+| `htmx.config.wsReconnectDelay`         | defaults to `full-jitter`                                                                                                                                                  |
+| `htmx.config.wsBinaryType`             | defaults to `blob`, the [the type of binary data](https://developer.mozilla.org/docs/Web/API/WebSocket/binaryType) being received over the WebSocket connection            |
+| `htmx.config.disableSelector`          | defaults to `[hx-disable], [data-hx-disable]`, htmx will not process elements with this attribute on it or a parent                                                        |
+| `htmx.config.disableInheritance`       | defaults to `false`. If it is set to `true`, the inheritance of attributes is completely disabled and you can explicitly specify the inheritance with the [hx-inherit](@/attributes/hx-inherit.md) attribute.
+| `htmx.config.withCredentials`          | defaults to `false`, allow cross-site Access-Control requests using credentials such as cookies, authorization headers or TLS client certificates                          |
+| `htmx.config.timeout`                  | defaults to 0, the number of milliseconds a request can take before automatically being terminated                                                                         |
+| `htmx.config.scrollBehavior`           | defaults to 'instant', the scroll behavior when using the [show](@/attributes/hx-swap.md#scrolling-scroll-show) modifier with `hx-swap`. The allowed values are `instant` (scrolling should happen instantly in a single jump), `smooth` (scrolling should animate smoothly) and `auto` (scroll behavior is determined by the computed value of [scroll-behavior](https://developer.mozilla.org/en-US/docs/Web/CSS/scroll-behavior)). |
+| `htmx.config.defaultFocusScroll`       | if the focused element should be scrolled into view, defaults to false and can be overridden using the [focus-scroll](@/attributes/hx-swap.md#focus-scroll) swap modifier. |
+| `htmx.config.getCacheBusterParam`      | defaults to false, if set to true htmx will append the target element to the `GET` request in the format `org.htmx.cache-buster=targetElementId`                           |
+| `htmx.config.globalViewTransitions`    | if set to `true`, htmx will use the [View Transition](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API) API when swapping in new content.             |
+| `htmx.config.methodsThatUseUrlParams`  | defaults to `["get", "delete"]`, htmx will format requests with these methods by encoding their parameters in the URL, not the request body                                |
+| `htmx.config.selfRequestsOnly`         | defaults to `true`, whether to only allow AJAX requests to the same domain as the current document                                                             |
+| `htmx.config.ignoreTitle`              | defaults to `false`, if set to `true` htmx will not update the title of the document when a `title` tag is found in new content                                            |
+| `htmx.config.scrollIntoViewOnBoost`    | defaults to `true`, whether or not the target of a boosted element is scrolled into the viewport. If `hx-target` is omitted on a boosted element, the target defaults to `body`, causing the page to scroll to the top. |
+| `htmx.config.triggerSpecsCache`        | defaults to `null`, the cache to store evaluated trigger specifications into, improving parsing performance at the cost of more memory usage. You may define a simple object to use a never-clearing cache, or implement your own system using a [proxy object](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Proxy) |
+| `htmx.config.responseHandling`         | the default [Response Handling](@/docs.md#response-handling) behavior for response status codes can be configured here to either swap or error                             |
+| `htmx.config.allowNestedOobSwaps`      | defaults to `true`, whether to process OOB swaps on elements that are nested within the main response element. See [Nested OOB Swaps](@/attributes/hx-swap-oob.md#nested-oob-swaps). |
+| `htmx.config.historyRestoreAsHxRequest`| defaults to `true`, Whether to treat history cache miss full page reload requests as a "HX-Request" by returning this response header. This should always be disabled when using HX-Request header to optionally return partial responses                                                                                                         |
+
+
+</div>
+
+You can set them directly in javascript, or you can use a `meta` tag:
+
+```html
+<meta name="htmx-config" content='{"defaultSwapStyle":"outerHTML"}'>
+```</doc><doc title="Starlette quick guide" desc="A quick overview of some Starlette features useful to FastHTML devs."># 🌟 Starlette Quick Manual
+
+
+2020-02-09
+
+Starlette is the ASGI web framework used as the foundation of FastHTML. Listed here are some Starlette features FastHTML developers can use directly, since the `FastHTML` class inherits from the `Starlette` class (but note that FastHTML has its own customised `RouteX` and `RouterX` classes for routing, to handle FT element trees etc).
+
+## Get uploaded file content
+
+```
+async def handler(request):
+    inp = await request.form()
+    uploaded_file = inp["filename"]
+    filename = uploaded_file.filename           # abc.png
+    content_type = uploaded.content_type    # MIME type, e.g. image/png
+    content = await uploaded_file.read()       # image content
+
+```
+
+## Return a customized response (status code and headers)
+
+```
+import json
+from starlette.responses import Response
+
+async def handler(request):
+    data = {
+        "name": "Bo"
+    }
+    return Response(json.dumps(data), media_type="application/json")
+
+```
+
+`Response` takes `status_code`, `headers` and `media_type`, so if we want to change a response's status code, we can do:
+
+```
+return Response(content, statu_code=404)
+
+```
+
+And customized headers:
+
+```
+headers = {
+	"x-extra-key": "value"
+}
+return Response(content, status_code=200, headers=headers)
+
+```
+
+## Redirect
+
+```
+from starlette.responses import RedirectResponse
+
+async handler(request):
+    # Customize status_code: 
+    #   301: permanent redirect 
+    #   302: temporary redirect 
+    #   303: see others
+    #   307: temporary redirect (default)
+    return RedirectResponse(url=url, status_code=303)
+
+```
+
+## Request context
+
+### URL Object: `request.url`
+
+  * Get request full url: `url = str(request.url)`
+  * Get scheme: `request.url.scheme` (http, https, ws, wss)
+  * Get netloc: `request.url.netloc`, e.g.: example.com:8080
+  * Get path: `request.url.path`, e.g.: /search
+  * Get query string: `request.url.query`, e.g.: kw=hello
+  * Get hostname: `request.url.hostname`, e.g.: example.com
+  * Get port: `request.url.port`, e.g.: 8080
+  * If using secure scheme: `request.url.is_secure`, True is schme is `https` or `wss`
+
+### Headers: `request.headers`
+
+```
+{
+    'host': 'example.com:8080', 
+    'connection': 'keep-alive', 
+    'cache-control': 'max-age=0', 
+    'sec-ch-ua': 'Google Chrome 80', 
+    'dnt': '1', 
+    'upgrade-insecure-requests': '1', 
+    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) ...',
+    'sec-fetch-dest': 'document', 
+    'accept': 'text/html,image/apng,*/*;q=0.8;v=b3;q=0.9', 
+    'sec-origin-policy': '0', 
+    'sec-fetch-site': 'none', 
+    'sec-fetch-mode': 'navigate', 
+    'sec-fetch-user': '?1', 
+    'accept-encoding': 'gzip, deflate, br', 
+    'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7,zh-TW;q=0.6', 
+    'cookie': 'session=eyJhZG1pbl91c2_KiQ...'
+}
+
+```
+
+### Client: `request.client`
+
+  * `request.client.host`: get client sock IP
+  * `request.client.port`: get client sock port
+
+### Method: `request.method`
+
+  * `request.method`: GET, POST, etc.
+
+### Get Data
+
+  * `await request.body()`: get raw data from body
+  * `await request.json()`: get passed data and parse it as JSON
+  * `await request.form()`: get posted data and pass it as dictionary
+
+### Scope: `request.scope`
+
+```
+{
+    'type': 'http', 
+    'http_version': '1.1', 
+    'server': ('127.0.0.1', 9092), 
+    'client': ('127.0.0.1', 53102), 
+    'scheme': 'https', 
+    'method': 'GET', 
+    'root_path': '', 
+    'path': '/', 
+    'raw_path': b'/', 
+    'query_string': b'kw=hello', 
+    'headers': [
+        (b'host', b'example.com:8080'), 
+        (b'connection', b'keep-alive'), 
+        (b'cache-control', b'max-age=0'), 
+        ...
+    ], 
+    'app': <starlette.applications.Starlette object at 0x1081bd650>, 
+    'session': {'uid': '57ba03ea7333f72a25f837cf'}, 
+    'router': <starlette.routing.Router object at 0x1081bd6d0>, 
+    'endpoint': <class 'app.index.Index'>, 
+    'path_params': {}
+}
+
+```
+
+## Put varaible in request & app scope
+
+```
+app.state.dbconn = get_db_conn()
+request.state.start_time = time.time()
+# use app-scope state variable in a request
+request.app.state.dbconn
+
+```
+
+## Utility functions
+
+### Use `State` to wrap a dictionary
+
+```
+from starlette.datastructures import State
+
+data = {
+    "name": "Bo"
+}
+print(data["name"])
+# now wrap it with State function
+wrapped = State(data)
+# You can use the dot syntaxt, but can't use `wrapped["name"]` any more.
+print(wrapped.name)
+
+```
+
+### login_required wrapper function
+
+NB: This is easier to do in FastHTML using Beforeware.
+
+```
+import functools
+from starlette.endpoints import HTTPEndpoint
+from starlette.responses import Response
+
+def login_required(login_url="/signin"):
+    def decorator(handler):
+        @functools.wraps(handler)
+        async def new_handler(obj, req, *args, **kwargs):
+            user = req.session.get("login_user")
+            if user is None:
+                return seeother(login_url)
+            return await handler(obj, req, *args, **kwargs)
+        return new_handler
+    return decorator
+
+class MyAccount(HTTPEndpiont):
+    @login_required()
+    async def get(self, request):
+        # some logic here
+        content = "hello"
+        return Response(content)
+
+```
+
+## Exceptions
+
+Handle exception and customize 403, 404, 503, 500 page:
+
+```
+from starlette.exceptions import HTTPException
+
+async def exc_handle_403(request, exc):
+    return HTMLResponse("My 403 page", status_code=exc.status_code)
+
+async def exc_handle_404(request, exc):
+    return HTMLResponse("My 404 page", status_code=exc.status_code)
+
+async def exc_handle_503(request, exc):
+    return HTMLResponse("Failed, please try it later", status_code=exc.status_code)
+
+# error is not exception, 500 is server side unexpected error, all other status code will be treated as Exception
+async def err_handle_500(request, exc):
+    import traceback
+    Log.error(traceback.format_exc())
+    return HTMLResponse("My 500 page", status_code=500)
+
+# To add handler, we can add either status_code or Exception itself as key
+exception_handlers = {
+    403: exc_handle_403,
+    404: exc_handle_404,
+    503: exc_handle_503,
+    500: err_handle_500,
+    #HTTPException: exc_handle_500,
+}
+
+app = Starlette(routes=routes, exception_handlers=exception_handlers)
+
+```
+
+## Background Task
+
+### Put some async task as background task
+
+```
+import aiofiles
+from starlette.background import BackgroundTask
+from starlette.responses import Response
+
+aiofiles_remove = aiofiles.os.wrap(os.remove)
+
+async def del_file(fpath):
+    await aiofiles_remove(fpath)
+
+async def handler(request):
+    content = ""
+    fpath = "/tmp/tmpfile.txt"
+    task = BackgroundTask(del_file, fpath=fpath)
+    return Response(content, background=task)
+
+```
+
+### Put multiple tasks as background task
+
+```
+from starlette.background import BackgroundTasks
+
+async def task1(name):
+    pass
+
+async def task2(email):
+    pass
+
+async def handler(request):
+    tasks = BackgroundTasks()
+    tasks.add_task(task1, name="John")
+    tasks.add_task(task2, email="info@example.com")
+    content = ""
+    return Response(content, background=tasks)
+
+```
+
+## Write middleware
+
+There are 2 ways to write middleware:
+
+### Define `__call__` function:
+
+```
+class MyMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        # see above scope dictionary as reference
+        headers = dict(scope["headers"])
+        # do something
+        # pass to next middleware
+        return await self.app(scope, receive, send)
+
+```
+
+### Use `BaseHTTPMiddleware`
+
+```
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class CustomHeaderMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # do something before pass to next middleware
+        response = await call_next(request)
+        # do something after next middleware returned
+        response.headers['X-Author'] = 'John'
+        return response
+
+```</doc></docs>
