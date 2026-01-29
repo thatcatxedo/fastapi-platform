@@ -9,13 +9,14 @@ Make FastAPI prototyping feel instant, safe, and productive: edit → validate �
 deploy → iterate, with clear feedback, multi-file projects, and optional AI
 assistance.
 
-## Phase 0 — Foundations (now)
+## Phase 0 — Foundations (complete / in progress)
 
 - Solidify deploy UX (validate + deploy stages + error clarity).
 - Deployment manifests in `deploy/` with overlays.
 - Local dev cluster workflows documented.
+- Logs + deployment events shipped (basic lifecycle visibility).
 
-## Phase 1 — Drafts & App Lifecycle (near-term)
+## Phase 1 — Drafts, Lifecycle, and Safety (near-term)
 
 **Goal:** enable iteration without deployment and show deploy freshness.
 
@@ -23,12 +24,22 @@ assistance.
   - Explicit “Save Draft” action.
   - Backend stores draft code + timestamp.
   - Dashboard and Editor show “Saved vs Deployed” status.
+- Versioning / Clone
+  - Keep lightweight deploy history (N versions).
+  - “Revert to last good deploy” action.
+  - “Clone app” creates a new app from latest draft or last deployed.
 - Deployed vs Latest
   - Track last deployed code hash and draft hash.
   - UI indicator: “Up to date” vs “Not deployed”.
 - Clone App
   - Duplicate app with new ID and code from latest draft or last deployed.
   - Optional “clone with templates only” path for clean-start.
+- Rollback / Version History
+  - Keep basic deploy history (N versions).
+  - “Revert to last good deploy” action.
+- App Settings (env + secrets)
+  - Per-app environment variables (scoped secrets/config).
+  - UI for add/edit with validation and safe defaults.
 
 ## Phase 2 — Multi-File Mode (core builder workflow)
 
@@ -58,6 +69,7 @@ assistance.
 - Implementation options
   - Minimal: Ingress/Traefik metrics + app labels.
   - Later: OpenTelemetry / Prometheus scraping.
+  - Note: logs/events already provide basic observability; metrics can be a later increment.
 
 ## Phase 4 — Batteries-Included Auth (opt-in)
 
@@ -70,6 +82,37 @@ assistance.
   - Lightweight auth helper module or starter files.
 - Future: platform-managed auth service
   - Central user store + per-app access rules.
+
+## Phase 4.5 — Custom Dependencies (builder escape hatch)
+
+**Goal:** unlock real-world apps that need extra Python packages.
+
+- Allow-list extensions (curated defaults + per-app additions).
+- Build-time dependency install or dynamic runtime install.
+- UI for dependency management with safe constraints.
+
+## Phase 4.7 — FastHTML Example Template
+
+**Goal:** offer an HTML-first template for builder workflows.
+
+- Add a FastHTML starter template (server-rendered UI, HTMX-ready).
+- Update validation allow-list to permit `fasthtml` imports.
+- Ensure runner image includes `fasthtml` and optional `fastlite`.
+
+## Phase 5 — Per-App Data Services (optional)
+
+**Goal:** reduce friction for apps that need persistence.
+
+- Optional per-app MongoDB (single-tenant or shared with isolation).
+- Simple connection provisioning (inject `MONGO_URI` automatically).
+- Guardrails for cost and cleanup (TTL, storage limits).
+
+## Phase 6 — GridFS Templates (advanced)
+
+**Goal:** enable file-backed app patterns with low setup.
+
+- Templates that demonstrate GridFS usage (file upload, retrieval).
+- Reference UI for file-backed APIs (e.g., image store, document store).
 
 ## Phase 5 — LLM Assistant (builder accelerator)
 
