@@ -6,7 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Multi-tenant platform where users write FastAPI code in a web editor and deploy it as isolated Kubernetes applications. Each user app runs as a separate pod with code mounted via ConfigMap.
 
-**Live at**: `platform.gofastapi.xyz`
+**Live at**: `platform.gofastapi.xyz` (prod) | `platform.gatorlunch.com` (homelab)
+
+## Quick Deploy
+
+```bash
+# Deploy to homelab environment (gatorlunch.com)
+cp .env.example .env
+# Edit .env if needed (defaults work for homelab)
+./deploy.sh
+
+# Teardown
+./undeploy.sh
+```
+
+**Prerequisites**:
+- cluster-foundation running (`../fastapi-platform-cluster-foundation/setup.sh`)
+- `gh` CLI authenticated with `read:packages` scope (script will prompt if missing)
 
 ## Development Commands
 
@@ -84,7 +100,7 @@ GitHub Actions (`.github/workflows/build.yaml`) builds and pushes images on push
 ## Related Repositories
 
 - **homelab-cluster/**: GitOps repo with Flux, contains K8s manifests for deploying this platform
-- **fastapi-platform-cluster-foundation/**: WIP cluster baseline setup (k3d, Traefik, MongoDB, SOPS)
+- **fastapi-platform-cluster-foundation/**: Cluster baseline setup (k3d, Traefik, MongoDB, Cloudflared). Run `./setup.sh` to bootstrap a cluster, `./destroy.sh` to tear down.
 
 ## Kubectl Access
 
