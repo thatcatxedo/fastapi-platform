@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
-from typing import List, Optional
+from typing import List, Optional, Dict
 import os
 import bcrypt
 import secrets
@@ -105,10 +105,12 @@ class TokenResponse(BaseModel):
 class AppCreate(BaseModel):
     name: str
     code: str
+    env_vars: Optional[Dict[str, str]] = None
 
 class AppUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
+    env_vars: Optional[Dict[str, str]] = None
 
 class AppResponse(BaseModel):
     id: str
@@ -125,6 +127,7 @@ class AppResponse(BaseModel):
 
 class AppDetailResponse(AppResponse):
     code: str
+    env_vars: Optional[Dict[str, str]] = None
 
 class AppStatusResponse(BaseModel):
     status: str
@@ -241,14 +244,16 @@ FORBIDDEN_PATTERNS = [
     r'urllib2',
 ]
 
-def validate_code(code: str) -> tuple[bool, Optional[str]]:
-    """Validate user code for syntax and security"""
+def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
+    """Validate user code for syntax and security.
+    Returns (is_valid, error_message, line_number)
+    """
     # Basic syntax check
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
-        return False, f"Syntax error: {e.msg} at line {e.lineno}"
-    
+        return False, f"Syntax error: {e.msg}", e.lineno
+
     # Check that FastAPI app is created
     has_fastapi_app = False
     for node in ast.walk(tree):
@@ -259,29 +264,32 @@ def validate_code(code: str) -> tuple[bool, Optional[str]]:
                         if isinstance(node.value.func, ast.Name) and node.value.func.id == 'FastAPI':
                             has_fastapi_app = True
                             break
-    
+
     if not has_fastapi_app:
-        return False, "Code must create a FastAPI app instance (e.g., app = FastAPI())"
-    
+        return False, "Code must create a FastAPI app instance (e.g., app = FastAPI())", None
+
     # Security checks - check imports
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 module_name = alias.name.split('.')[0]
                 if module_name not in ALLOWED_IMPORTS:
-                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}"
+                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 module_name = node.module.split('.')[0]
                 if module_name not in ALLOWED_IMPORTS:
-                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}"
-    
+                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+
     # Check for forbidden patterns
     for pattern in FORBIDDEN_PATTERNS:
-        if re.search(pattern, code, re.IGNORECASE):
-            return False, f"Forbidden pattern detected: {pattern}"
-    
-    return True, None
+        match = re.search(pattern, code, re.IGNORECASE)
+        if match:
+            # Find line number of the match
+            line_num = code[:match.start()].count('\n') + 1
+            return False, f"Forbidden pattern detected: {pattern}", line_num
+
+    return True, None, None
 
 def error_payload(code: str, message: str, details: Optional[dict] = None) -> dict:
     return {
@@ -406,11 +414,11 @@ async def list_apps(user: dict = Depends(get_current_user)):
 @app.post("/api/apps", response_model=AppResponse)
 async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)):
     # Validate code
-    is_valid, error_msg = validate_code(app_data.code)
+    is_valid, error_msg, error_line = validate_code(app_data.code)
     if not is_valid:
         raise HTTPException(
             status_code=400,
-            detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}")
+            detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
         )
     
     # Generate unique app_id (lowercase alphanumeric only for Kubernetes compliance)
@@ -422,6 +430,7 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
         "app_id": app_id,
         "name": app_data.name,
         "code": app_data.code,
+        "env_vars": app_data.env_vars or {},
         "status": "deploying",
         "deploy_stage": "deploying",
         "last_error": None,
@@ -476,6 +485,7 @@ async def get_app(app_id: str, user: dict = Depends(get_current_user)):
         app_id=app["app_id"],
         name=app["name"],
         code=app["code"],
+        env_vars=app.get("env_vars"),
         status=app["status"],
         created_at=app["created_at"].isoformat(),
         last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
@@ -493,22 +503,30 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
         raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
     
     update_data = {}
+    needs_redeploy = False
+
     if app_data.name is not None:
         update_data["name"] = app_data.name
     if app_data.code is not None:
         # Validate code
-        is_valid, error_msg = validate_code(app_data.code)
+        is_valid, error_msg, error_line = validate_code(app_data.code)
         if not is_valid:
             raise HTTPException(
                 status_code=400,
-                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}")
+                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
             )
         update_data["code"] = app_data.code
+        needs_redeploy = True
+    if app_data.env_vars is not None:
+        update_data["env_vars"] = app_data.env_vars
+        needs_redeploy = True
+
+    if needs_redeploy:
         update_data["status"] = "deploying"
         update_data["deploy_stage"] = "deploying"
         update_data["last_error"] = None
         update_data["last_deploy_at"] = datetime.utcnow()
-    
+
     if not update_data:
         raise HTTPException(status_code=400, detail=error_payload("INVALID_REQUEST", "No fields to update"))
     
@@ -516,9 +534,9 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
         {"_id": app["_id"]},
         {"$set": update_data}
     )
-    
-    # Update deployment if code changed
-    if app_data.code is not None:
+
+    # Update deployment if code or env_vars changed
+    if needs_redeploy:
         updated_app = await apps_collection.find_one({"_id": app["_id"]})
         try:
             await update_app_deployment(updated_app, user)
@@ -600,20 +618,20 @@ async def get_app_status(app_id: str, user: dict = Depends(get_current_user)):
 
 @app.post("/api/apps/validate")
 async def validate_app_code(payload: ValidateRequest, user: dict = Depends(get_current_user)):
-    is_valid, error_msg = validate_code(payload.code)
+    is_valid, error_msg, error_line = validate_code(payload.code)
     if not is_valid:
-        return {"valid": False, "message": error_msg}
-    return {"valid": True, "message": "Code validation passed"}
+        return {"valid": False, "message": error_msg, "line": error_line}
+    return {"valid": True, "message": "Code validation passed", "line": None}
 
 @app.post("/api/apps/{app_id}/validate")
 async def validate_existing_app(app_id: str, payload: ValidateRequest, user: dict = Depends(get_current_user)):
     app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
     if not app:
         raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
-    is_valid, error_msg = validate_code(payload.code)
+    is_valid, error_msg, error_line = validate_code(payload.code)
     if not is_valid:
-        return {"valid": False, "message": error_msg}
-    return {"valid": True, "message": "Code validation passed"}
+        return {"valid": False, "message": error_msg, "line": error_line}
+    return {"valid": True, "message": "Code validation passed", "line": None}
 
 @app.get("/api/apps/{app_id}/deploy-status", response_model=AppDeployStatusResponse)
 async def get_app_deploy_status(app_id: str, user: dict = Depends(get_current_user)):

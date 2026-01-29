@@ -405,3 +405,14 @@ body {
   color: var(--text);
   flex: 1;
 }
+
+/* Monaco Editor Error Line Highlighting */
+.error-line-highlight {
+  background: rgba(220, 38, 38, 0.2) !important;
+}
+
+.error-line-glyph {
+  background: var(--error) !important;
+  width: 4px !important;
+  margin-left: 3px !important;
+}

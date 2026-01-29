@@ -36,10 +36,19 @@ function EditorPage({ user }) {
   const [validationMessage, setValidationMessage] = useState('')
   const [editorHeight, setEditorHeight] = useState(500)
   const editorContainerRef = useRef(null)
+  const editorRef = useRef(null)
+  const monacoRef = useRef(null)
+  const decorationsRef = useRef([])
   const [templates, setTemplates] = useState([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selectedComplexity, setSelectedComplexity] = useState('all')
   const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [envVars, setEnvVars] = useState([])  // [{key: '', value: ''}]
+  const [showEnvValues, setShowEnvValues] = useState({})  // {index: true/false}
+  const [envVarsExpanded, setEnvVarsExpanded] = useState(false)
+  const [deployStartTime, setDeployStartTime] = useState(null)
+  const [deployDuration, setDeployDuration] = useState(null)
+  const [copiedCurl, setCopiedCurl] = useState(false)
 
   useEffect(() => {
     if (appId) {
@@ -125,6 +134,12 @@ function EditorPage({ user }) {
       if (app.error_message) {
         setError(app.error_message)
       }
+      // Load existing env vars
+      if (app.env_vars && Object.keys(app.env_vars).length > 0) {
+        const envVarsList = Object.entries(app.env_vars).map(([key, value]) => ({ key, value }))
+        setEnvVars(envVarsList)
+        setEnvVarsExpanded(true)
+      }
     } catch (err) {
       setError(err.message)
     }
@@ -155,10 +170,15 @@ function EditorPage({ user }) {
           setDeployStage(status.deploy_stage || status.status || 'deploying')
           
           if (status.status === 'running' && status.deployment_ready) {
+            // Calculate deploy duration
+            if (deployStartTime) {
+              const duration = ((Date.now() - deployStartTime) / 1000).toFixed(1)
+              setDeployDuration(duration)
+            }
             setSuccess('App deployed successfully!')
             setTimeout(() => {
               navigate('/dashboard')
-            }, 2000)
+            }, 3000)  // Give a bit more time to see the duration
             return true
           } else if (status.status === 'error') {
             setError(status.last_error || status.error_message || 'Deployment failed')
@@ -218,8 +238,12 @@ function EditorPage({ user }) {
       if (!data.valid) {
         setDeployStage('error')
         setError(data.message || 'Validation failed')
+        if (data.line) {
+          highlightErrorLine(data.line)
+        }
         return
       }
+      clearErrorHighlight()
 
       setValidationMessage(data.message || 'Code validation passed')
       setDeployStage('validated')
@@ -243,6 +267,7 @@ function EditorPage({ user }) {
     setLoading(true)
     setDeployStage('deploying')
     setValidationMessage('')
+    setDeployDuration(null)
 
     if (!window.confirm(`Deploy "${name.trim()}" now?`)) {
       setLoading(false)
@@ -252,11 +277,12 @@ function EditorPage({ user }) {
 
     try {
       const token = localStorage.getItem('token')
-      const url = isEditing 
+      const url = isEditing
         ? `${API_URL}/api/apps/${appId}`
         : `${API_URL}/api/apps`
-      
+
       const method = isEditing ? 'PUT' : 'POST'
+      setDeployStartTime(Date.now())
 
       const response = await fetch(url, {
         method,
@@ -266,7 +292,11 @@ function EditorPage({ user }) {
         },
         body: JSON.stringify({
           name: name.trim(),
-          code: code
+          code: code,
+          env_vars: envVars.reduce((acc, { key, value }) => {
+            if (key.trim()) acc[key.trim()] = value
+            return acc
+          }, {})
         })
       })
 
@@ -286,11 +316,104 @@ function EditorPage({ user }) {
     }
   }
 
+  // Env vars helpers
+  const addEnvVar = () => {
+    setEnvVars([...envVars, { key: '', value: '' }])
+    setEnvVarsExpanded(true)
+  }
+
+  const removeEnvVar = (index) => {
+    setEnvVars(envVars.filter((_, i) => i !== index))
+    const newShowValues = { ...showEnvValues }
+    delete newShowValues[index]
+    setShowEnvValues(newShowValues)
+  }
+
+  const updateEnvVar = (index, field, value) => {
+    const newEnvVars = [...envVars]
+    newEnvVars[index][field] = value
+    setEnvVars(newEnvVars)
+  }
+
+  const toggleShowValue = (index) => {
+    setShowEnvValues({ ...showEnvValues, [index]: !showEnvValues[index] })
+  }
+
+  const isValidEnvVarKey = (key) => {
+    return /^[A-Z_][A-Z0-9_]*$/i.test(key)
+  }
+
+  // Monaco editor handlers
+  const handleEditorMount = (editor, monaco) => {
+    editorRef.current = editor
+    monacoRef.current = monaco
+
+    // Keyboard shortcuts
+    // Ctrl/Cmd + S = Prevent browser save dialog
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      // Future: save draft. For now, just prevent default.
+    })
+
+    // Ctrl/Cmd + Enter = Deploy
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+      handleDeploy()
+    })
+
+    // Ctrl/Cmd + Shift + V = Validate
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyV,
+      () => handleValidate()
+    )
+  }
+
+  // Copy to clipboard helper
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedCurl(true)
+      setTimeout(() => setCopiedCurl(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+
+  const getCurlSnippet = (url) => {
+    return `curl ${url}`
+  }
+
+  const highlightErrorLine = (lineNumber) => {
+    if (!editorRef.current || !monacoRef.current || !lineNumber) return
+
+    decorationsRef.current = editorRef.current.deltaDecorations(
+      decorationsRef.current,
+      [{
+        range: new monacoRef.current.Range(lineNumber, 1, lineNumber, 1),
+        options: {
+          isWholeLine: true,
+          className: 'error-line-highlight',
+          glyphMarginClassName: 'error-line-glyph'
+        }
+      }]
+    )
+
+    // Scroll to error line
+    editorRef.current.revealLineInCenter(lineNumber)
+  }
+
+  const clearErrorHighlight = () => {
+    if (editorRef.current) {
+      decorationsRef.current = editorRef.current.deltaDecorations(
+        decorationsRef.current,
+        []
+      )
+    }
+  }
+
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      height: 'calc(100vh - 140px)', 
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: 'calc(100vh - 140px)',
       minHeight: 0,
       overflow: 'hidden'
     }}>
@@ -308,11 +431,12 @@ function EditorPage({ user }) {
               onClick={() => setSidebarOpen(!sidebarOpen)}
               style={{
                 padding: '0.5rem',
-                background: 'var(--bg-secondary)',
+                background: 'var(--bg-lighter)',
                 border: '1px solid var(--border)',
                 borderRadius: '0.5rem',
                 cursor: 'pointer',
-                fontSize: '1.2rem'
+                fontSize: '1.2rem',
+                color: 'var(--text)'
               }}
               title="Toggle Templates"
             >
@@ -364,10 +488,48 @@ function EditorPage({ user }) {
         )}
         {success && (
           <div className="success" style={{ marginBottom: '0.5rem', padding: '0.75rem' }}>
-            <strong>Success!</strong> {success}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <strong>Success!</strong> {success}
+                {deployDuration && (
+                  <span style={{ marginLeft: '0.5rem', color: 'var(--success)', fontWeight: '600' }}>
+                    ({deployDuration}s)
+                  </span>
+                )}
+              </div>
+              {deployingAppId && deploymentStatus?.status === 'running' && (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <a
+                    href={`${window.location.origin}/user/${user.id}/app/${deployingAppId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                  >
+                    Open App
+                  </a>
+                  <a
+                    href={`${window.location.origin}/user/${user.id}/app/${deployingAppId}/docs`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                  >
+                    API Docs
+                  </a>
+                  <button
+                    onClick={() => copyToClipboard(getCurlSnippet(`${window.location.origin}/user/${user.id}/app/${deployingAppId}`))}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                  >
+                    {copiedCurl ? 'Copied!' : 'Copy curl'}
+                  </button>
+                </div>
+              )}
+            </div>
             {deployingAppId && (
-              <div style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>
-                Your app will be available at: <code>{window.location.origin}/user/{user.id}/app/{deployingAppId}</code>
+              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                URL: <code>{window.location.origin}/user/{user.id}/app/{deployingAppId}</code>
               </div>
             )}
           </div>
@@ -419,7 +581,7 @@ function EditorPage({ user }) {
         {!isEditing && sidebarOpen && (
           <div style={{
             width: '300px',
-            background: 'var(--bg-secondary)',
+            background: 'var(--bg-light)',
             border: '1px solid var(--border)',
             borderRadius: '0.5rem',
             padding: '1rem',
@@ -518,18 +680,18 @@ function EditorPage({ user }) {
         {/* Main editor area */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
           {/* App Name input - compact */}
-          <div style={{ 
-            marginBottom: '0.75rem', 
-            padding: '0.5rem 0.75rem', 
+          <div style={{
+            marginBottom: '0.75rem',
+            padding: '0.5rem 0.75rem',
             background: 'var(--bg-light)',
             border: '1px solid var(--border)',
             borderRadius: '0.5rem',
-            flexShrink: 0 
+            flexShrink: 0
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <label style={{ 
-                margin: 0, 
-                fontSize: '0.75rem', 
+              <label style={{
+                margin: 0,
+                fontSize: '0.75rem',
                 color: 'var(--text-muted)',
                 whiteSpace: 'nowrap',
                 fontWeight: '500'
@@ -542,9 +704,9 @@ function EditorPage({ user }) {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="fastapi-application"
                 required
-                style={{ 
+                style={{
                   flex: 1,
-                  padding: '0.375rem 0.5rem', 
+                  padding: '0.375rem 0.5rem',
                   fontSize: '0.875rem',
                   background: 'var(--bg)',
                   border: '1px solid var(--border)',
@@ -556,6 +718,142 @@ function EditorPage({ user }) {
                 onBlur={(e) => e.target.style.borderColor = 'var(--border)'}
               />
             </div>
+          </div>
+
+          {/* Environment Variables - collapsible */}
+          <div style={{
+            marginBottom: '0.75rem',
+            background: 'var(--bg-light)',
+            border: '1px solid var(--border)',
+            borderRadius: '0.5rem',
+            flexShrink: 0
+          }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.5rem 0.75rem',
+                cursor: 'pointer'
+              }}
+              onClick={() => setEnvVarsExpanded(!envVarsExpanded)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {envVarsExpanded ? '▼' : '▶'}
+                </span>
+                <label style={{
+                  margin: 0,
+                  fontSize: '0.75rem',
+                  color: 'var(--text-muted)',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}>
+                  Environment Variables {envVars.length > 0 && `(${envVars.length})`}
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); addEnvVar(); }}
+                className="btn btn-secondary"
+                style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+              >
+                + Add
+              </button>
+            </div>
+
+            {envVarsExpanded && (
+              <div style={{ padding: '0 0.75rem 0.75rem 0.75rem' }}>
+                {envVars.length === 0 ? (
+                  <div style={{
+                    color: 'var(--text-muted)',
+                    fontSize: '0.75rem',
+                    padding: '0.5rem',
+                    textAlign: 'center'
+                  }}>
+                    No environment variables. Click "+ Add" to add one.
+                    <br />
+                    <span style={{ fontSize: '0.7rem' }}>
+                      Access in code: <code>import os; os.environ.get("KEY")</code>
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {envVars.map((env, index) => (
+                      <div key={index} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={env.key}
+                          onChange={(e) => updateEnvVar(index, 'key', e.target.value.toUpperCase())}
+                          placeholder="KEY_NAME"
+                          style={{
+                            flex: 1,
+                            padding: '0.375rem 0.5rem',
+                            fontSize: '0.8rem',
+                            background: 'var(--bg)',
+                            border: `1px solid ${env.key && !isValidEnvVarKey(env.key) ? 'var(--error)' : 'var(--border)'}`,
+                            borderRadius: '0.375rem',
+                            color: 'var(--text)',
+                            fontFamily: 'monospace'
+                          }}
+                        />
+                        <div style={{ flex: 2, display: 'flex', gap: '0.25rem' }}>
+                          <input
+                            type={showEnvValues[index] ? 'text' : 'password'}
+                            value={env.value}
+                            onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
+                            placeholder="value"
+                            style={{
+                              flex: 1,
+                              padding: '0.375rem 0.5rem',
+                              fontSize: '0.8rem',
+                              background: 'var(--bg)',
+                              border: '1px solid var(--border)',
+                              borderRadius: '0.375rem',
+                              color: 'var(--text)',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => toggleShowValue(index)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              fontSize: '0.7rem',
+                              background: 'var(--bg)',
+                              border: '1px solid var(--border)',
+                              borderRadius: '0.375rem',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              minWidth: '45px'
+                            }}
+                            title={showEnvValues[index] ? 'Hide value' : 'Show value'}
+                          >
+                            {showEnvValues[index] ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeEnvVar(index)}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            fontSize: '0.8rem',
+                            background: 'transparent',
+                            border: '1px solid var(--border)',
+                            borderRadius: '0.375rem',
+                            color: 'var(--error)',
+                            cursor: 'pointer'
+                          }}
+                          title="Remove"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Code Editor - takes remaining space */}
@@ -588,7 +886,11 @@ function EditorPage({ user }) {
             height={editorHeight}
             defaultLanguage="python"
             value={code}
-            onChange={(value) => setCode(value || '')}
+            onChange={(value) => {
+              setCode(value || '')
+              clearErrorHighlight()
+            }}
+            onMount={handleEditorMount}
             theme="vs-dark"
             options={{
               minimap: { enabled: true },
@@ -597,8 +899,14 @@ function EditorPage({ user }) {
               roundedSelection: false,
               scrollBeyondLastLine: false,
               automaticLayout: true,
+              glyphMargin: true,
             }}
           />
+        </div>
+        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem', textAlign: 'right' }}>
+          <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+Enter</kbd> Deploy
+          {' • '}
+          <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+Shift+V</kbd> Validate
         </div>
           </div>
         </div>

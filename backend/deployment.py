@@ -86,6 +86,15 @@ async def create_deployment(app_doc: dict, user: dict):
     user_id = str(user["_id"])
     deployment_name = f"app-{app_id}"
     
+    # Build environment variables list
+    env_list = [
+        k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py")
+    ]
+    # Add user-defined env vars
+    if app_doc.get("env_vars"):
+        for key, value in app_doc["env_vars"].items():
+            env_list.append(k8s_client.V1EnvVar(name=key, value=str(value)))
+
     # Container spec
     container = k8s_client.V1Container(
         name="runner",
@@ -98,9 +107,7 @@ async def create_deployment(app_doc: dict, user: dict):
                 sub_path="user_code.py"
             )
         ],
-        env=[
-            k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py")
-        ],
+        env=env_list,
         resources=k8s_client.V1ResourceRequirements(
             requests={"memory": "64Mi", "cpu": "50m"},
             limits={"memory": "128Mi", "cpu": "250m"}
@@ -354,36 +361,16 @@ async def create_app_deployment(app_doc: dict, user: dict):
         raise
 
 async def update_app_deployment(app_doc: dict, user: dict):
-    """Update deployment with new code"""
+    """Update deployment with new code and/or env vars"""
     try:
         # Update ConfigMap with new code
         await create_configmap(app_doc, user)
-        
-        # Restart deployment to pick up new code
-        if apps_v1:
-            app_id = app_doc["app_id"]
-            deployment_name = f"app-{app_id}"
-            
-            # Get current deployment
-            deployment = apps_v1.read_namespaced_deployment(
-                name=deployment_name,
-                namespace=PLATFORM_NAMESPACE
-            )
-            
-            # Update annotation on pod template to force restart
-            # This triggers a rolling update, creating new pods that mount the updated ConfigMap
-            if not deployment.spec.template.metadata:
-                deployment.spec.template.metadata = k8s_client.V1ObjectMeta()
-            if not deployment.spec.template.metadata.annotations:
-                deployment.spec.template.metadata.annotations = {}
-            deployment.spec.template.metadata.annotations["kubectl.kubernetes.io/restartedAt"] = datetime.utcnow().isoformat()
-            
-            apps_v1.patch_namespaced_deployment(
-                name=deployment_name,
-                namespace=PLATFORM_NAMESPACE,
-                body=deployment
-            )
-            logger.info(f"Restarted Deployment for app {app_id}")
+
+        # Recreate deployment to pick up new code and env vars
+        # This will patch the existing deployment with the updated spec
+        await create_deployment(app_doc, user)
+
+        logger.info(f"Updated Deployment for app {app_doc['app_id']}")
     except Exception as e:
         logger.error(f"Failed to update deployment for app {app_doc['app_id']}: {e}")
         raise
