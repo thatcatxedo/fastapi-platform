@@ -222,12 +222,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 # Code validation
 ALLOWED_IMPORTS = {
-    'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math', 
+    'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math',
     'random', 'string', 'collections', 'itertools', 'functools',
     'operator', 're', 'uuid', 'hashlib', 'base64', 'urllib.parse',
     'fasthtml', 'fastlite', 'os', 'sys', 'pathlib', 'time', 'enum',
     'dataclasses', 'decimal', 'html', 'http', 'copy', 'textwrap',
-    'calendar', 'locale', 'secrets', 'statistics'
+    'calendar', 'locale', 'secrets', 'statistics',
+    'pymongo', 'bson', 'jinja2'
 }
 
 FORBIDDEN_PATTERNS = [

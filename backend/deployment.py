@@ -7,6 +7,7 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,20 @@ except Exception as e:
 PLATFORM_NAMESPACE = os.getenv("PLATFORM_NAMESPACE", "fastapi-platform")
 RUNNER_IMAGE = os.getenv("RUNNER_IMAGE", "ghcr.io/thatcatxedo/fastapi-platform-runner:latest")
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "platform.gofastapi.xyz")
+
+def get_user_mongo_uri(user_id: str) -> str:
+    """Construct per-user MongoDB URI by replacing database name."""
+    base_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/fastapi_platform_db")
+    parsed = urlparse(base_uri)
+    user_db_path = f"/user_{user_id}"
+    return urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        user_db_path,
+        parsed.params,
+        parsed.query,
+        parsed.fragment
+    ))
 
 def get_app_labels(user_id: str, app_id: str) -> dict:
     """Get standard labels for app resources"""
@@ -88,7 +103,8 @@ async def create_deployment(app_doc: dict, user: dict):
     
     # Build environment variables list
     env_list = [
-        k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py")
+        k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py"),
+        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=get_user_mongo_uri(user_id))
     ]
     # Add user-defined env vars
     if app_doc.get("env_vars"):

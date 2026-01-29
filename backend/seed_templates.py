@@ -525,6 +525,95 @@ def index():
     "tags": ["html", "fasthtml", "htmx", "starter"]
 }
 
+FULLSTACK_MONGO_TEMPLATE = {
+    "name": "Full-Stack Notes App",
+    "description": "A complete full-stack app with MongoDB persistence and server-rendered HTML.",
+    "code": '''from fastapi import FastAPI, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pymongo import MongoClient
+from bson import ObjectId
+from datetime import datetime
+import os
+
+app = FastAPI()
+
+# Connect to platform-provided MongoDB
+client = MongoClient(os.environ.get("PLATFORM_MONGO_URI", "mongodb://localhost:27017/test"))
+db = client.get_default_database()
+notes = db.notes
+
+def render_page(title: str, content: str) -> str:
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>{title}</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: system-ui, sans-serif; background: #f5f5f5; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 0 auto; }}
+        h1 {{ color: #333; margin-bottom: 20px; }}
+        .card {{ background: white; border-radius: 8px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        input, textarea {{ width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; }}
+        button {{ background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }}
+        .note {{ border-left: 4px solid #667eea; }}
+        .delete {{ background: #e53e3e; font-size: 12px; padding: 5px 10px; }}
+    </style>
+</head>
+<body><div class="container">{content}</div></body>
+</html>"""
+
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    all_notes = list(notes.find().sort("created_at", -1))
+    notes_html = ""
+    for note in all_notes:
+        notes_html += f"""
+        <div class="card note">
+            <h3>{note['title']}</h3>
+            <p>{note['content']}</p>
+            <small>Created: {note['created_at'].strftime('%Y-%m-%d %H:%M')}</small>
+            <form action="/delete/{note['_id']}" method="post" style="display:inline; margin-left:10px;">
+                <button type="submit" class="delete">Delete</button>
+            </form>
+        </div>"""
+    if not notes_html:
+        notes_html = '<p style="color:#999;text-align:center;">No notes yet.</p>'
+
+    content = f"""
+        <h1>My Notes</h1>
+        <div class="card">
+            <form action="/create" method="post">
+                <input name="title" placeholder="Note title" required>
+                <textarea name="content" placeholder="Note content" rows="3" required></textarea>
+                <button type="submit">Add Note</button>
+            </form>
+        </div>
+        {notes_html}
+        <p style="margin-top:20px;color:#666;">Data persists in your database. <a href="/api/notes">JSON API</a></p>
+    """
+    return render_page("My Notes", content)
+
+@app.post("/create")
+async def create_note(title: str = Form(...), content: str = Form(...)):
+    notes.insert_one({"title": title, "content": content, "created_at": datetime.utcnow()})
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/delete/{note_id}")
+async def delete_note(note_id: str):
+    notes.delete_one({"_id": ObjectId(note_id)})
+    return RedirectResponse(url="/", status_code=303)
+
+@app.get("/api/notes")
+async def api_list_notes():
+    return [{"id": str(n["_id"]), "title": n["title"], "content": n["content"]} for n in notes.find()]
+''',
+    "complexity": "medium",
+    "is_global": True,
+    "user_id": None,
+    "created_at": datetime.utcnow(),
+    "tags": ["fullstack", "mongodb", "crud", "html", "persistence"]
+}
+
 async def ensure_indexes(templates_collection):
     """Ensure unique index on template name + is_global to prevent duplicates"""
     try:
@@ -560,7 +649,7 @@ async def seed_templates(client=None, force_update=False):
     # Ensure indexes for data integrity
     await ensure_indexes(templates_collection)
     
-    templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE]
+    templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE, FULLSTACK_MONGO_TEMPLATE]
     
     for template in templates_to_seed:
         # Use upsert (replace or insert) to ensure template is always present
