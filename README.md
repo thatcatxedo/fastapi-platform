@@ -205,6 +205,9 @@ your GitOps repo. See `docs/DEPLOYMENT.md` for usage.
 - `GET /api/apps` - List user's apps
 - `POST /api/apps` - Create/deploy new app
 - `GET /api/apps/{app_id}` - Get app details
+- `POST /api/apps/validate` - Validate code (draft)
+- `POST /api/apps/{app_id}/validate` - Validate code (existing app)
 - `PUT /api/apps/{app_id}` - Update app code (redeploy)
 - `DELETE /api/apps/{app_id}` - Delete app
 - `GET /api/apps/{app_id}/status` - Get deployment status
+- `GET /api/apps/{app_id}/deploy-status` - Get deploy stage and progress

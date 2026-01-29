@@ -119,6 +119,9 @@ class AppResponse(BaseModel):
     last_activity: Optional[str]
     deployment_url: str
     error_message: Optional[str] = None
+    deploy_stage: Optional[str] = None
+    last_error: Optional[str] = None
+    last_deploy_at: Optional[str] = None
 
 class AppDetailResponse(AppResponse):
     code: str
@@ -128,6 +131,19 @@ class AppStatusResponse(BaseModel):
     pod_status: Optional[str] = None
     error_message: Optional[str] = None
     deployment_ready: bool = False
+    deploy_stage: Optional[str] = None
+    last_error: Optional[str] = None
+
+class AppDeployStatusResponse(BaseModel):
+    status: str
+    deploy_stage: Optional[str] = None
+    deployment_ready: bool = False
+    pod_status: Optional[str] = None
+    last_error: Optional[str] = None
+    last_deploy_at: Optional[str] = None
+
+class ValidateRequest(BaseModel):
+    code: str
 
 class TemplateResponse(BaseModel):
     id: str
@@ -137,6 +153,32 @@ class TemplateResponse(BaseModel):
     complexity: str
     is_global: bool
     created_at: str
+
+class LogLine(BaseModel):
+    timestamp: Optional[str] = None
+    message: str
+
+class AppLogsResponse(BaseModel):
+    app_id: str
+    pod_name: Optional[str] = None
+    container: str = "runner"
+    logs: List[LogLine]
+    truncated: bool = False
+    error: Optional[str] = None
+
+class K8sEvent(BaseModel):
+    timestamp: str
+    type: str
+    reason: str
+    message: str
+    involved_object: str
+    count: int = 1
+
+class AppEventsResponse(BaseModel):
+    app_id: str
+    events: List[K8sEvent]
+    deployment_phase: str
+    error: Optional[str] = None
 
 # Auth utilities
 def hash_password(password: str) -> str:
@@ -241,6 +283,32 @@ def validate_code(code: str) -> tuple[bool, Optional[str]]:
     
     return True, None
 
+def error_payload(code: str, message: str, details: Optional[dict] = None) -> dict:
+    return {
+        "code": code,
+        "message": message,
+        "details": details
+    }
+
+def friendly_k8s_error(error_msg: str) -> str:
+    if "Invalid value" in error_msg and "metadata.name" in error_msg:
+        return "Invalid app name. Please use only lowercase letters, numbers, and hyphens."
+    if "already exists" in error_msg.lower():
+        return "An app with this name already exists. Please try again."
+    if "Forbidden" in error_msg or "403" in error_msg:
+        return "Permission denied. Please contact support."
+    if "not found" in error_msg.lower():
+        return "Resource not found. Please try again."
+    if "message" in error_msg:
+        try:
+            import json
+            error_dict = json.loads(error_msg.split("HTTP response body:")[-1].strip())
+            if "message" in error_dict:
+                return error_dict["message"]
+        except Exception:
+            pass
+    return error_msg
+
 # Routes
 @app.get("/")
 async def root():
@@ -311,7 +379,7 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
         created_at=user["created_at"].isoformat()
     )
 
-from deployment import create_app_deployment, delete_app_deployment, update_app_deployment, get_deployment_status
+from deployment import create_app_deployment, delete_app_deployment, update_app_deployment, get_deployment_status, get_pod_logs, get_app_events
 import logging
 
 logger = logging.getLogger(__name__)
@@ -328,7 +396,10 @@ async def list_apps(user: dict = Depends(get_current_user)):
             created_at=app["created_at"].isoformat(),
             last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
             deployment_url=app["deployment_url"],
-            error_message=app.get("error_message")
+            error_message=app.get("error_message"),
+            deploy_stage=app.get("deploy_stage"),
+            last_error=app.get("last_error"),
+            last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None
         ))
     return apps
 
@@ -337,7 +408,10 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
     # Validate code
     is_valid, error_msg = validate_code(app_data.code)
     if not is_valid:
-        raise HTTPException(status_code=400, detail=f"Code validation failed: {error_msg}")
+        raise HTTPException(
+            status_code=400,
+            detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}")
+        )
     
     # Generate unique app_id (lowercase alphanumeric only for Kubernetes compliance)
     app_id = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
@@ -349,6 +423,9 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
         "name": app_data.name,
         "code": app_data.code,
         "status": "deploying",
+        "deploy_stage": "deploying",
+        "last_error": None,
+        "last_deploy_at": datetime.utcnow(),
         "created_at": datetime.utcnow(),
         "last_activity": datetime.utcnow(),
         "deployment_url": f"/user/{str(user['_id'])}/app/{app_id}"
@@ -362,35 +439,16 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
         await create_app_deployment(app_doc, user)
         await apps_collection.update_one(
             {"_id": result.inserted_id},
-            {"$set": {"status": "running"}}
+            {"$set": {"status": "running", "deploy_stage": "running", "last_error": None}}
         )
     except Exception as e:
-        error_msg = str(e)
-        # Parse Kubernetes API errors for user-friendly messages
-        if "Invalid value" in error_msg and "metadata.name" in error_msg:
-            error_msg = "Invalid app name. Please use only lowercase letters, numbers, and hyphens."
-        elif "already exists" in error_msg.lower():
-            error_msg = "An app with this name already exists. Please try again."
-        elif "Forbidden" in error_msg or "403" in error_msg:
-            error_msg = "Permission denied. Please contact support."
-        elif "not found" in error_msg.lower():
-            error_msg = "Resource not found. Please try again."
-        else:
-            # Extract the main error message if it's a Kubernetes error
-            if "message" in error_msg:
-                import json
-                try:
-                    error_dict = json.loads(error_msg.split("HTTP response body:")[-1].strip())
-                    if "message" in error_dict:
-                        error_msg = error_dict["message"]
-                except:
-                    pass
+        error_msg = friendly_k8s_error(str(e))
         
         await apps_collection.update_one(
             {"_id": result.inserted_id},
-            {"$set": {"status": "error", "error_message": error_msg}}
+            {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
         )
-        raise HTTPException(status_code=500, detail=error_msg)
+        raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
     
     updated_app = await apps_collection.find_one({"_id": result.inserted_id})
     return AppResponse(
@@ -401,14 +459,17 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
         created_at=updated_app["created_at"].isoformat(),
         last_activity=updated_app.get("last_activity").isoformat() if updated_app.get("last_activity") else None,
         deployment_url=updated_app["deployment_url"],
-        error_message=updated_app.get("error_message")
+        error_message=updated_app.get("error_message"),
+        deploy_stage=updated_app.get("deploy_stage"),
+        last_error=updated_app.get("last_error"),
+        last_deploy_at=updated_app.get("last_deploy_at").isoformat() if updated_app.get("last_deploy_at") else None
     )
 
 @app.get("/api/apps/{app_id}", response_model=AppDetailResponse)
 async def get_app(app_id: str, user: dict = Depends(get_current_user)):
     app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
     if not app:
-        raise HTTPException(status_code=404, detail="App not found")
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
     
     return AppDetailResponse(
         id=str(app["_id"]),
@@ -419,14 +480,17 @@ async def get_app(app_id: str, user: dict = Depends(get_current_user)):
         created_at=app["created_at"].isoformat(),
         last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
         deployment_url=app["deployment_url"],
-        error_message=app.get("error_message")
+        error_message=app.get("error_message"),
+        deploy_stage=app.get("deploy_stage"),
+        last_error=app.get("last_error"),
+        last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None
     )
 
 @app.put("/api/apps/{app_id}", response_model=AppResponse)
 async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_current_user)):
     app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
     if not app:
-        raise HTTPException(status_code=404, detail="App not found")
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
     
     update_data = {}
     if app_data.name is not None:
@@ -435,12 +499,18 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
         # Validate code
         is_valid, error_msg = validate_code(app_data.code)
         if not is_valid:
-            raise HTTPException(status_code=400, detail=f"Code validation failed: {error_msg}")
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}")
+            )
         update_data["code"] = app_data.code
         update_data["status"] = "deploying"
+        update_data["deploy_stage"] = "deploying"
+        update_data["last_error"] = None
+        update_data["last_deploy_at"] = datetime.utcnow()
     
     if not update_data:
-        raise HTTPException(status_code=400, detail="No fields to update")
+        raise HTTPException(status_code=400, detail=error_payload("INVALID_REQUEST", "No fields to update"))
     
     await apps_collection.update_one(
         {"_id": app["_id"]},
@@ -454,33 +524,16 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
             await update_app_deployment(updated_app, user)
             await apps_collection.update_one(
                 {"_id": app["_id"]},
-                {"$set": {"status": "running"}}
+                {"$set": {"status": "running", "deploy_stage": "running", "last_error": None}}
             )
         except Exception as e:
-            error_msg = str(e)
-            # Parse Kubernetes API errors for user-friendly messages
-            if "Invalid value" in error_msg and "metadata.name" in error_msg:
-                error_msg = "Invalid app name. Please use only lowercase letters, numbers, and hyphens."
-            elif "already exists" in error_msg.lower():
-                error_msg = "An app with this name already exists. Please try again."
-            elif "Forbidden" in error_msg or "403" in error_msg:
-                error_msg = "Permission denied. Please contact support."
-            elif "not found" in error_msg.lower():
-                error_msg = "Resource not found. Please try again."
-            else:
-                import json
-                try:
-                    error_dict = json.loads(error_msg.split("HTTP response body:")[-1].strip())
-                    if "message" in error_dict:
-                        error_msg = error_dict["message"]
-                except:
-                    pass
+            error_msg = friendly_k8s_error(str(e))
             
             await apps_collection.update_one(
                 {"_id": app["_id"]},
-                {"$set": {"status": "error", "error_message": error_msg}}
+                {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
             )
-            raise HTTPException(status_code=500, detail=error_msg)
+            raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
     
     updated_app = await apps_collection.find_one({"_id": app["_id"]})
     return AppResponse(
@@ -491,14 +544,17 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
         created_at=updated_app["created_at"].isoformat(),
         last_activity=updated_app.get("last_activity").isoformat() if updated_app.get("last_activity") else None,
         deployment_url=updated_app["deployment_url"],
-        error_message=updated_app.get("error_message")
+        error_message=updated_app.get("error_message"),
+        deploy_stage=updated_app.get("deploy_stage"),
+        last_error=updated_app.get("last_error"),
+        last_deploy_at=updated_app.get("last_deploy_at").isoformat() if updated_app.get("last_deploy_at") else None
     )
 
 @app.delete("/api/apps/{app_id}")
 async def delete_app(app_id: str, user: dict = Depends(get_current_user)):
     app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
     if not app:
-        raise HTTPException(status_code=404, detail="App not found")
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
     
     # Delete from Kubernetes
     try:
@@ -519,7 +575,7 @@ async def get_app_status(app_id: str, user: dict = Depends(get_current_user)):
     """Get deployment status for an app"""
     app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
     if not app:
-        raise HTTPException(status_code=404, detail="App not found")
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
     
     pod_status = None
     deployment_ready = False
@@ -537,14 +593,58 @@ async def get_app_status(app_id: str, user: dict = Depends(get_current_user)):
         status=app["status"],
         pod_status=pod_status,
         error_message=app.get("error_message"),
-        deployment_ready=deployment_ready
+        deployment_ready=deployment_ready,
+        deploy_stage=app.get("deploy_stage"),
+        last_error=app.get("last_error")
+    )
+
+@app.post("/api/apps/validate")
+async def validate_app_code(payload: ValidateRequest, user: dict = Depends(get_current_user)):
+    is_valid, error_msg = validate_code(payload.code)
+    if not is_valid:
+        return {"valid": False, "message": error_msg}
+    return {"valid": True, "message": "Code validation passed"}
+
+@app.post("/api/apps/{app_id}/validate")
+async def validate_existing_app(app_id: str, payload: ValidateRequest, user: dict = Depends(get_current_user)):
+    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not app:
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    is_valid, error_msg = validate_code(payload.code)
+    if not is_valid:
+        return {"valid": False, "message": error_msg}
+    return {"valid": True, "message": "Code validation passed"}
+
+@app.get("/api/apps/{app_id}/deploy-status", response_model=AppDeployStatusResponse)
+async def get_app_deploy_status(app_id: str, user: dict = Depends(get_current_user)):
+    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not app:
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+
+    pod_status = None
+    deployment_ready = False
+    try:
+        k8s_status = await get_deployment_status(app, user)
+        if k8s_status:
+            pod_status = k8s_status.get("pod_status")
+            deployment_ready = k8s_status.get("ready", False)
+    except Exception as e:
+        logger.error(f"Error checking deployment status: {e}")
+
+    return AppDeployStatusResponse(
+        status=app.get("status", "unknown"),
+        deploy_stage=app.get("deploy_stage"),
+        deployment_ready=deployment_ready,
+        pod_status=pod_status,
+        last_error=app.get("last_error"),
+        last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None
     )
 
 @app.post("/api/apps/{app_id}/activity")
 async def record_activity(app_id: str, user: dict = Depends(get_current_user)):
     app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
     if not app:
-        raise HTTPException(status_code=404, detail="App not found")
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
     
     await apps_collection.update_one(
         {"_id": app["_id"]},
@@ -603,6 +703,49 @@ async def get_template(template_id: str, user: dict = Depends(get_current_user))
         complexity=template["complexity"],
         is_global=template["is_global"],
         created_at=template["created_at"].isoformat() if isinstance(template.get("created_at"), datetime) else template.get("created_at", "")
+    )
+
+@app.get("/api/apps/{app_id}/logs", response_model=AppLogsResponse)
+async def get_app_logs(
+    app_id: str,
+    tail_lines: int = 100,
+    since_seconds: Optional[int] = None,
+    user: dict = Depends(get_current_user)
+):
+    """Get live pod logs for an app"""
+    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not app:
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+
+    result = await get_pod_logs(app_id, tail_lines, since_seconds)
+
+    return AppLogsResponse(
+        app_id=app_id,
+        pod_name=result.get("pod_name"),
+        container="runner",
+        logs=[LogLine(**log) for log in result.get("logs", [])],
+        truncated=result.get("truncated", False),
+        error=result.get("error")
+    )
+
+@app.get("/api/apps/{app_id}/events", response_model=AppEventsResponse)
+async def get_app_events_endpoint(
+    app_id: str,
+    limit: int = 50,
+    user: dict = Depends(get_current_user)
+):
+    """Get K8s events for an app's deployment"""
+    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not app:
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+
+    result = await get_app_events(app_id, limit)
+
+    return AppEventsResponse(
+        app_id=app_id,
+        events=[K8sEvent(**event) for event in result.get("events", [])],
+        deployment_phase=result.get("deployment_phase", "unknown"),
+        error=result.get("error")
     )
 
 if __name__ == "__main__":

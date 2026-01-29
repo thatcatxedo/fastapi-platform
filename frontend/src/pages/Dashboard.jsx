@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { API_URL } from '../App'
+import LogsPanel from '../components/LogsPanel'
 
 function Dashboard({ user }) {
   const [apps, setApps] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [logsAppId, setLogsAppId] = useState(null)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const deployingAppId = searchParams.get('deploying')
@@ -27,7 +29,7 @@ function Dashboard({ user }) {
     const checkStatus = async () => {
       try {
         const token = localStorage.getItem('token')
-        const response = await fetch(`${API_URL}/api/apps/${appId}/status`, {
+        const response = await fetch(`${API_URL}/api/apps/${appId}/deploy-status`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
         
@@ -38,7 +40,13 @@ function Dashboard({ user }) {
           setApps(prevApps => 
             prevApps.map(app => 
               app.app_id === appId 
-                ? { ...app, status: status.status, error_message: status.error_message }
+                ? { 
+                    ...app, 
+                    status: status.status, 
+                    deploy_stage: status.deploy_stage,
+                    last_error: status.last_error,
+                    error_message: status.last_error || status.error_message 
+                  }
                 : app
             )
           )
@@ -164,9 +172,9 @@ function Dashboard({ user }) {
                 <tr key={app.id}>
                   <td>
                     <div style={{ fontWeight: '500' }}>{app.name}</div>
-                    {app.status === 'error' && app.error_message && (
+                    {app.status === 'error' && (app.last_error || app.error_message) && (
                       <div className="error" style={{ marginTop: '0.5rem', padding: '0.5rem', fontSize: '0.75rem' }}>
-                        {app.error_message}
+                        {app.last_error || app.error_message}
                       </div>
                     )}
                   </td>
@@ -182,6 +190,11 @@ function Dashboard({ user }) {
                       {app.status === 'error' && '●'}
                       {' '}{app.status}
                     </span>
+                    {app.deploy_stage && app.deploy_stage !== app.status && (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                        Stage: {app.deploy_stage}
+                      </div>
+                    )}
                     {app.status === 'deploying' && (
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', fontStyle: 'italic' }}>
                         Deploying...
@@ -232,6 +245,15 @@ function Dashboard({ user }) {
                           Retry
                         </button>
                       )}
+                      {app.status === 'running' && (
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setLogsAppId(app.app_id)}
+                          style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
+                        >
+                          Logs
+                        </button>
+                      )}
                       <button
                         className="btn btn-secondary"
                         onClick={() => navigate(`/editor/${app.app_id}`)}
@@ -254,6 +276,12 @@ function Dashboard({ user }) {
           </table>
         </div>
       )}
+
+      <LogsPanel
+        appId={logsAppId}
+        isOpen={!!logsAppId}
+        onClose={() => setLogsAppId(null)}
+      />
     </div>
   )
 }

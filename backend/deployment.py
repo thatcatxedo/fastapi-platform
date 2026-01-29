@@ -502,3 +502,150 @@ async def delete_app_deployment(app_doc: dict, user: dict):
     except Exception as e:
         logger.error(f"Failed to delete deployment for app {app_id}: {e}")
         raise
+
+
+def derive_deployment_phase(events: list) -> str:
+    """Derive user-friendly deployment phase from K8s events"""
+    reasons = {e.get("reason") for e in events if e.get("reason")}
+    has_warning = any(e.get("type") == "Warning" for e in events)
+
+    # Check for error conditions first
+    error_reasons = {"Failed", "BackOff", "FailedScheduling", "FailedMount", "FailedCreate"}
+    if reasons & error_reasons or has_warning:
+        return "error"
+
+    # Progress through deployment phases
+    if "Started" in reasons:
+        return "starting"
+    if "Created" in reasons:
+        return "creating"
+    if "Pulled" in reasons:
+        return "pulled"
+    if "Pulling" in reasons:
+        return "pulling"
+    if "Scheduled" in reasons:
+        return "scheduled"
+
+    return "pending"
+
+
+async def get_pod_logs(app_id: str, tail_lines: int = 100, since_seconds: int = None) -> dict:
+    """Get pod logs for an app"""
+    if not core_v1:
+        return {"error": "Kubernetes client not available", "logs": [], "pod_name": None}
+
+    try:
+        # Find the pod for this app
+        pods = core_v1.list_namespaced_pod(
+            namespace=PLATFORM_NAMESPACE,
+            label_selector=f"app-id={app_id}"
+        )
+
+        if not pods.items:
+            return {"error": "No pod found", "logs": [], "pod_name": None}
+
+        pod = pods.items[0]
+        pod_name = pod.metadata.name
+
+        # Check if pod is in a state where logs are available
+        if pod.status.phase not in ["Running", "Succeeded", "Failed"]:
+            return {
+                "error": f"Pod is {pod.status.phase}, logs not available yet",
+                "logs": [],
+                "pod_name": pod_name
+            }
+
+        # Build kwargs for log request
+        kwargs = {
+            "name": pod_name,
+            "namespace": PLATFORM_NAMESPACE,
+            "container": "runner",
+            "tail_lines": tail_lines,
+            "timestamps": True
+        }
+        if since_seconds:
+            kwargs["since_seconds"] = since_seconds
+
+        log_output = core_v1.read_namespaced_pod_log(**kwargs)
+
+        # Parse logs into structured format
+        logs = []
+        for line in log_output.strip().split('\n'):
+            if line:
+                # Kubernetes timestamps: 2024-01-15T10:30:00.123456789Z message
+                parts = line.split(' ', 1)
+                if len(parts) == 2:
+                    logs.append({"timestamp": parts[0], "message": parts[1]})
+                else:
+                    logs.append({"timestamp": None, "message": line})
+
+        return {
+            "logs": logs,
+            "pod_name": pod_name,
+            "error": None,
+            "truncated": len(logs) >= tail_lines
+        }
+    except ApiException as e:
+        if e.status == 404:
+            return {"error": "Pod not found", "logs": [], "pod_name": None}
+        logger.error(f"Error getting pod logs for app {app_id}: {e}")
+        return {"error": str(e), "logs": [], "pod_name": None}
+    except Exception as e:
+        logger.error(f"Error getting pod logs for app {app_id}: {e}")
+        return {"error": str(e), "logs": [], "pod_name": None}
+
+
+async def get_app_events(app_id: str, limit: int = 50) -> dict:
+    """Get K8s events for app resources"""
+    if not core_v1:
+        return {"events": [], "deployment_phase": "unknown", "error": "Kubernetes client not available"}
+
+    try:
+        # Get all events in namespace
+        all_events = core_v1.list_namespaced_event(
+            namespace=PLATFORM_NAMESPACE
+        )
+
+        # Filter events for this app's resources (Pod, Deployment, ReplicaSet containing app_id)
+        app_events = []
+        for event in all_events.items:
+            obj_name = event.involved_object.name or ""
+            if app_id in obj_name:
+                # Use last_timestamp if available, otherwise first_timestamp, otherwise event_time
+                timestamp = None
+                if event.last_timestamp:
+                    timestamp = event.last_timestamp.isoformat()
+                elif event.first_timestamp:
+                    timestamp = event.first_timestamp.isoformat()
+                elif event.event_time:
+                    timestamp = event.event_time.isoformat()
+                else:
+                    timestamp = ""
+
+                app_events.append({
+                    "timestamp": timestamp,
+                    "type": event.type or "Normal",
+                    "reason": event.reason or "",
+                    "message": event.message or "",
+                    "involved_object": f"{event.involved_object.kind}/{event.involved_object.name}",
+                    "count": event.count or 1
+                })
+
+        # Sort by timestamp descending (most recent first)
+        app_events.sort(key=lambda x: x["timestamp"] or "", reverse=True)
+        app_events = app_events[:limit]
+
+        # Derive deployment phase from events
+        deployment_phase = derive_deployment_phase(app_events)
+
+        return {
+            "events": app_events,
+            "deployment_phase": deployment_phase,
+            "error": None
+        }
+    except ApiException as e:
+        logger.error(f"Error getting events for app {app_id}: {e}")
+        return {"events": [], "deployment_phase": "error", "error": str(e)}
+    except Exception as e:
+        logger.error(f"Error getting events for app {app_id}: {e}")
+        return {"events": [], "deployment_phase": "error", "error": str(e)}

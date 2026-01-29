@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { API_URL } from '../App'
+import EventsTimeline from '../components/EventsTimeline'
 
 const DEFAULT_TEMPLATE = `from fastapi import FastAPI
 from pydantic import BaseModel
@@ -25,11 +26,14 @@ function EditorPage({ user }) {
   const [code, setCode] = useState(DEFAULT_TEMPLATE)
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
+  const [validating, setValidating] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [deploymentStatus, setDeploymentStatus] = useState(null)
   const [deployingAppId, setDeployingAppId] = useState(null)
+  const [deployStage, setDeployStage] = useState('draft')
+  const [validationMessage, setValidationMessage] = useState('')
   const [editorHeight, setEditorHeight] = useState(500)
   const editorContainerRef = useRef(null)
   const [templates, setTemplates] = useState([])
@@ -117,6 +121,7 @@ function EditorPage({ user }) {
       setCode(app.code)
       setName(app.name)
       setIsEditing(true)
+      setDeployStage(app.deploy_stage || app.status || 'draft')
       if (app.error_message) {
         setError(app.error_message)
       }
@@ -125,35 +130,12 @@ function EditorPage({ user }) {
     }
   }
 
-  const parseErrorMessage = (errorMsg) => {
-    // Parse Kubernetes error messages
-    if (errorMsg.includes('Invalid value') && errorMsg.includes('metadata.name')) {
-      return 'Invalid app name. Please use only lowercase letters, numbers, and hyphens.'
-    }
-    if (errorMsg.includes('already exists')) {
-      return 'An app with this name already exists. Please try again.'
-    }
-    if (errorMsg.includes('Forbidden') || errorMsg.includes('403')) {
-      return 'Permission denied. Please contact support.'
-    }
-    if (errorMsg.includes('not found')) {
-      return 'Resource not found. Please try again.'
-    }
-    // Try to extract JSON error message
-    if (errorMsg.includes('HTTP response body:')) {
-      try {
-        const jsonPart = errorMsg.split('HTTP response body:')[1]?.trim()
-        if (jsonPart) {
-          const parsed = JSON.parse(jsonPart)
-          if (parsed.message) {
-            return parsed.message
-          }
-        }
-      } catch (e) {
-        // Fall through to return original message
-      }
-    }
-    return errorMsg
+  const parseApiError = (data, fallback) => {
+    if (!data) return fallback
+    if (typeof data.detail === 'string') return data.detail
+    if (data.detail?.message) return data.detail.message
+    if (data.message) return data.message
+    return fallback
   }
 
   const pollDeploymentStatus = async (appId) => {
@@ -163,13 +145,14 @@ function EditorPage({ user }) {
     const checkStatus = async () => {
       try {
         const token = localStorage.getItem('token')
-        const response = await fetch(`${API_URL}/api/apps/${appId}/status`, {
+        const response = await fetch(`${API_URL}/api/apps/${appId}/deploy-status`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
         
         if (response.ok) {
           const status = await response.json()
           setDeploymentStatus(status)
+          setDeployStage(status.deploy_stage || status.status || 'deploying')
           
           if (status.status === 'running' && status.deployment_ready) {
             setSuccess('App deployed successfully!')
@@ -178,7 +161,7 @@ function EditorPage({ user }) {
             }, 2000)
             return true
           } else if (status.status === 'error') {
-            setError(status.error_message || 'Deployment failed')
+            setError(status.last_error || status.error_message || 'Deployment failed')
             setLoading(false)
             return true
           }
@@ -200,6 +183,55 @@ function EditorPage({ user }) {
     checkStatus()
   }
 
+  const handleValidate = async () => {
+    if (!name.trim()) {
+      setError('App name is required')
+      return
+    }
+    setError('')
+    setSuccess('')
+    setValidating(true)
+    setDeployStage('validating')
+    setValidationMessage('')
+
+    try {
+      const token = localStorage.getItem('token')
+      const url = isEditing
+        ? `${API_URL}/api/apps/${appId}/validate`
+        : `${API_URL}/api/apps/validate`
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ code })
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        const message = parseApiError(data, 'Validation failed')
+        throw new Error(message)
+      }
+
+      if (!data.valid) {
+        setDeployStage('error')
+        setError(data.message || 'Validation failed')
+        return
+      }
+
+      setValidationMessage(data.message || 'Code validation passed')
+      setDeployStage('validated')
+      setSuccess('Validation passed. Ready to deploy.')
+    } catch (err) {
+      setDeployStage('error')
+      setError(err.message)
+    } finally {
+      setValidating(false)
+    }
+  }
+
   const handleDeploy = async () => {
     if (!name.trim()) {
       setError('App name is required')
@@ -209,6 +241,14 @@ function EditorPage({ user }) {
     setError('')
     setSuccess('')
     setLoading(true)
+    setDeployStage('deploying')
+    setValidationMessage('')
+
+    if (!window.confirm(`Deploy "${name.trim()}" now?`)) {
+      setLoading(false)
+      setDeployStage('draft')
+      return
+    }
 
     try {
       const token = localStorage.getItem('token')
@@ -233,15 +273,14 @@ function EditorPage({ user }) {
       const data = await response.json()
 
       if (!response.ok) {
-        const errorMsg = parseErrorMessage(data.detail || err.message || 'Deployment failed')
-        throw new Error(errorMsg)
+        const message = parseApiError(data, 'Deployment failed')
+        throw new Error(message)
       }
 
-      // Immediately redirect to dashboard with app_id in URL for status polling
-      navigate(`/dashboard?deploying=${data.app_id}`)
+      setDeployingAppId(data.app_id)
+      pollDeploymentStatus(data.app_id)
     } catch (err) {
-      const errorMsg = parseErrorMessage(err.message)
-      setError(errorMsg)
+      setError(err.message)
       setLoading(false)
       setDeploymentStatus(null)
     }
@@ -286,19 +325,26 @@ function EditorPage({ user }) {
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button
+            className="btn btn-secondary"
+            onClick={handleValidate}
+            disabled={validating || loading}
+          >
+            {validating ? 'Validating...' : 'Validate'}
+          </button>
+          <button
             className="btn btn-primary"
             onClick={handleDeploy}
-            disabled={loading || (deploymentStatus && deploymentStatus.status === 'deploying')}
+            disabled={loading || validating || (deploymentStatus && deploymentStatus.status === 'deploying')}
             style={{ position: 'relative' }}
           >
-                {loading || (deploymentStatus && deploymentStatus.status === 'deploying') ? (
-                  <>
-                    <span style={{ marginRight: '0.5rem' }}>•••</span>
-                    {isEditing ? 'Updating...' : 'Deploying...'}
-                  </>
-                ) : (
-                  isEditing ? 'Update Application' : 'Deploy Application'
-                )}
+            {loading || (deploymentStatus && deploymentStatus.status === 'deploying') ? (
+              <>
+                <span style={{ marginRight: '0.5rem' }}>•••</span>
+                {isEditing ? 'Updating...' : 'Deploying...'}
+              </>
+            ) : (
+              isEditing ? 'Update Application' : 'Deploy Application'
+            )}
           </button>
           <button
             className="btn btn-secondary"
@@ -326,13 +372,18 @@ function EditorPage({ user }) {
             )}
           </div>
         )}
+        {validationMessage && (
+          <div className="success" style={{ marginBottom: '0.5rem', padding: '0.75rem' }}>
+            <strong>Validation:</strong> {validationMessage}
+          </div>
+        )}
         {deploymentStatus && deploymentStatus.status === 'deploying' && (
-          <div style={{ 
-            background: 'rgba(245, 158, 11, 0.1)', 
-            border: '1px solid var(--warning)', 
-            color: 'var(--warning)', 
-            padding: '0.75rem', 
-            borderRadius: '0.5rem', 
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid var(--warning)',
+            color: 'var(--warning)',
+            padding: '0.75rem',
+            borderRadius: '0.5rem',
             marginBottom: '0.5rem',
             display: 'flex',
             alignItems: 'center',
@@ -347,6 +398,12 @@ function EditorPage({ user }) {
               </span>
             )}
           </div>
+        )}
+        {deployingAppId && (loading || (deploymentStatus && deploymentStatus.status === 'deploying')) && (
+          <EventsTimeline
+            appId={deployingAppId}
+            isDeploying={true}
+          />
         )}
       </div>
 
