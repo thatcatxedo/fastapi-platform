@@ -224,7 +224,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 ALLOWED_IMPORTS = {
     'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math', 
     'random', 'string', 'collections', 'itertools', 'functools',
-    'operator', 're', 'uuid', 'hashlib', 'base64', 'urllib.parse'
+    'operator', 're', 'uuid', 'hashlib', 'base64', 'urllib.parse',
+    'fasthtml', 'fastlite'
 }
 
 FORBIDDEN_PATTERNS = [
@@ -254,19 +255,28 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
     except SyntaxError as e:
         return False, f"Syntax error: {e.msg}", e.lineno
 
-    # Check that FastAPI app is created
+    # Check that an app is created (FastAPI or FastHTML)
     has_fastapi_app = False
+    has_fasthtml_app = False
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
+            if not isinstance(node.value, ast.Call):
+                continue
+            func = node.value.func
+            func_name = func.id if isinstance(func, ast.Name) else None
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == 'app':
-                    if isinstance(node.value, ast.Call):
-                        if isinstance(node.value.func, ast.Name) and node.value.func.id == 'FastAPI':
-                            has_fastapi_app = True
-                            break
+                    if func_name == 'FastAPI':
+                        has_fastapi_app = True
+                    if func_name in ('fast_app', 'FastHTML'):
+                        has_fasthtml_app = True
+                elif isinstance(target, ast.Tuple) and func_name in ('fast_app', 'FastHTML'):
+                    for elt in target.elts:
+                        if isinstance(elt, ast.Name) and elt.id == 'app':
+                            has_fasthtml_app = True
 
-    if not has_fastapi_app:
-        return False, "Code must create a FastAPI app instance (e.g., app = FastAPI())", None
+    if not (has_fastapi_app or has_fasthtml_app):
+        return False, "Code must create an app instance (FastAPI: app = FastAPI() or FastHTML: app, rt = fast_app())", None
 
     # Security checks - check imports
     for node in ast.walk(tree):

@@ -502,6 +502,29 @@ async def delete_todo(todo_id: int):
     "tags": ["crud", "rest", "models", "intermediate"]
 }
 
+FASTHTML_TEMPLATE = {
+    "name": "FastHTML Starter",
+    "description": "A minimal FastHTML app showing server-rendered UI with FastTags. Great for HTML-first workflows.",
+    "code": """from fasthtml.common import *
+
+# FastHTML app object and shortcut for routing
+app, rt = fast_app()
+
+@rt
+def index():
+    return Titled(
+        "FastHTML Starter",
+        P("This is a server-rendered HTML app built with FastHTML."),
+        P("Edit this page and add routes to build your UI.")
+    )
+""",
+    "complexity": "simple",
+    "is_global": True,
+    "user_id": None,
+    "created_at": datetime.utcnow(),
+    "tags": ["html", "fasthtml", "htmx", "starter"]
+}
+
 async def ensure_indexes(templates_collection):
     """Ensure unique index on template name + is_global to prevent duplicates"""
     try:
@@ -537,7 +560,7 @@ async def seed_templates(client=None, force_update=False):
     # Ensure indexes for data integrity
     await ensure_indexes(templates_collection)
     
-    templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE]
+    templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE]
     
     for template in templates_to_seed:
         # Use upsert (replace or insert) to ensure template is always present

@@ -1,145 +1,160 @@
 # Roadmap
 
 This roadmap organizes the long-term vision into shippable phases, starting with
-developer/prototyper workflows and expanding toward broader builder experiences.
+developer/prototyper workflows and expanding toward full-stack builder experiences.
 
 ## North Star
 
-Make FastAPI prototyping feel instant, safe, and productive: edit → validate →
-deploy → iterate, with clear feedback, multi-file projects, and optional AI
-assistance.
+The fastest path from idea to deployed full-stack app. Write code → deploy in
+seconds → get a URL and a database. No git, no CLI, no Docker, no infrastructure.
 
-## Phase 0 — Foundations (complete / in progress)
+## Differentiation
 
-- Solidify deploy UX (validate + deploy stages + error clarity).
-- Deployment manifests in `deploy/` with overlays.
-- Local dev cluster workflows documented.
-- Logs + deployment events shipped (basic lifecycle visibility).
+| Platform       | Gap we fill                                |
+|----------------|--------------------------------------------|
+| Replit         | Complex, expensive, not Python-API focused |
+| Railway/Render | Requires git, no web editor                |
+| PythonAnywhere | Dated UX, no instant deploy                |
 
-## Phase 1 — Drafts, Lifecycle, and Safety (near-term)
+Our niche: **Dead-simple FastAPI prototyping with batteries included.**
 
-**Goal:** enable iteration without deployment and show deploy freshness.
+---
 
-- Draft save (no deploy)
-  - Explicit “Save Draft” action.
-  - Backend stores draft code + timestamp.
-  - Dashboard and Editor show “Saved vs Deployed” status.
-- Versioning / Clone
-  - Keep lightweight deploy history (N versions).
-  - “Revert to last good deploy” action.
-  - “Clone app” creates a new app from latest draft or last deployed.
-- Deployed vs Latest
-  - Track last deployed code hash and draft hash.
-  - UI indicator: “Up to date” vs “Not deployed”.
-- Clone App
-  - Duplicate app with new ID and code from latest draft or last deployed.
-  - Optional “clone with templates only” path for clean-start.
-- Rollback / Version History
-  - Keep basic deploy history (N versions).
-  - “Revert to last good deploy” action.
-- App Settings (env + secrets)
-  - Per-app environment variables (scoped secrets/config).
-  - UI for add/edit with validation and safe defaults.
+## Phase 0 — Foundations (complete)
 
-## Phase 2 — Multi-File Mode (core builder workflow)
+- [x] Deploy UX with validate + deploy stages + error clarity
+- [x] Deployment manifests in `deploy/` with overlays
+- [x] Local dev cluster workflows documented
+- [x] Logs + deployment events (basic lifecycle visibility)
 
-**Goal:** support real-world app structure without losing simplicity.
+## Phase 1a — Core Polish (in progress)
 
-- Project structure
-  - Files like `main.py`, `routers/`, `services/`, `models/`, `schemas/`.
-  - Simple file tree in editor with add/rename/delete.
-- Build/run model
-  - Bundle files into a runtime container mount or archive.
-  - Entrypoint rule: `main.py` with `app = FastAPI()`.
-- Backward compatibility
-  - Single-file mode remains.
-  - “Convert to multi-file” auto-scaffolds structure.
+**Goal:** Make the core loop feel fast and polished.
 
-## Phase 3 — Metrics & Observability (basic app health)
+- [ ] App Settings (env vars + secrets)
+  - Per-app environment variables UI
+  - Secure storage, injected at runtime
+  - *In progress*
+- [ ] Deploy time indicator ("Deployed in 3.2s")
+- [ ] Error line highlighting in editor
+- [ ] OpenGraph meta tags on app URLs (better sharing)
+- [ ] Keyboard shortcuts (Ctrl+S save, Ctrl+Shift+D deploy)
 
-**Goal:** give builders confidence their app is working.
+## Phase 1b — Platform Database (near-term)
 
-- Metrics (MVP)
-  - Requests per minute (RPM).
-  - Error rate (4xx/5xx).
-  - Last request timestamp.
-- UX placement
-  - Dashboard summary per app.
-  - App detail pane with chart (last 1h, 24h).
-- Implementation options
-  - Minimal: Ingress/Traefik metrics + app labels.
-  - Later: OpenTelemetry / Prometheus scraping.
-  - Note: logs/events already provide basic observability; metrics can be a later increment.
+**Goal:** Zero-config persistence for full-stack apps.
 
-## Phase 4 — Batteries-Included Auth (opt-in)
+- [ ] Per-user MongoDB database
+  - One shared MongoDB instance, database per user (`user_{user_id}`)
+  - Auto-provision on first use
+  - Inject `PLATFORM_MONGO_URI` as magic env var
+- [ ] Add `pymongo` to runner image
+- [ ] Full-stack starter template (HTML + MongoDB CRUD)
+- [ ] Allow `jinja2` import for server-rendered HTML
 
-**Goal:** help builders ship protected APIs fast.
+This enables:
+```python
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from pymongo import MongoClient
+import os
 
-- Template: JWT auth app
-  - Login + token issue + protected route.
-  - Requires allowing `jose` import and dependency in runner image.
-- Platform helper
-  - Lightweight auth helper module or starter files.
-- Future: platform-managed auth service
-  - Central user store + per-app access rules.
+app = FastAPI()
+db = MongoClient(os.environ["PLATFORM_MONGO_URI"]).get_default_database()
 
-## Phase 4.5 — Custom Dependencies (builder escape hatch)
+@app.get("/", response_class=HTMLResponse)
+def home():
+    items = list(db.items.find({}, {"_id": 0}))
+    return f"<html><body><h1>Items: {len(items)}</h1></body></html>"
+```
 
-**Goal:** unlock real-world apps that need extra Python packages.
+Constraints (document, enforce later):
+- 100MB storage per user
+- No backup guarantees (homelab)
+- Database-level isolation (not bulletproof)
 
-- Allow-list extensions (curated defaults + per-app additions).
-- Build-time dependency install or dynamic runtime install.
-- UI for dependency management with safe constraints.
+## Phase 1c — Drafts & Safety
 
-## Phase 4.7 — FastHTML Example Template
+**Goal:** Enable iteration without deployment risk.
 
-**Goal:** offer an HTML-first template for builder workflows.
+- [ ] Draft save (explicit save without deploy)
+  - Backend stores draft code + timestamp
+  - "Saved vs Deployed" status indicator
+- [ ] "Deployed vs Latest" indicator
+  - Track deployed code hash vs draft hash
+  - UI shows "Up to date" vs "Changes not deployed"
+- [ ] Version history (last N deploys)
+  - "Revert to last good deploy" action
+- [ ] Clone app
+  - Duplicate with new ID from latest draft or deployed code
 
-- Add a FastHTML starter template (server-rendered UI, HTMX-ready).
-- Update validation allow-list to permit `fasthtml` imports.
-- Ensure runner image includes `fasthtml` and optional `fastlite`.
+## Phase 2 — Multi-File Mode
 
-## Phase 5 — Per-App Data Services (optional)
+**Goal:** Support real-world app structure without losing simplicity.
 
-**Goal:** reduce friction for apps that need persistence.
+- [ ] Project structure
+  - Files: `main.py`, `routers/`, `models/`, `schemas/`
+  - Simple file tree in editor with add/rename/delete
+- [ ] Build/run model
+  - Bundle files into ConfigMap or archive
+  - Entrypoint: `main.py` with `app = FastAPI()`
+- [ ] Backward compatibility
+  - Single-file mode remains default
+  - "Convert to multi-file" scaffolds structure
 
-- Optional per-app MongoDB (single-tenant or shared with isolation).
-- Simple connection provisioning (inject `MONGO_URI` automatically).
-- Guardrails for cost and cleanup (TTL, storage limits).
+## Phase 3 — Custom Dependencies
 
-## Phase 6 — GridFS Templates (advanced)
+**Goal:** Unlock real-world apps that need extra packages.
 
-**Goal:** enable file-backed app patterns with low setup.
+- [ ] Curated allow-list extensions
+- [ ] Per-app `requirements.txt` (validated against allow-list)
+- [ ] Build-time install or dynamic runtime install
+- [ ] UI for dependency management
 
-- Templates that demonstrate GridFS usage (file upload, retrieval).
-- Reference UI for file-backed APIs (e.g., image store, document store).
+## Phase 4 — Auth Templates
 
-## Phase 5 — LLM Assistant (builder accelerator)
+**Goal:** Help builders ship protected APIs fast.
 
-**Goal:** use AI to speed up planning, scaffolding, and iteration.
+- [ ] JWT auth starter template
+  - Login + token issue + protected route
+  - Add `python-jose` to runner image
+- [ ] Platform auth helper module (optional)
 
-- Inline assistant panel for code + file changes.
-- Scaffolding prompts:
-  - “Generate CRUD with auth”
-  - “Add router + schema + tests”
-- Safety model:
-  - Suggest, preview, and apply with explicit confirmation.
-- FastHTML influence (backend-first UI patterns)
-  - Optional template set for HTML-first workflows and server-rendered UI.
-  - Reference: FastHTML docs for idiomatic patterns and constraints.
-    - https://www.fastht.ml/docs/llms-ctx.txt
+## Phase 5 — LLM Assistant
 
-## Notes on FastHTML (why it matters)
+**Goal:** Use AI to accelerate scaffolding and iteration.
 
-FastHTML is an HTML-first framework that favors server-rendered UI and fast
-iteration. It’s a useful inspiration for “builder-first” workflows and could be
-a future template category alongside REST APIs. Reference docs:
-- https://www.fastht.ml/docs/llms-ctx.txt
+- [ ] Inline assistant panel
+- [ ] Scaffolding prompts ("Generate CRUD", "Add auth")
+- [ ] Safety model: suggest → preview → confirm → apply
 
-## Metrics for Success
+---
 
-- Time from idea → deployed app (target: minutes).
-- Deploy success rate and time-to-ready.
-- Repeat usage (returning builders).
-- NPS or quick “Was this useful?” feedback in editor.
+## Future / Needs Validation
 
+These are ideas that need real user feedback before committing:
+
+- **Metrics & Observability** — RPM, error rates, request history. May be
+  overkill; logs + events might be enough.
+- **GridFS Templates** — File upload/storage patterns. Wait for user demand.
+- **FastHTML Templates** — HTML-first framework templates. Interesting but niche.
+- **Custom Domains** — CNAME support. Enterprise feature, low priority.
+- **Platform-Managed Auth** — Central user store + per-app access. Complex,
+  defer until clear need.
+
+---
+
+## Notes on FastHTML
+
+FastHTML is an HTML-first framework favoring server-rendered UI. Could be a
+future template category. Reference: https://www.fastht.ml/docs/llms-ctx.txt
+
+---
+
+## Success Metrics
+
+- **Time from idea → deployed app** (target: under 60 seconds)
+- **Deploy success rate** (target: >95%)
+- **Full-stack capability** — can users build HTML + database apps?
+- **Repeat usage** — do builders come back?
+- **Shareability** — are deployed URLs being shared?
