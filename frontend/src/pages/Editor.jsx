@@ -316,6 +316,34 @@ function EditorPage({ user }) {
     }
   }
 
+  const handleDelete = async () => {
+    if (!appId) return
+
+    if (!window.confirm(`Are you sure you want to delete "${name.trim() || 'this app'}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}/api/apps/${appId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        const errorMsg = parseApiError(data, 'Failed to delete app')
+        throw new Error(errorMsg)
+      }
+
+      // Navigate to dashboard after successful deletion
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err.message)
+      setSuccess('')
+    }
+  }
+
   // Env vars helpers
   const addEnvVar = () => {
     setEnvVars([...envVars, { key: '', value: '' }])
@@ -476,6 +504,16 @@ function EditorPage({ user }) {
           >
             Cancel
           </button>
+          {isEditing && (
+            <button
+              className="btn btn-danger"
+              onClick={handleDelete}
+              disabled={loading || validating}
+              style={{ padding: '0.5rem 1rem' }}
+            >
+              Delete App
+            </button>
+          )}
         </div>
       </div>
 

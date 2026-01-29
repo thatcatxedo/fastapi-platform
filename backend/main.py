@@ -251,11 +251,24 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
     """Validate user code for syntax and security.
     Returns (is_valid, error_message, line_number)
     """
+    # Check for empty code
+    if not code or not code.strip():
+        return False, "Code cannot be empty. Please write some Python code.", None
+    
     # Basic syntax check
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
-        return False, f"Syntax error: {e.msg}", e.lineno
+        # Provide more helpful syntax error messages
+        error_msg = e.msg
+        if "invalid syntax" in error_msg.lower():
+            if "expected" in error_msg.lower():
+                error_msg = f"Syntax error: {e.msg}. Check for missing colons, parentheses, or brackets."
+            else:
+                error_msg = f"Syntax error: {e.msg}. Check line {e.lineno} for typos or missing characters."
+        else:
+            error_msg = f"Syntax error: {e.msg}"
+        return False, error_msg, e.lineno
 
     # Check that an app is created (FastAPI or FastHTML)
     has_fastapi_app = False
@@ -278,7 +291,7 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
                             has_fasthtml_app = True
 
     if not (has_fastapi_app or has_fasthtml_app):
-        return False, "Code must create an app instance (FastAPI: app = FastAPI() or FastHTML: app, rt = fast_app())", None
+        return False, "Your code must create an app instance. Add: app = FastAPI() (or app, rt = fast_app() for FastHTML)", None
 
     # Security checks - check imports
     for node in ast.walk(tree):
@@ -286,20 +299,56 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
             for alias in node.names:
                 module_name = alias.name.split('.')[0]
                 if module_name not in ALLOWED_IMPORTS:
-                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+                    # Provide helpful suggestions for common imports
+                    suggestions = []
+                    if 'requests' in module_name.lower():
+                        suggestions.append("Use urllib.parse for URL handling instead")
+                    elif 'pandas' in module_name.lower() or 'numpy' in module_name.lower():
+                        suggestions.append("Data processing libraries are not available. Use built-in Python types.")
+                    elif 'flask' in module_name.lower() or 'django' in module_name.lower():
+                        suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
+                    
+                    suggestion_text = f" {suggestions[0]}" if suggestions else ""
+                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 module_name = node.module.split('.')[0]
                 if module_name not in ALLOWED_IMPORTS:
-                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+                    suggestions = []
+                    if 'requests' in module_name.lower():
+                        suggestions.append("Use urllib.parse for URL handling instead")
+                    elif 'pandas' in module_name.lower() or 'numpy' in module_name.lower():
+                        suggestions.append("Data processing libraries are not available. Use built-in Python types.")
+                    elif 'flask' in module_name.lower() or 'django' in module_name.lower():
+                        suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
+                    
+                    suggestion_text = f" {suggestions[0]}" if suggestions else ""
+                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
 
-    # Check for forbidden patterns
-    for pattern in FORBIDDEN_PATTERNS:
+    # Check for forbidden patterns with better error messages
+    forbidden_patterns_map = {
+        r'__import__': "Direct use of __import__() is not allowed for security reasons.",
+        r'eval\s*\(': "eval() is not allowed for security reasons. Use proper code structure instead.",
+        r'exec\s*\(': "exec() is not allowed for security reasons. Use proper code structure instead.",
+        r'compile\s*\(': "compile() is not allowed for security reasons.",
+        r'open\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
+        r'file\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
+        r'input\s*\(': "input() is not allowed. Use FastAPI request parameters instead.",
+        r'raw_input\s*\(': "raw_input() is not allowed. Use FastAPI request parameters instead.",
+        r'subprocess': "subprocess is not allowed for security reasons.",
+        r'os\.system': "os.system() is not allowed for security reasons.",
+        r'os\.popen': "os.popen() is not allowed for security reasons.",
+        r'socket': "Network sockets are not allowed. Use FastAPI's HTTP handling instead.",
+        r'urllib\.request': "urllib.request is not allowed. Use urllib.parse for URL parsing instead.",
+        r'urllib2': "urllib2 is not allowed. Use urllib.parse for URL parsing instead.",
+    }
+    
+    for pattern, friendly_msg in forbidden_patterns_map.items():
         match = re.search(pattern, code, re.IGNORECASE)
         if match:
             # Find line number of the match
             line_num = code[:match.start()].count('\n') + 1
-            return False, f"Forbidden pattern detected: {pattern}", line_num
+            return False, friendly_msg, line_num
 
     return True, None, None
 
@@ -599,6 +648,91 @@ async def delete_app(app_id: str, user: dict = Depends(get_current_user)):
     )
     
     return {"success": True, "message": "App deleted"}
+
+@app.post("/api/apps/{app_id}/clone", response_model=AppResponse)
+async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
+    """Clone an existing app - copies code and env var keys (not values)"""
+    # Find the source app
+    source_app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not source_app:
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    
+    # Generate unique app_id for the clone
+    new_app_id = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
+    
+    # Clone name with "-copy" suffix
+    base_name = source_app["name"]
+    # Remove existing "-copy" suffix if present, then add it
+    if base_name.endswith("-copy"):
+        base_name = base_name[:-5]
+    new_name = f"{base_name}-copy"
+    
+    # Clone code
+    cloned_code = source_app["code"]
+    
+    # Clone env vars but clear values (keep keys only)
+    cloned_env_vars = {}
+    if source_app.get("env_vars"):
+        for key in source_app["env_vars"].keys():
+            cloned_env_vars[key] = ""  # Empty value
+    
+    # Validate cloned code
+    is_valid, error_msg, error_line = validate_code(cloned_code)
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=error_payload("VALIDATION_FAILED", f"Cloned code validation failed: {error_msg}", {"line": error_line})
+        )
+    
+    # Create cloned app document
+    cloned_app_doc = {
+        "user_id": user["_id"],
+        "app_id": new_app_id,
+        "name": new_name,
+        "code": cloned_code,
+        "env_vars": cloned_env_vars,
+        "status": "deploying",
+        "deploy_stage": "deploying",
+        "last_error": None,
+        "last_deploy_at": datetime.utcnow(),
+        "created_at": datetime.utcnow(),
+        "last_activity": datetime.utcnow(),
+        "deployment_url": f"/user/{str(user['_id'])}/app/{new_app_id}"
+    }
+    
+    result = await apps_collection.insert_one(cloned_app_doc)
+    cloned_app_doc["_id"] = result.inserted_id
+    
+    # Deploy cloned app to Kubernetes
+    try:
+        await create_app_deployment(cloned_app_doc, user)
+        await apps_collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"status": "running", "deploy_stage": "running", "last_error": None}}
+        )
+    except Exception as e:
+        error_msg = friendly_k8s_error(str(e))
+        
+        await apps_collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
+        )
+        raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
+    
+    updated_app = await apps_collection.find_one({"_id": result.inserted_id})
+    return AppResponse(
+        id=str(updated_app["_id"]),
+        app_id=updated_app["app_id"],
+        name=updated_app["name"],
+        status=updated_app["status"],
+        created_at=updated_app["created_at"].isoformat(),
+        last_activity=updated_app.get("last_activity").isoformat() if updated_app.get("last_activity") else None,
+        deployment_url=updated_app["deployment_url"],
+        error_message=updated_app.get("error_message"),
+        deploy_stage=updated_app.get("deploy_stage"),
+        last_error=updated_app.get("last_error"),
+        last_deploy_at=updated_app.get("last_deploy_at").isoformat() if updated_app.get("last_deploy_at") else None
+    )
 
 @app.get("/api/apps/{app_id}/status", response_model=AppStatusResponse)
 async def get_app_status(app_id: str, user: dict = Depends(get_current_user)):
