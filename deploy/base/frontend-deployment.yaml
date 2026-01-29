@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: fastapi-platform
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      imagePullSecrets:
+        - name: ghcr-auth
+      containers:
+        - name: frontend
+          image: ghcr.io/thatcatxedo/fastapi-platform-frontend:latest
+          ports:
+            - containerPort: 80
+              name: http

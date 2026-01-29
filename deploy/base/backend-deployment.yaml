@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: fastapi-platform
+  labels:
+    app: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      serviceAccountName: platform-backend
+      imagePullSecrets:
+        - name: ghcr-auth
+      containers:
+        - name: backend
+          image: ghcr.io/thatcatxedo/fastapi-platform-backend:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: PLATFORM_NAMESPACE
+              value: fastapi-platform
+            - name: RUNNER_IMAGE
+              value: ghcr.io/thatcatxedo/fastapi-platform-runner:latest
+            - name: BASE_DOMAIN
+              value: platform.gofastapi.xyz
+            - name: INACTIVITY_THRESHOLD_HOURS
+              value: "24"
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: MONGO_URI
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: SECRET_KEY
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30

@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: fastapi-platform
+spec:
+  template:
+    spec:
+      containers:
+        - name: backend
+          env:
+            - name: BASE_DOMAIN
+              value: platform.127.0.0.1.nip.io

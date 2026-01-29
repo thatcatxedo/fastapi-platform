@@ -142,7 +142,60 @@ Deployed via GitOps (Flux) to Kubernetes cluster:
 3. **Manual**: Can also build/push manually if needed
 4. Backend needs RBAC permissions to create resources in `fastapi-platform` namespace
 
-See `homelab-cluster/apps/fastapi-platform/` for Kubernetes manifests.
+Kustomize manifests live in `deploy/` and can be applied directly or consumed by
+your GitOps repo. See `docs/DEPLOYMENT.md` for usage.
+
+## Architecture Notes (Current State)
+
+### What This Repo Is
+- **Kubernetes-native platform**, not just a service deployed to Kubernetes.
+- Backend **creates and manages Kubernetes resources directly** (Deployments, Services, ConfigMaps, Traefik CRDs).
+- The cluster is part of the product, so the platform relies on a consistent cluster baseline.
+
+### Current Assumptions and Coupling
+- **Traefik CRDs** are required (`IngressRoute`, `Middleware`).
+- **Backend RBAC** must allow creating resources in the `fastapi-platform` namespace.
+- **MongoDB** must be available at `MONGO_URI`.
+- **Image pull secret** for GHCR is expected (e.g., `ghcr-auth`).
+- **Flux** (or equivalent GitOps) is assumed for platform deployment automation.
+- Platform base domain assumed to be `platform.gofastapi.xyz`.
+
+### Missing Pieces in This Repo
+- ConfigMap/Secret examples for required env vars.
+- Cleanup job scheduling (CronJob manifest).
+- MongoDB deployment/backup guidance.
+- Frontend readiness/liveness probes.
+
+## Suggested Architecture Direction
+
+### Split the Platform into 3 Layers
+1. **Cluster Setup (new repo or component)**  
+   Provision k3s, Traefik + CRDs, cert-manager, storage defaults, GitOps bootstrap.
+2. **Platform Deployment (this repo)**  
+   Own the manifests or Helm chart for backend/frontend/runner + RBAC.
+3. **Platform Contract**  
+   Document exactly what the cluster must provide (CRDs, namespaces, secrets, domain).
+
+### Rationale
+- The platform **depends on Kubernetes APIs at runtime**, so cluster setup should be explicit.
+- A reproducible cluster baseline makes onboarding and future expansion much safer.
+- Separating cluster setup from platform deployment clarifies responsibility and reduces drift.
+
+## Development Environment Guidance
+
+### Recommended Approach
+- **Local k3s (k3d or Rancher Desktop)** is sufficient for daily development.
+- Use a local domain like `platform.127.0.0.1.nip.io` or `platform.localtest.me` for host-based routing.
+- Keep `BASE_DOMAIN` configurable for local vs. homelab.
+
+### When You Need Homelab
+- Only necessary for validating **public DNS + Cloudflare Tunnel + TLS** behavior.
+- Daily feature work can be done fully local.
+
+### Current Homelab Setup Notes
+- Proxmox VM runs k3s.
+- Cloudflare Tunnel routes `*.gofastapi.xyz` to Traefik on port 80.
+- Additional dev domains are possible but require Cloudflare UI tunnel config.
 
 ## API Endpoints
 

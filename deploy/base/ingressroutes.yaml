@@ -1,0 +1,19 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: fastapi-platform
+  namespace: fastapi-platform
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: Host(`platform.gofastapi.xyz`) && PathPrefix(`/api`)
+      services:
+        - name: backend
+          port: 80
+    - kind: Rule
+      match: Host(`platform.gofastapi.xyz`)
+      services:
+        - name: frontend
+          port: 80
