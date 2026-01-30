@@ -35,10 +35,20 @@ FORBIDDEN_PATTERNS = [
 ]
 
 
-def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
+def validate_code(
+    code: str,
+    local_modules: Optional[set] = None
+) -> tuple[bool, Optional[str], Optional[int]]:
     """Validate user code for syntax and security.
     Returns (is_valid, error_message, line_number)
+
+    Args:
+        code: The Python code to validate
+        local_modules: Set of module names that are local to this multi-file app
+                      (e.g., {'routes', 'models'} for files routes.py, models.py)
     """
+    if local_modules is None:
+        local_modules = set()
     # Check for empty code
     if not code or not code.strip():
         return False, "Code cannot be empty. Please write some Python code.", None
@@ -82,11 +92,14 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
         return False, "Your code must create an app instance. Add: app = FastAPI() (or app, rt = fast_app() for FastHTML)", None
 
     # Security checks - check imports
+    # Combine allowed imports with local modules for multi-file apps
+    allowed = ALLOWED_IMPORTS | local_modules
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 module_name = alias.name.split('.')[0]
-                if module_name not in ALLOWED_IMPORTS:
+                if module_name not in allowed:
                     # Provide helpful suggestions for common imports
                     suggestions = []
                     if 'requests' in module_name.lower():
@@ -95,13 +108,13 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
                         suggestions.append("Data processing libraries are not available. Use built-in Python types.")
                     elif 'flask' in module_name.lower() or 'django' in module_name.lower():
                         suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
-                    
+
                     suggestion_text = f" {suggestions[0]}" if suggestions else ""
                     return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 module_name = node.module.split('.')[0]
-                if module_name not in ALLOWED_IMPORTS:
+                if module_name not in allowed:
                     suggestions = []
                     if 'requests' in module_name.lower():
                         suggestions.append("Use urllib.parse for URL handling instead")
@@ -109,7 +122,7 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
                         suggestions.append("Data processing libraries are not available. Use built-in Python types.")
                     elif 'flask' in module_name.lower() or 'django' in module_name.lower():
                         suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
-                    
+
                     suggestion_text = f" {suggestions[0]}" if suggestions else ""
                     return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
 
@@ -141,11 +154,21 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
     return True, None, None
 
 
-def validate_code_syntax_only(code: str) -> tuple[bool, Optional[str], Optional[int]]:
+def validate_code_syntax_only(
+    code: str,
+    local_modules: Optional[set] = None
+) -> tuple[bool, Optional[str], Optional[int]]:
     """Validate code syntax and security without requiring app definition.
     Used for non-entrypoint files in multi-file mode.
     Returns (is_valid, error_message, line_number)
+
+    Args:
+        code: The Python code to validate
+        local_modules: Set of module names that are local to this multi-file app
     """
+    if local_modules is None:
+        local_modules = set()
+
     # Check for empty code
     if not code or not code.strip():
         return False, "Code cannot be empty.", None
@@ -165,16 +188,19 @@ def validate_code_syntax_only(code: str) -> tuple[bool, Optional[str], Optional[
         return False, error_msg, e.lineno
 
     # Security checks - check imports
+    # Combine allowed imports with local modules for multi-file apps
+    allowed = ALLOWED_IMPORTS | local_modules
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 module_name = alias.name.split('.')[0]
-                if module_name not in ALLOWED_IMPORTS:
+                if module_name not in allowed:
                     return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 module_name = node.module.split('.')[0]
-                if module_name not in ALLOWED_IMPORTS:
+                if module_name not in allowed:
                     return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
 
     # Check for forbidden patterns
@@ -230,6 +256,14 @@ def validate_multifile(
     if entrypoint not in files:
         return False, f"Entrypoint '{entrypoint}' not found in files", None, None
 
+    # Build set of local module names (file names without .py extension)
+    # This allows imports between files in the same multi-file app
+    local_modules = {
+        filename[:-3]  # Remove .py extension
+        for filename in files.keys()
+        if filename.endswith('.py')
+    }
+
     # Validate each file
     for filename, content in files.items():
         if not filename.endswith('.py'):
@@ -240,10 +274,10 @@ def validate_multifile(
 
         if filename == entrypoint:
             # Entrypoint must define an app
-            is_valid, error_msg, error_line = validate_code(content)
+            is_valid, error_msg, error_line = validate_code(content, local_modules)
         else:
             # Other files: syntax and security only, no app required
-            is_valid, error_msg, error_line = validate_code_syntax_only(content)
+            is_valid, error_msg, error_line = validate_code_syntax_only(content, local_modules)
 
         if not is_valid:
             return False, error_msg, error_line, filename
