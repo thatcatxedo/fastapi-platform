@@ -79,6 +79,7 @@ async def create_mongo_viewer_deployment(user_id: str, username: str, password: 
 
     env_list = [
         k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_URL", value=get_user_mongo_uri(user_id)),
+        k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_ENABLE_ADMIN", value="false"),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_USERNAME", value=username),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_PASSWORD", value=password),
         k8s_client.V1EnvVar(name="ME_CONFIG_SITE_BASEURL", value=base_url)
