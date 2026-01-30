@@ -145,6 +145,19 @@ function EditorPage({ user }) {
         loading={loadingTemplates}
         onSelectTemplate={handleUseTemplate}
       />
+
+      {isEditing && (
+        <VersionHistoryModal
+          isOpen={historyModalOpen}
+          onClose={() => setHistoryModalOpen(false)}
+          appId={appId}
+          onRollbackSuccess={() => {
+            setHistoryModalOpen(false)
+            // Refresh the app data
+            window.location.reload()
+          }}
+        />
+      )}
     </div>
   )
 }
