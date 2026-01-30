@@ -843,7 +843,7 @@ function EditorPage({ user }) {
           {' • '}
           <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+Shift+V</kbd> Validate
         </div>
-          </div>
+        </div>
         </div>
       </div>
 
