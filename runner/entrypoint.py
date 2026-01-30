@@ -61,7 +61,9 @@ def execute_code(code: str):
     try:
         exec(compile(code, CODE_PATH, 'exec'), user_globals)
     except Exception as e:
+        import traceback
         print(f"Error executing user code: {e}", file=sys.stderr)
+        traceback.print_exc()
         sys.exit(1)
     
     # Get the app instance
