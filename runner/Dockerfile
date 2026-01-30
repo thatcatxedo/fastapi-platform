@@ -3,12 +3,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install whitelisted packages
-# Pin python-fasthtml with compatible dependencies (XT->FT rename issue)
+# Pin python-fasthtml to latest known working version
 RUN pip install --no-cache-dir \
     fastapi==0.109.0 \
     uvicorn[standard]==0.27.0 \
     pydantic==2.5.3 \
-    'python-fasthtml>=0.12.0' \
+    python-fasthtml==0.12.39 \
     pymongo==4.6.1 \
     jinja2==3.1.3 \
     httpx==0.26.0 \
