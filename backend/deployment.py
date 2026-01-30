@@ -250,6 +250,50 @@ async def create_mongo_viewer_resources(user_id: str, username: str, password: s
         logger.error(f"Failed to create mongo viewer resources for user {user_id}: {e}")
         raise
 
+async def get_mongo_viewer_status(user_id: str) -> Optional[dict]:
+    """Get mongo viewer deployment status from Kubernetes"""
+    if not apps_v1 or not core_v1:
+        return None
+
+    deployment_name = get_viewer_name(user_id)
+    label_selector = ",".join([f"{k}={v}" for k, v in get_viewer_labels(user_id).items()])
+
+    try:
+        deployment = apps_v1.read_namespaced_deployment(
+            name=deployment_name,
+            namespace=PLATFORM_NAMESPACE
+        )
+
+        pods = core_v1.list_namespaced_pod(
+            namespace=PLATFORM_NAMESPACE,
+            label_selector=label_selector
+        )
+
+        pod_status = None
+        if pods.items:
+            pod = pods.items[0]
+            pod_status = pod.status.phase
+            if pod.status.container_statuses:
+                for cs in pod.status.container_statuses:
+                    if not cs.ready:
+                        pod_status = "NotReady"
+                        break
+
+        ready_replicas = deployment.status.ready_replicas or 0
+        desired_replicas = deployment.spec.replicas or 0
+
+        return {
+            "ready": ready_replicas >= desired_replicas and desired_replicas > 0,
+            "pod_status": pod_status
+        }
+    except ApiException as e:
+        if e.status == 404:
+            return {"ready": False, "pod_status": "NotFound"}
+        return None
+    except Exception as e:
+        logger.error(f"Error getting mongo viewer status: {e}")
+        return None
+
 async def create_configmap(app_doc: dict, user: dict):
     """Create ConfigMap with user code"""
     if not core_v1:

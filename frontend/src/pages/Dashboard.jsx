@@ -9,6 +9,9 @@ function Dashboard({ user }) {
   const [error, setError] = useState('')
   const [logsAppId, setLogsAppId] = useState(null)
   const [copiedUrl, setCopiedUrl] = useState(null)
+  const [viewerInfo, setViewerInfo] = useState(null)
+  const [viewerLoading, setViewerLoading] = useState(false)
+  const [viewerError, setViewerError] = useState('')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const deployingAppId = searchParams.get('deploying')
@@ -167,6 +170,32 @@ function Dashboard({ user }) {
     }
   }
 
+  const requestViewer = async (endpoint) => {
+    setViewerLoading(true)
+    setViewerError('')
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.detail?.message || data.message || 'Failed to open MongoDB viewer')
+      }
+
+      setViewerInfo(data)
+      if (data.ready === undefined || data.ready) {
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (err) {
+      setViewerError(err.message)
+    } finally {
+      setViewerLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div>
@@ -289,6 +318,70 @@ function Dashboard({ user }) {
       </div>
 
       {error && <div className="error">{error}</div>}
+
+      {/* Database Viewer Card */}
+      <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem 1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Database Viewer</h3>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              View and manage your MongoDB data
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => requestViewer('/api/viewer')}
+              disabled={viewerLoading}
+              style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+            >
+              {viewerLoading ? 'Opening...' : 'Open Viewer'}
+            </button>
+            {viewerInfo && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => requestViewer('/api/viewer/rotate')}
+                disabled={viewerLoading}
+                style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+              >
+                Rotate Credentials
+              </button>
+            )}
+          </div>
+        </div>
+        {viewerError && (
+          <div className="error" style={{ marginTop: '0.75rem', padding: '0.5rem' }}>
+            {viewerError}
+          </div>
+        )}
+        {viewerInfo && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'var(--bg-light)', borderRadius: '0.375rem', fontSize: '0.875rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>URL:</span>{' '}
+                <a href={viewerInfo.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)' }}>
+                  {viewerInfo.url}
+                </a>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Username:</span>{' '}
+                <code>{viewerInfo.username}</code>
+              </div>
+              {viewerInfo.password_provided && (
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Password:</span>{' '}
+                  <code>{viewerInfo.password}</code>
+                </div>
+              )}
+            </div>
+            {!viewerInfo.password_provided && (
+              <div style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                Click "Rotate Credentials" to get a new password.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {apps.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>

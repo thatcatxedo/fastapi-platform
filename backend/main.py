@@ -165,6 +165,8 @@ class ViewerResponse(BaseModel):
     username: str
     password: Optional[str] = None
     password_provided: bool = False
+    ready: bool = False
+    pod_status: Optional[str] = None
 
 class LogLine(BaseModel):
     timestamp: Optional[str] = None
@@ -468,7 +470,8 @@ from deployment import (
     get_deployment_status,
     get_pod_logs,
     get_app_events,
-    create_mongo_viewer_resources
+    create_mongo_viewer_resources,
+    get_mongo_viewer_status
 )
 import logging
 
@@ -844,6 +847,7 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
     viewer = await viewer_instances_collection.find_one({"user_id": user["_id"]})
 
     if viewer:
+        status_info = await get_mongo_viewer_status(user_id)
         await viewer_instances_collection.update_one(
             {"_id": viewer["_id"]},
             {"$set": {"last_access": datetime.utcnow()}}
@@ -852,7 +856,9 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
             url=viewer["url"],
             username=viewer["username"],
             password=None,
-            password_provided=False
+            password_provided=False,
+            ready=status_info["ready"] if status_info else False,
+            pod_status=status_info["pod_status"] if status_info else None
         )
 
     username = f"user_{user_id}"
@@ -863,6 +869,8 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
         await create_mongo_viewer_resources(user_id, username, password)
     except Exception as e:
         raise HTTPException(status_code=500, detail=error_payload("VIEWER_CREATE_FAILED", str(e)))
+
+    status_info = await get_mongo_viewer_status(user_id)
 
     await viewer_instances_collection.insert_one({
         "user_id": user["_id"],
@@ -877,7 +885,9 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
         url=url,
         username=username,
         password=password,
-        password_provided=True
+        password_provided=True,
+        ready=status_info["ready"] if status_info else False,
+        pod_status=status_info["pod_status"] if status_info else None
     )
 
 @app.post("/api/viewer/rotate", response_model=ViewerResponse)
@@ -893,6 +903,8 @@ async def rotate_viewer_credentials(user: dict = Depends(get_current_user)):
         await create_mongo_viewer_resources(user_id, username, password)
     except Exception as e:
         raise HTTPException(status_code=500, detail=error_payload("VIEWER_ROTATE_FAILED", str(e)))
+
+    status_info = await get_mongo_viewer_status(user_id)
 
     update_doc = {
         "username": username,
@@ -915,7 +927,9 @@ async def rotate_viewer_credentials(user: dict = Depends(get_current_user)):
         url=url,
         username=username,
         password=password,
-        password_provided=True
+        password_provided=True,
+        ready=status_info["ready"] if status_info else False,
+        pod_status=status_info["pod_status"] if status_info else None
     )
 
 @app.get("/api/templates", response_model=List[TemplateResponse])
