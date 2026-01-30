@@ -6,7 +6,7 @@ from datetime import datetime
 from bson import ObjectId
 import logging
 
-from models import AdminSettingsUpdate, UserSignup, UserResponse
+from models import AdminSettingsUpdate, AdminStatusUpdate, UserSignup, UserResponse
 from auth import require_admin, hash_password
 from routers.auth import build_user_response
 from database import (
@@ -62,6 +62,49 @@ async def list_all_users(admin: dict = Depends(require_admin)):
             "running_app_count": running_app_count
         })
     return users
+
+
+@router.patch("/users/{user_id}/admin")
+async def update_user_admin_status(
+    user_id: str,
+    status_update: AdminStatusUpdate,
+    admin: dict = Depends(require_admin)
+):
+    """Promote or demote a user to/from admin status"""
+    # Prevent self-demotion
+    if str(admin["_id"]) == user_id and not status_update.is_admin:
+        raise HTTPException(
+            status_code=400,
+            detail=error_payload("CANNOT_DEMOTE_SELF", "Cannot remove your own admin status")
+        )
+    
+    # Check if user exists
+    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail=error_payload("USER_NOT_FOUND", "User not found")
+        )
+    
+    # Prevent removing the last admin
+    if not status_update.is_admin:
+        admin_count = await users_collection.count_documents({"is_admin": True})
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("CANNOT_REMOVE_LAST_ADMIN", "Cannot remove the last admin")
+            )
+    
+    # Update user's admin status
+    await users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"is_admin": status_update.is_admin}}
+    )
+    
+    action = "promoted to" if status_update.is_admin else "demoted from"
+    logger.info(f"User {user['username']} {action} admin by {admin['username']}")
+    
+    return {"success": True, "is_admin": status_update.is_admin}
 
 
 @router.get("/stats")

@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     
     # Startup: migrate existing users to per-user MongoDB auth
     try:
-        from migrate_mongo_users import migrate_existing_users
+        from migrations.mongo_users import migrate_existing_users
         startup_logger.info("Starting MongoDB user migration...")
         stats = await migrate_existing_users(client)
         startup_logger.info(f"MongoDB user migration completed: {stats['newly_migrated']} new, {stats['already_migrated']} existing, {stats['failed']} failed")
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     
     # Startup: Set first user as admin if no admin exists
     try:
-        from migrate_admin_role import migrate_admin_role
+        from migrations.admin_role import migrate_admin_role
         startup_logger.info("Starting admin role migration...")
         await migrate_admin_role(client)
         startup_logger.info("Admin role migration completed")
@@ -64,8 +64,8 @@ async def lifespan(app: FastAPI):
     
     # Startup: Start background tasks
     try:
-        from cleanup import run_cleanup_loop
-        from health_checks import run_health_check_loop
+        from background.cleanup import run_cleanup_loop
+        from background.health_checks import run_health_check_loop
         from log_parser import run_log_parser_loop
         
         startup_logger.info("Starting background tasks...")

@@ -11,6 +11,7 @@ function Admin({ user }) {
   const [createError, setCreateError] = useState('')
   const [createLoading, setCreateLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(null)
+  const [adminToggleLoading, setAdminToggleLoading] = useState(null)
 
   useEffect(() => {
     fetchStats()
@@ -147,6 +148,37 @@ function Admin({ user }) {
     }
   }
 
+  const handleToggleAdmin = async (userId, currentIsAdmin) => {
+    const action = currentIsAdmin ? 'remove admin privileges from' : 'grant admin privileges to'
+    if (!confirm(`Are you sure you want to ${action} this user?`)) {
+      return
+    }
+
+    setAdminToggleLoading(userId)
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}/api/admin/users/${userId}/admin`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ is_admin: !currentIsAdmin })
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.detail?.message || 'Failed to update admin status')
+      }
+
+      fetchUsers()
+    } catch (err) {
+      alert(err.message || 'Failed to update admin status')
+    } finally {
+      setAdminToggleLoading(null)
+    }
+  }
+
   const formatDate = (dateString) => {
     const date = new Date(dateString)
     return date.toLocaleDateString()
@@ -268,6 +300,7 @@ function Admin({ user }) {
                   <th style={{ textAlign: 'left', padding: '0.5rem', fontWeight: '600' }}>Email</th>
                   <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}>Apps</th>
                   <th style={{ textAlign: 'left', padding: '0.5rem', fontWeight: '600' }}>Created</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}>Role</th>
                   <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}></th>
                 </tr>
               </thead>
@@ -276,7 +309,7 @@ function Admin({ user }) {
                   <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '0.5rem' }}>
                       {u.username}
-                      {u.is_admin && <span style={{ marginLeft: '0.4rem', padding: '0.1rem 0.4rem', background: 'var(--primary)', color: 'white', borderRadius: '3px', fontSize: '0.7rem' }}>Admin</span>}
+                      {u.id === user.id && <span style={{ marginLeft: '0.4rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>(you)</span>}
                     </td>
                     <td style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>{u.email}</td>
                     <td style={{ padding: '0.5rem', textAlign: 'center' }}>
@@ -287,14 +320,35 @@ function Admin({ user }) {
                     <td style={{ padding: '0.5rem', textAlign: 'center' }}>
                       {u.id !== user.id ? (
                         <button
+                          onClick={() => handleToggleAdmin(u.id, u.is_admin)}
+                          disabled={adminToggleLoading === u.id}
+                          title={u.is_admin ? 'Remove admin privileges' : 'Grant admin privileges'}
+                          style={{
+                            background: 'none',
+                            border: '1px solid var(--border)',
+                            borderRadius: '3px',
+                            padding: '0.15rem 0.4rem',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            color: u.is_admin ? 'var(--primary)' : 'var(--text-muted)'
+                          }}
+                        >
+                          {adminToggleLoading === u.id ? '...' : (u.is_admin ? 'Admin' : 'User')}
+                        </button>
+                      ) : (
+                        <span style={{ padding: '0.15rem 0.4rem', background: 'var(--primary)', color: 'white', borderRadius: '3px', fontSize: '0.75rem' }}>Admin</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      {u.id !== user.id && (
+                        <button
                           onClick={() => handleDeleteUser(u.id)}
                           disabled={deleteLoading === u.id}
+                          title="Delete user"
                           style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: '0.8rem' }}
                         >
                           {deleteLoading === u.id ? '...' : '✕'}
                         </button>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>you</span>
                       )}
                     </td>
                   </tr>

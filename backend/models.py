@@ -34,6 +34,10 @@ class AdminSettingsUpdate(BaseModel):
     allow_signups: bool
 
 
+class AdminStatusUpdate(BaseModel):
+    is_admin: bool
+
+
 class AppCreate(BaseModel):
     name: str
     code: str
