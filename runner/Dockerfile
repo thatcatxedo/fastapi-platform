@@ -3,10 +3,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install whitelisted packages
-# Pin python-fasthtml to latest known working version
+# python-fasthtml 0.12.x requires uvicorn>=0.30
 RUN pip install --no-cache-dir \
-    fastapi==0.109.0 \
-    uvicorn[standard]==0.27.0 \
+    fastapi==0.115.0 \
+    'uvicorn[standard]>=0.30' \
     pydantic==2.5.3 \
     python-fasthtml==0.12.39 \
     pymongo==4.6.1 \
