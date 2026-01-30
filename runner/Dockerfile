@@ -3,13 +3,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install whitelisted packages
-# Note: fastcore must be installed before python-fasthtml for XT type
+# Pin python-fasthtml with compatible dependencies (XT->FT rename issue)
 RUN pip install --no-cache-dir \
     fastapi==0.109.0 \
     uvicorn[standard]==0.27.0 \
     pydantic==2.5.3 \
-    fastcore \
-    python-fasthtml \
+    'python-fasthtml>=0.12.0' \
     pymongo==4.6.1 \
     jinja2==3.1.3 \
     httpx==0.26.0 \
