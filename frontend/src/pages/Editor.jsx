@@ -49,6 +49,8 @@ function EditorPage({ user }) {
   const [deployStartTime, setDeployStartTime] = useState(null)
   const [deployDuration, setDeployDuration] = useState(null)
   const [copiedCurl, setCopiedCurl] = useState(false)
+  const [viewerInfo, setViewerInfo] = useState(null)
+  const [viewerLoading, setViewerLoading] = useState(false)
 
   useEffect(() => {
     if (appId) {
@@ -409,6 +411,40 @@ function EditorPage({ user }) {
     return `curl ${url}`
   }
 
+  const openViewerWindow = (url) => {
+    if (!url) return
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const requestViewer = async (endpoint) => {
+    setViewerLoading(true)
+    setError('')
+    setSuccess('')
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        const message = parseApiError(data, 'Failed to open MongoDB viewer')
+        throw new Error(message)
+      }
+
+      setViewerInfo(data)
+      openViewerWindow(data.url)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setViewerLoading(false)
+    }
+  }
+
+  const handleOpenViewer = () => requestViewer('/api/viewer')
+  const handleRotateViewer = () => requestViewer('/api/viewer/rotate')
+
   const highlightErrorLine = (lineNumber) => {
     if (!editorRef.current || !monacoRef.current || !lineNumber) return
 
@@ -500,6 +536,13 @@ function EditorPage({ user }) {
           </button>
           <button
             className="btn btn-secondary"
+            onClick={handleOpenViewer}
+            disabled={viewerLoading || loading || validating}
+          >
+            {viewerLoading ? 'Opening...' : 'MongoDB Viewer'}
+          </button>
+          <button
+            className="btn btn-secondary"
             onClick={() => navigate('/dashboard')}
           >
             Cancel
@@ -575,6 +618,49 @@ function EditorPage({ user }) {
         {validationMessage && (
           <div className="success" style={{ marginBottom: '0.5rem', padding: '0.75rem' }}>
             <strong>Validation:</strong> {validationMessage}
+          </div>
+        )}
+        {viewerInfo && (
+          <div className="success" style={{ marginBottom: '0.5rem', padding: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <strong>MongoDB Viewer Ready</strong>
+                <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                  URL: <code>{viewerInfo.url}</code>
+                </div>
+                <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                  Username: <code>{viewerInfo.username}</code>
+                </div>
+                {viewerInfo.password_provided && (
+                  <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                    Password: <code>{viewerInfo.password}</code>
+                  </div>
+                )}
+                {!viewerInfo.password_provided && (
+                  <div style={{ fontSize: '0.85rem', marginTop: '0.25rem', color: 'var(--text-muted)' }}>
+                    Password not available. Rotate credentials to get a new one.
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => openViewerWindow(viewerInfo.url)}
+                  disabled={viewerLoading}
+                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                >
+                  Open Viewer
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleRotateViewer}
+                  disabled={viewerLoading}
+                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                >
+                  Rotate Password
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {deploymentStatus && deploymentStatus.status === 'deploying' && (

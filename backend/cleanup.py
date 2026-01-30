@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 import asyncio
 import logging
-from deployment import delete_app_deployment
+from deployment import delete_app_deployment, delete_mongo_viewer_resources
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,10 @@ client = AsyncIOMotorClient(MONGO_URI)
 db = client.fastapi_platform_db
 apps_collection = db.apps
 users_collection = db.users
+viewer_instances_collection = db.viewer_instances
 
 INACTIVITY_THRESHOLD_HOURS = int(os.getenv("INACTIVITY_THRESHOLD_HOURS", "24"))
+MONGO_VIEWER_TTL_HOURS = int(os.getenv("MONGO_VIEWER_TTL_HOURS", "48"))
 
 async def cleanup_inactive_apps():
     """Delete apps that haven't been accessed in the threshold period"""
@@ -53,11 +55,31 @@ async def cleanup_inactive_apps():
         except Exception as e:
             logger.error(f"Error cleaning up app {app.get('app_id', 'unknown')}: {e}")
 
+async def cleanup_inactive_viewers():
+    """Delete viewer resources that haven't been accessed in the threshold period"""
+    threshold = datetime.utcnow() - timedelta(hours=MONGO_VIEWER_TTL_HOURS)
+
+    stale_viewers = []
+    async for viewer in viewer_instances_collection.find({"last_access": {"$lt": threshold}}):
+        stale_viewers.append(viewer)
+
+    logger.info(f"Found {len(stale_viewers)} stale mongo viewers to clean up")
+
+    for viewer in stale_viewers:
+        try:
+            user_id = str(viewer["user_id"])
+            await delete_mongo_viewer_resources(user_id)
+            await viewer_instances_collection.delete_one({"_id": viewer["_id"]})
+            logger.info(f"Cleaned up mongo viewer for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error cleaning up mongo viewer for user {viewer.get('user_id')}: {e}")
+
 async def run_cleanup_loop():
     """Run cleanup job periodically"""
     while True:
         try:
             await cleanup_inactive_apps()
+            await cleanup_inactive_viewers()
         except Exception as e:
             logger.error(f"Error in cleanup loop: {e}")
         

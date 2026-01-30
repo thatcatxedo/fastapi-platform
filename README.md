@@ -101,6 +101,19 @@ Traefik routing flow:
 3. Request forwarded to Service → Pod
 4. User's FastAPI app handles the request
 
+### MongoDB Viewer
+
+Each user can launch a MongoDB viewer (mongo-express) for their per-user database:
+```
+https://platform.gofastapi.xyz/user/{user_id}/mongo
+```
+
+- Access is protected by per-user basic auth credentials.
+- Credentials are only returned on creation or rotation via:
+  - `POST /api/viewer`
+  - `POST /api/viewer/rotate`
+- Viewer instances auto-expire after inactivity (`MONGO_VIEWER_TTL_HOURS`, default 48).
+
 ### Ephemeral Apps
 
 - Apps auto-delete after 24 hours of inactivity

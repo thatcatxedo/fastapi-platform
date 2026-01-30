@@ -17,11 +17,13 @@ from contextlib import asynccontextmanager
 
 # MongoDB setup (must be before lifespan)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+BASE_DOMAIN = os.getenv("BASE_DOMAIN", "platform.gofastapi.xyz")
 client = AsyncIOMotorClient(MONGO_URI)
 db = client.fastapi_platform_db
 users_collection = db.users
 apps_collection = db.apps
 templates_collection = db.templates
+viewer_instances_collection = db.viewer_instances
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -157,6 +159,12 @@ class TemplateResponse(BaseModel):
     is_global: bool
     created_at: str
 
+class ViewerResponse(BaseModel):
+    url: str
+    username: str
+    password: Optional[str] = None
+    password_provided: bool = False
+
 class LogLine(BaseModel):
     timestamp: Optional[str] = None
     message: str
@@ -189,6 +197,9 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
+
+def generate_viewer_password() -> str:
+    return secrets.token_urlsafe(18)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -449,7 +460,15 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
         created_at=user["created_at"].isoformat()
     )
 
-from deployment import create_app_deployment, delete_app_deployment, update_app_deployment, get_deployment_status, get_pod_logs, get_app_events
+from deployment import (
+    create_app_deployment,
+    delete_app_deployment,
+    update_app_deployment,
+    get_deployment_status,
+    get_pod_logs,
+    get_app_events,
+    create_mongo_viewer_resources
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -817,6 +836,86 @@ async def record_activity(app_id: str, user: dict = Depends(get_current_user)):
     )
     
     return {"success": True}
+
+@app.post("/api/viewer", response_model=ViewerResponse)
+async def provision_viewer(user: dict = Depends(get_current_user)):
+    user_id = str(user["_id"])
+    viewer = await viewer_instances_collection.find_one({"user_id": user["_id"]})
+
+    if viewer:
+        await viewer_instances_collection.update_one(
+            {"_id": viewer["_id"]},
+            {"$set": {"last_access": datetime.utcnow()}}
+        )
+        return ViewerResponse(
+            url=viewer["url"],
+            username=viewer["username"],
+            password=None,
+            password_provided=False
+        )
+
+    username = f"user_{user_id}"
+    password = generate_viewer_password()
+    url = f"https://{BASE_DOMAIN}/user/{user_id}/mongo"
+
+    try:
+        await create_mongo_viewer_resources(user_id, username, password)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=error_payload("VIEWER_CREATE_FAILED", str(e)))
+
+    await viewer_instances_collection.insert_one({
+        "user_id": user["_id"],
+        "username": username,
+        "password_hash": hash_password(password),
+        "url": url,
+        "created_at": datetime.utcnow(),
+        "last_access": datetime.utcnow()
+    })
+
+    return ViewerResponse(
+        url=url,
+        username=username,
+        password=password,
+        password_provided=True
+    )
+
+@app.post("/api/viewer/rotate", response_model=ViewerResponse)
+async def rotate_viewer_credentials(user: dict = Depends(get_current_user)):
+    user_id = str(user["_id"])
+    viewer = await viewer_instances_collection.find_one({"user_id": user["_id"]})
+
+    username = viewer["username"] if viewer else f"user_{user_id}"
+    password = generate_viewer_password()
+    url = f"https://{BASE_DOMAIN}/user/{user_id}/mongo"
+
+    try:
+        await create_mongo_viewer_resources(user_id, username, password)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=error_payload("VIEWER_ROTATE_FAILED", str(e)))
+
+    update_doc = {
+        "username": username,
+        "password_hash": hash_password(password),
+        "url": url,
+        "last_access": datetime.utcnow()
+    }
+
+    if viewer:
+        await viewer_instances_collection.update_one(
+            {"_id": viewer["_id"]},
+            {"$set": update_doc}
+        )
+    else:
+        update_doc["user_id"] = user["_id"]
+        update_doc["created_at"] = datetime.utcnow()
+        await viewer_instances_collection.insert_one(update_doc)
+
+    return ViewerResponse(
+        url=url,
+        username=username,
+        password=password,
+        password_provided=True
+    )
 
 @app.get("/api/templates", response_model=List[TemplateResponse])
 async def list_templates(user: dict = Depends(get_current_user)):
