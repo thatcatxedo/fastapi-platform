@@ -10,6 +10,7 @@ import EditorHeader from './components/EditorHeader'
 import NotificationsPanel from './components/NotificationsPanel'
 import EnvVarsPanel from './components/EnvVarsPanel'
 import CodeEditor from './components/CodeEditor'
+import MultiFileEditor from './components/MultiFileEditor'
 import TemplatesModal from './components/TemplatesModal'
 import VersionHistoryModal from './components/VersionHistoryModal'
 
@@ -19,7 +20,7 @@ import styles from './Editor.module.css'
 function EditorPage({ user }) {
   const { appId } = useParams()
   const navigate = useNavigate()
-  
+
   // App state management
   const {
     code,
@@ -29,6 +30,14 @@ function EditorPage({ user }) {
     envVars,
     setEnvVars,
     isEditing,
+    // Multi-file state
+    mode,
+    framework,
+    setFramework,
+    files,
+    setFiles,
+    initMultiFileMode,
+    initSingleFileMode,
     // Draft/Version tracking
     hasUnpublishedChanges,
     hasLocalChanges,
@@ -42,6 +51,9 @@ function EditorPage({ user }) {
     success,
     setSuccess,
     validationMessage,
+    // Validation error tracking
+    errorLine,
+    errorFile,
     deploymentStatus,
     deployingAppId,
     deployStage,
@@ -58,13 +70,21 @@ function EditorPage({ user }) {
   const { templates, loadingTemplates } = useTemplates(!appId)
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
   const [envVarsExpanded, setEnvVarsExpanded] = useState(envVars.length > 0)
-  
+
   // Version history modal
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
 
   const handleUseTemplate = (template) => {
-    setCode(template.code)
-    setName(template.name)
+    // Handle multi-file templates
+    if (template.mode === 'multi' && template.files) {
+      initMultiFileMode(template.framework || 'fastapi')
+      setFiles(template.files)
+      setName(template.name)
+    } else {
+      initSingleFileMode()
+      setCode(template.code)
+      setName(template.name)
+    }
     setSuccess(`Template "${template.name}" loaded. Edit the code before deployment.`)
     setError('')
     setTemplatesModalOpen(false)
@@ -73,6 +93,23 @@ function EditorPage({ user }) {
   const handleCodeChange = (value) => {
     setCode(value)
     clearErrorHighlight()
+  }
+
+  const handleFilesChange = (newFiles) => {
+    setFiles(newFiles)
+  }
+
+  const handleModeChange = (newMode) => {
+    if (newMode === 'multi') {
+      initMultiFileMode(framework)
+    } else {
+      initSingleFileMode()
+    }
+  }
+
+  const handleFrameworkChange = (newFramework) => {
+    setFramework(newFramework)
+    initMultiFileMode(newFramework)
   }
 
   return (
@@ -119,6 +156,58 @@ function EditorPage({ user }) {
               className={styles.appNameInput}
             />
           </div>
+
+          {/* Mode selector - only for new apps */}
+          {!isEditing && (
+            <div className={styles.modeSelector}>
+              <label className={styles.modeSelectorLabel}>Mode:</label>
+              <div className={styles.modeOptions}>
+                <label className={styles.modeOption}>
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="single"
+                    checked={mode === 'single'}
+                    onChange={() => handleModeChange('single')}
+                  />
+                  Single File
+                </label>
+                <label className={styles.modeOption}>
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="multi"
+                    checked={mode === 'multi'}
+                    onChange={() => handleModeChange('multi')}
+                  />
+                  Multi-File
+                </label>
+              </div>
+
+              {mode === 'multi' && (
+                <div className={styles.frameworkSelector}>
+                  <label className={styles.frameworkLabel}>Framework:</label>
+                  <select
+                    value={framework}
+                    onChange={(e) => handleFrameworkChange(e.target.value)}
+                    className={styles.frameworkSelect}
+                  >
+                    <option value="fastapi">FastAPI (API-focused)</option>
+                    <option value="fasthtml">FastHTML (HTML/HTMX)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Show mode badge for existing apps */}
+          {isEditing && mode === 'multi' && (
+            <div className={styles.modeBadge}>
+              <span className={styles.modeBadgeLabel}>
+                {framework === 'fasthtml' ? 'FastHTML' : 'FastAPI'} Multi-File
+              </span>
+            </div>
+          )}
         </div>
 
         <EnvVarsPanel
@@ -128,14 +217,25 @@ function EditorPage({ user }) {
           onToggleExpanded={() => setEnvVarsExpanded(!envVarsExpanded)}
         />
 
-        <CodeEditor
-          code={code}
-          onChange={handleCodeChange}
-          onMount={setEditorRefs}
-          onDeploy={handleDeploy}
-          onValidate={handleValidate}
-          onSaveDraft={handleSaveDraft}
-        />
+        {mode === 'multi' ? (
+          <MultiFileEditor
+            files={files}
+            framework={framework}
+            onChange={handleFilesChange}
+            onMount={setEditorRefs}
+            errorLine={errorLine}
+            errorFile={errorFile}
+          />
+        ) : (
+          <CodeEditor
+            code={code}
+            onChange={handleCodeChange}
+            onMount={setEditorRefs}
+            onDeploy={handleDeploy}
+            onValidate={handleValidate}
+            onSaveDraft={handleSaveDraft}
+          />
+        )}
       </div>
 
       <TemplatesModal

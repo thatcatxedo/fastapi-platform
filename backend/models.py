@@ -40,18 +40,26 @@ class AdminStatusUpdate(BaseModel):
 
 class AppCreate(BaseModel):
     name: str
-    code: str
+    # Single-file mode (existing)
+    code: Optional[str] = None
+    # Multi-file mode (new)
+    mode: Optional[str] = "single"  # "single" or "multi"
+    framework: Optional[str] = None  # "fastapi" or "fasthtml" (required if multi)
+    files: Optional[Dict[str, str]] = None
+    entrypoint: Optional[str] = "app.py"
     env_vars: Optional[Dict[str, str]] = None
 
 
 class AppUpdate(BaseModel):
     name: Optional[str] = None
-    code: Optional[str] = None
+    code: Optional[str] = None  # Single-file
+    files: Optional[Dict[str, str]] = None  # Multi-file
     env_vars: Optional[Dict[str, str]] = None
 
 
 class DraftUpdate(BaseModel):
-    code: str
+    code: Optional[str] = None  # Single-file
+    files: Optional[Dict[str, str]] = None  # Multi-file
 
 
 class AppResponse(BaseModel):
@@ -69,16 +77,26 @@ class AppResponse(BaseModel):
 
 
 class AppDetailResponse(AppResponse):
-    code: str
-    env_vars: Optional[Dict[str, str]] = None
+    # Single-file fields
+    code: Optional[str] = None
     draft_code: Optional[str] = None
     deployed_code: Optional[str] = None
+    # Multi-file fields
+    mode: str = "single"
+    framework: Optional[str] = None
+    entrypoint: Optional[str] = None
+    files: Optional[Dict[str, str]] = None
+    draft_files: Optional[Dict[str, str]] = None
+    deployed_files: Optional[Dict[str, str]] = None
+    # Common fields
+    env_vars: Optional[Dict[str, str]] = None
     deployed_at: Optional[str] = None
     has_unpublished_changes: bool = False
 
 
 class VersionEntry(BaseModel):
-    code: str
+    code: Optional[str] = None  # Single-file
+    files: Optional[Dict[str, str]] = None  # Multi-file
     deployed_at: str
     code_hash: str
 
@@ -108,14 +126,23 @@ class AppDeployStatusResponse(BaseModel):
 
 
 class ValidateRequest(BaseModel):
-    code: str
+    code: Optional[str] = None  # Single-file
+    files: Optional[Dict[str, str]] = None  # Multi-file
+    entrypoint: Optional[str] = "app.py"
 
 
 class TemplateResponse(BaseModel):
     id: str
     name: str
     description: str
-    code: str
+    # Single-file templates
+    code: Optional[str] = None
+    # Multi-file templates
+    mode: str = "single"
+    framework: Optional[str] = None
+    entrypoint: Optional[str] = None
+    files: Optional[Dict[str, str]] = None
+    # Common fields
     complexity: str
     is_global: bool
     created_at: str

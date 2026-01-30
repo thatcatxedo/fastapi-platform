@@ -2,13 +2,20 @@
 """
 Entrypoint for FastAPI runner container
 Reads user code from ConfigMap and executes it safely
+Supports both single-file and multi-file apps
 """
 import os
 import sys
 import importlib.util
 from pathlib import Path
 
-CODE_PATH = os.getenv("CODE_PATH", "/app/user_code.py")
+CODE_PATH = os.getenv("CODE_PATH", "/app/main.py")
+CODE_DIR = os.path.dirname(CODE_PATH)
+
+# Add code directory to Python path for multi-file imports
+# This enables: from models import Item, from services import get_items, etc.
+if CODE_DIR not in sys.path:
+    sys.path.insert(0, CODE_DIR)
 
 def load_user_code():
     """Load and validate user code"""

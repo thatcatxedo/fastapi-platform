@@ -4,7 +4,7 @@ Validates user-submitted Python code for syntax and security
 """
 import ast
 import re
-from typing import Optional
+from typing import Optional, Dict, Tuple
 
 ALLOWED_IMPORTS = {
     'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math',
@@ -139,3 +139,113 @@ def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
             return False, friendly_msg, line_num
 
     return True, None, None
+
+
+def validate_code_syntax_only(code: str) -> tuple[bool, Optional[str], Optional[int]]:
+    """Validate code syntax and security without requiring app definition.
+    Used for non-entrypoint files in multi-file mode.
+    Returns (is_valid, error_message, line_number)
+    """
+    # Check for empty code
+    if not code or not code.strip():
+        return False, "Code cannot be empty.", None
+
+    # Basic syntax check
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        error_msg = e.msg
+        if "invalid syntax" in error_msg.lower():
+            if "expected" in error_msg.lower():
+                error_msg = f"Syntax error: {e.msg}. Check for missing colons, parentheses, or brackets."
+            else:
+                error_msg = f"Syntax error: {e.msg}. Check line {e.lineno} for typos or missing characters."
+        else:
+            error_msg = f"Syntax error: {e.msg}"
+        return False, error_msg, e.lineno
+
+    # Security checks - check imports
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                module_name = alias.name.split('.')[0]
+                if module_name not in ALLOWED_IMPORTS:
+                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                module_name = node.module.split('.')[0]
+                if module_name not in ALLOWED_IMPORTS:
+                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+
+    # Check for forbidden patterns
+    forbidden_patterns_map = {
+        r'__import__': "Direct use of __import__() is not allowed for security reasons.",
+        r'eval\s*\(': "eval() is not allowed for security reasons.",
+        r'exec\s*\(': "exec() is not allowed for security reasons.",
+        r'compile\s*\(': "compile() is not allowed for security reasons.",
+        r'open\s*\(': "File operations are not allowed.",
+        r'file\s*\(': "File operations are not allowed.",
+        r'input\s*\(': "input() is not allowed.",
+        r'raw_input\s*\(': "raw_input() is not allowed.",
+        r'subprocess': "subprocess is not allowed for security reasons.",
+        r'os\.system': "os.system() is not allowed for security reasons.",
+        r'os\.popen': "os.popen() is not allowed for security reasons.",
+        r'socket': "Network sockets are not allowed.",
+        r'urllib\.request': "urllib.request is not allowed.",
+        r'urllib2': "urllib2 is not allowed.",
+    }
+
+    for pattern, friendly_msg in forbidden_patterns_map.items():
+        match = re.search(pattern, code, re.IGNORECASE)
+        if match:
+            line_num = code[:match.start()].count('\n') + 1
+            return False, friendly_msg, line_num
+
+    return True, None, None
+
+
+def validate_multifile(
+    files: Dict[str, str],
+    entrypoint: str = "app.py"
+) -> Tuple[bool, str, Optional[int], Optional[str]]:
+    """
+    Validate all files in a multi-file app.
+    Returns: (is_valid, error_message, error_line, error_file)
+    """
+    # Guardrails
+    MAX_FILES = 10
+    MAX_FILE_SIZE = 100 * 1024  # 100KB per file
+    MAX_TOTAL_SIZE = 500 * 1024  # 500KB total
+
+    if not files:
+        return False, "No files provided", None, None
+
+    if len(files) > MAX_FILES:
+        return False, f"Too many files (max {MAX_FILES})", None, None
+
+    total_size = sum(len(content) for content in files.values())
+    if total_size > MAX_TOTAL_SIZE:
+        return False, f"Total size exceeds {MAX_TOTAL_SIZE // 1024}KB", None, None
+
+    if entrypoint not in files:
+        return False, f"Entrypoint '{entrypoint}' not found in files", None, None
+
+    # Validate each file
+    for filename, content in files.items():
+        if not filename.endswith('.py'):
+            return False, f"Only .py files allowed: {filename}", None, filename
+
+        if len(content) > MAX_FILE_SIZE:
+            return False, f"File too large: {filename} (max {MAX_FILE_SIZE // 1024}KB)", None, filename
+
+        if filename == entrypoint:
+            # Entrypoint must define an app
+            is_valid, error_msg, error_line = validate_code(content)
+        else:
+            # Other files: syntax and security only, no app required
+            is_valid, error_msg, error_line = validate_code_syntax_only(content)
+
+        if not is_valid:
+            return False, error_msg, error_line, filename
+
+    return True, "", None, None

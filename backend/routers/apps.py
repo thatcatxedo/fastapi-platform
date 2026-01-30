@@ -12,12 +12,12 @@ import hashlib
 
 from models import (
     AppCreate, AppUpdate, AppResponse, AppDetailResponse, AppStatusResponse,
-    AppDeployStatusResponse, ValidateRequest, AppLogsResponse, AppEventsResponse, 
+    AppDeployStatusResponse, ValidateRequest, AppLogsResponse, AppEventsResponse,
     LogLine, K8sEvent, DraftUpdate, VersionEntry, VersionHistoryResponse
 )
 from auth import get_current_user
 from database import apps_collection
-from validation import validate_code
+from validation import validate_code, validate_multifile
 from utils import error_payload, friendly_k8s_error
 from config import APP_DOMAIN
 from deployment import (
@@ -37,9 +37,16 @@ router = APIRouter(prefix="/api/apps", tags=["apps"])
 MAX_VERSION_HISTORY = 10
 
 
-def compute_code_hash(code: str) -> str:
-    """Compute a short hash of code for comparison"""
-    return hashlib.sha256(code.encode()).hexdigest()[:16]
+def compute_code_hash(code_or_files) -> str:
+    """Compute a short hash of code/files for comparison.
+    Accepts either a string (single-file) or dict (multi-file).
+    """
+    if isinstance(code_or_files, dict):
+        # Multi-file: hash all files sorted by name
+        content = "".join(f"{k}:{v}" for k, v in sorted(code_or_files.items()))
+    else:
+        content = code_or_files or ""
+    return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
 # =============================================================================
@@ -73,16 +80,15 @@ def build_app_response(app: dict) -> AppResponse:
 
 def build_app_detail_response(
     app: dict,
-    deployed_code: str,
     has_unpublished_changes: bool
 ) -> AppDetailResponse:
-    """Build an AppDetailResponse from an app document."""
+    """Build an AppDetailResponse from an app document (single or multi-file)."""
+    mode = app.get("mode", "single")
+
     return AppDetailResponse(
         id=str(app["_id"]),
         app_id=app["app_id"],
         name=app["name"],
-        code=app["code"],
-        env_vars=app.get("env_vars"),
         status=app["status"],
         created_at=app["created_at"].isoformat(),
         last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
@@ -91,8 +97,19 @@ def build_app_detail_response(
         deploy_stage=app.get("deploy_stage"),
         last_error=app.get("last_error"),
         last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None,
-        draft_code=app.get("draft_code"),
-        deployed_code=deployed_code,
+        # Single-file fields
+        code=app.get("code") if mode == "single" else None,
+        draft_code=app.get("draft_code") if mode == "single" else None,
+        deployed_code=app.get("deployed_code") if mode == "single" else None,
+        # Multi-file fields
+        mode=mode,
+        framework=app.get("framework"),
+        entrypoint=app.get("entrypoint"),
+        files=app.get("files") if mode == "multi" else None,
+        draft_files=app.get("draft_files") if mode == "multi" else None,
+        deployed_files=app.get("deployed_files") if mode == "multi" else None,
+        # Common fields
+        env_vars=app.get("env_vars"),
         deployed_at=app.get("deployed_at").isoformat() if app.get("deployed_at") else None,
         has_unpublished_changes=has_unpublished_changes
     )
@@ -100,14 +117,23 @@ def build_app_detail_response(
 
 def snapshot_version(app: dict) -> dict:
     """Create a version history entry from the current deployed state of an app."""
-    current_deployed_code = app.get("deployed_code") or app["code"]
+    mode = app.get("mode", "single")
     current_deployed_at = app.get("deployed_at") or app.get("last_deploy_at") or app["created_at"]
-    
-    return {
-        "code": current_deployed_code,
-        "deployed_at": current_deployed_at.isoformat() if hasattr(current_deployed_at, 'isoformat') else str(current_deployed_at),
-        "code_hash": compute_code_hash(current_deployed_code)
-    }
+
+    if mode == "multi":
+        current_deployed_files = app.get("deployed_files") or app.get("files", {})
+        return {
+            "files": current_deployed_files,
+            "deployed_at": current_deployed_at.isoformat() if hasattr(current_deployed_at, 'isoformat') else str(current_deployed_at),
+            "code_hash": compute_code_hash(current_deployed_files)
+        }
+    else:
+        current_deployed_code = app.get("deployed_code") or app["code"]
+        return {
+            "code": current_deployed_code,
+            "deployed_at": current_deployed_at.isoformat() if hasattr(current_deployed_at, 'isoformat') else str(current_deployed_at),
+            "code_hash": compute_code_hash(current_deployed_code)
+        }
 
 
 def add_version_to_history(app: dict, version_entry: dict) -> list:
@@ -122,7 +148,7 @@ async def deploy_and_update_status(
     app_doc: dict,
     user: dict,
     is_create: bool = False,
-    new_deployed_code: str = None
+    new_deployed_code=None  # Can be str (single) or dict (multi-file)
 ) -> None:
     """
     Deploy an app and update its status in the database.
@@ -133,20 +159,26 @@ async def deploy_and_update_status(
             await create_app_deployment(app_doc, user)
         else:
             await update_app_deployment(app_doc, user)
-        
+
+        mode = app_doc.get("mode", "single")
+
         # Build success update
         success_update = {
             "status": "running",
             "deploy_stage": "running",
             "last_error": None
         }
-        
-        # If we have new deployed code, update version tracking fields
+
+        # If we have new deployed content, update version tracking fields
         if new_deployed_code is not None:
-            success_update["deployed_code"] = new_deployed_code
+            if mode == "multi":
+                success_update["deployed_files"] = new_deployed_code
+                success_update["draft_files"] = None  # Clear draft after successful deploy
+            else:
+                success_update["deployed_code"] = new_deployed_code
+                success_update["draft_code"] = None  # Clear draft after successful deploy
             success_update["deployed_at"] = datetime.utcnow()
-            success_update["draft_code"] = None  # Clear draft after successful deploy
-        
+
         await apps_collection.update_one(
             {"_id": app_doc["_id"]},
             {"$set": success_update}
@@ -174,24 +206,58 @@ async def list_apps(user: dict = Depends(get_current_user)):
 
 @router.post("", response_model=AppResponse)
 async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)):
-    # Validate code
-    is_valid, error_msg, error_line = validate_code(app_data.code)
-    if not is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
-        )
-    
+    mode = app_data.mode or "single"
+
+    # Validate based on mode
+    if mode == "multi":
+        if not app_data.files:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_REQUEST", "files required for multi-file mode")
+            )
+        if not app_data.framework:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_REQUEST", "framework required for multi-file mode")
+            )
+        if app_data.framework not in ("fastapi", "fasthtml"):
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_REQUEST", "framework must be 'fastapi' or 'fasthtml'")
+            )
+
+        entrypoint = app_data.entrypoint or "app.py"
+        is_valid, error_msg, error_line, error_file = validate_multifile(app_data.files, entrypoint)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}",
+                                     {"line": error_line, "file": error_file})
+            )
+    else:
+        # Single-file mode
+        if not app_data.code:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_REQUEST", "code required for single-file mode")
+            )
+        is_valid, error_msg, error_line = validate_code(app_data.code)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
+            )
+
     # Generate unique app_id (lowercase alphanumeric only for Kubernetes compliance)
     app_id = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
-    
+
     # Create app document
     now = datetime.utcnow()
     app_doc = {
         "user_id": user["_id"],
         "app_id": app_id,
         "name": app_data.name,
-        "code": app_data.code,
+        "mode": mode,
         "env_vars": app_data.env_vars or {},
         "status": "deploying",
         "deploy_stage": "deploying",
@@ -200,19 +266,28 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
         "created_at": now,
         "last_activity": now,
         "deployment_url": f"https://app-{app_id}.{APP_DOMAIN}",
-        # Version tracking fields
-        "deployed_code": app_data.code,
-        "deployed_at": now,
-        "draft_code": None,
         "version_history": []
     }
 
+    if mode == "multi":
+        app_doc["framework"] = app_data.framework
+        app_doc["entrypoint"] = app_data.entrypoint or "app.py"
+        app_doc["files"] = app_data.files
+        app_doc["deployed_files"] = app_data.files
+        app_doc["deployed_at"] = now
+        app_doc["draft_files"] = None
+    else:
+        app_doc["code"] = app_data.code
+        app_doc["deployed_code"] = app_data.code
+        app_doc["deployed_at"] = now
+        app_doc["draft_code"] = None
+
     result = await apps_collection.insert_one(app_doc)
     app_doc["_id"] = result.inserted_id
-    
+
     # Deploy to Kubernetes
     await deploy_and_update_status(app_doc["_id"], app_doc, user, is_create=True)
-    
+
     updated_app = await apps_collection.find_one({"_id": result.inserted_id})
     return build_app_response(updated_app)
 
@@ -220,45 +295,74 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
 @router.get("/{app_id}", response_model=AppDetailResponse)
 async def get_app(app_id: str, user: dict = Depends(get_current_user)):
     app = await get_user_app(app_id, user)
-    
-    # Migration: if deployed_code doesn't exist, set it to code
-    deployed_code = app.get("deployed_code")
-    if deployed_code is None:
-        deployed_code = app["code"]
-        # Persist migration
-        await apps_collection.update_one(
-            {"_id": app["_id"]},
-            {"$set": {"deployed_code": deployed_code, "deployed_at": app.get("last_deploy_at") or app["created_at"]}}
-        )
-    
+    mode = app.get("mode", "single")
+
     # Compute whether there are unpublished changes
-    # Compare draft_code (or code) against deployed_code
-    draft_code = app.get("draft_code")
-    current_code = draft_code if draft_code is not None else app["code"]
-    has_unpublished_changes = compute_code_hash(current_code) != compute_code_hash(deployed_code)
-    
-    return build_app_detail_response(app, deployed_code, has_unpublished_changes)
+    if mode == "multi":
+        # Multi-file: compare draft_files (or files) against deployed_files
+        deployed_files = app.get("deployed_files") or app.get("files", {})
+        draft_files = app.get("draft_files")
+        current_files = draft_files if draft_files is not None else app.get("files", {})
+        has_unpublished_changes = compute_code_hash(current_files) != compute_code_hash(deployed_files)
+    else:
+        # Single-file: migration for legacy apps without deployed_code
+        deployed_code = app.get("deployed_code")
+        if deployed_code is None:
+            deployed_code = app["code"]
+            # Persist migration
+            await apps_collection.update_one(
+                {"_id": app["_id"]},
+                {"$set": {"deployed_code": deployed_code, "deployed_at": app.get("last_deploy_at") or app["created_at"]}}
+            )
+            app["deployed_code"] = deployed_code
+
+        draft_code = app.get("draft_code")
+        current_code = draft_code if draft_code is not None else app["code"]
+        has_unpublished_changes = compute_code_hash(current_code) != compute_code_hash(deployed_code)
+
+    return build_app_detail_response(app, has_unpublished_changes)
 
 
 @router.put("/{app_id}", response_model=AppResponse)
 async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_current_user)):
     app = await get_user_app(app_id, user)
-    
+    mode = app.get("mode", "single")
+
     update_data = {}
     needs_redeploy = False
+    new_deployed_content = None  # code string or files dict
 
     if app_data.name is not None:
         update_data["name"] = app_data.name
-    if app_data.code is not None:
-        # Validate code
-        is_valid, error_msg, error_line = validate_code(app_data.code)
-        if not is_valid:
-            raise HTTPException(
-                status_code=400,
-                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
-            )
-        update_data["code"] = app_data.code
-        needs_redeploy = True
+
+    # Handle code/files update based on mode
+    if mode == "multi":
+        if app_data.files is not None:
+            # Validate multi-file
+            entrypoint = app.get("entrypoint", "app.py")
+            is_valid, error_msg, error_line, error_file = validate_multifile(app_data.files, entrypoint)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}",
+                                         {"line": error_line, "file": error_file})
+                )
+            update_data["files"] = app_data.files
+            new_deployed_content = app_data.files
+            needs_redeploy = True
+    else:
+        if app_data.code is not None:
+            # Validate single-file code
+            is_valid, error_msg, error_line = validate_code(app_data.code)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
+                )
+            update_data["code"] = app_data.code
+            new_deployed_content = app_data.code
+            needs_redeploy = True
+
     if app_data.env_vars is not None:
         update_data["env_vars"] = app_data.env_vars
         needs_redeploy = True
@@ -268,64 +372,98 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
         update_data["deploy_stage"] = "deploying"
         update_data["last_error"] = None
         update_data["last_deploy_at"] = datetime.utcnow()
-        
-        # Snapshot current deployed code to version history before deploying
+
+        # Snapshot current deployed code/files to version history before deploying
         version_entry = snapshot_version(app)
         update_data["version_history"] = add_version_to_history(app, version_entry)
 
     if not update_data:
         raise HTTPException(status_code=400, detail=error_payload("INVALID_REQUEST", "No fields to update"))
-    
+
     await apps_collection.update_one(
         {"_id": app["_id"]},
         {"$set": update_data}
     )
 
-    # Update deployment if code or env_vars changed
+    # Update deployment if code/files or env_vars changed
     if needs_redeploy:
         updated_app = await apps_collection.find_one({"_id": app["_id"]})
-        new_deployed_code = app_data.code if app_data.code else app["code"]
         await deploy_and_update_status(
-            app["_id"], updated_app, user, 
-            is_create=False, 
-            new_deployed_code=new_deployed_code
+            app["_id"], updated_app, user,
+            is_create=False,
+            new_deployed_code=new_deployed_content
         )
-    
+
     updated_app = await apps_collection.find_one({"_id": app["_id"]})
     return build_app_response(updated_app)
 
 
 @router.put("/{app_id}/draft", response_model=AppDetailResponse)
 async def save_draft(app_id: str, draft: DraftUpdate, user: dict = Depends(get_current_user)):
-    """Save draft code without deploying"""
+    """Save draft code/files without deploying"""
     app = await get_user_app(app_id, user)
-    
-    # Validate draft code (still need valid syntax)
-    is_valid, error_msg, error_line = validate_code(draft.code)
-    if not is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
+    mode = app.get("mode", "single")
+
+    if mode == "multi":
+        if not draft.files:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_REQUEST", "files required for multi-file mode draft")
+            )
+        # Validate draft files
+        entrypoint = app.get("entrypoint", "app.py")
+        is_valid, error_msg, error_line, error_file = validate_multifile(draft.files, entrypoint)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}",
+                                     {"line": error_line, "file": error_file})
+            )
+
+        # Update draft_files and files fields, no K8s changes
+        await apps_collection.update_one(
+            {"_id": app["_id"]},
+            {"$set": {
+                "files": draft.files,
+                "draft_files": draft.files,
+                "last_activity": datetime.utcnow()
+            }}
         )
-    
-    # Update draft_code and code fields, no K8s changes
-    await apps_collection.update_one(
-        {"_id": app["_id"]},
-        {"$set": {
-            "code": draft.code,
-            "draft_code": draft.code,
-            "last_activity": datetime.utcnow()
-        }}
-    )
-    
-    # Fetch updated app and return
-    updated_app = await apps_collection.find_one({"_id": app["_id"]})
-    
-    # Get deployed_code for comparison
-    deployed_code = updated_app.get("deployed_code") or updated_app["code"]
-    has_unpublished_changes = compute_code_hash(draft.code) != compute_code_hash(deployed_code)
-    
-    return build_app_detail_response(updated_app, deployed_code, has_unpublished_changes)
+
+        # Fetch updated app and compute changes
+        updated_app = await apps_collection.find_one({"_id": app["_id"]})
+        deployed_files = updated_app.get("deployed_files") or updated_app.get("files", {})
+        has_unpublished_changes = compute_code_hash(draft.files) != compute_code_hash(deployed_files)
+    else:
+        if not draft.code:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_REQUEST", "code required for single-file mode draft")
+            )
+        # Validate draft code (still need valid syntax)
+        is_valid, error_msg, error_line = validate_code(draft.code)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Code validation failed: {error_msg}", {"line": error_line})
+            )
+
+        # Update draft_code and code fields, no K8s changes
+        await apps_collection.update_one(
+            {"_id": app["_id"]},
+            {"$set": {
+                "code": draft.code,
+                "draft_code": draft.code,
+                "last_activity": datetime.utcnow()
+            }}
+        )
+
+        # Fetch updated app and compute changes
+        updated_app = await apps_collection.find_one({"_id": app["_id"]})
+        deployed_code = updated_app.get("deployed_code") or updated_app["code"]
+        has_unpublished_changes = compute_code_hash(draft.code) != compute_code_hash(deployed_code)
+
+    return build_app_detail_response(updated_app, has_unpublished_changes)
 
 
 @router.delete("/{app_id}")
@@ -349,43 +487,33 @@ async def delete_app(app_id: str, user: dict = Depends(get_current_user)):
 
 @router.post("/{app_id}/clone", response_model=AppResponse)
 async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
-    """Clone an existing app - copies code and env var keys (not values)"""
+    """Clone an existing app - copies code/files and env var keys (not values)"""
     source_app = await get_user_app(app_id, user)
-    
+    mode = source_app.get("mode", "single")
+
     # Generate unique app_id for the clone
     new_app_id = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
-    
+
     # Clone name with "-copy" suffix
     base_name = source_app["name"]
     # Remove existing "-copy" suffix if present, then add it
     if base_name.endswith("-copy"):
         base_name = base_name[:-5]
     new_name = f"{base_name}-copy"
-    
-    # Clone code
-    cloned_code = source_app["code"]
-    
+
     # Clone env vars but clear values (keep keys only)
     cloned_env_vars = {}
     if source_app.get("env_vars"):
         for key in source_app["env_vars"].keys():
             cloned_env_vars[key] = ""  # Empty value
-    
-    # Validate cloned code
-    is_valid, error_msg, error_line = validate_code(cloned_code)
-    if not is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("VALIDATION_FAILED", f"Cloned code validation failed: {error_msg}", {"line": error_line})
-        )
-    
+
     # Create cloned app document
     now = datetime.utcnow()
     cloned_app_doc = {
         "user_id": user["_id"],
         "app_id": new_app_id,
         "name": new_name,
-        "code": cloned_code,
+        "mode": mode,
         "env_vars": cloned_env_vars,
         "status": "deploying",
         "deploy_stage": "deploying",
@@ -394,19 +522,46 @@ async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
         "created_at": now,
         "last_activity": now,
         "deployment_url": f"https://app-{new_app_id}.{APP_DOMAIN}",
-        # Version tracking fields - start fresh for cloned app
-        "deployed_code": cloned_code,
-        "deployed_at": now,
-        "draft_code": None,
         "version_history": []
     }
 
+    if mode == "multi":
+        cloned_files = source_app.get("files", {})
+        # Validate cloned files
+        entrypoint = source_app.get("entrypoint", "app.py")
+        is_valid, error_msg, error_line, error_file = validate_multifile(cloned_files, entrypoint)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Cloned code validation failed: {error_msg}",
+                                     {"line": error_line, "file": error_file})
+            )
+        cloned_app_doc["framework"] = source_app.get("framework")
+        cloned_app_doc["entrypoint"] = entrypoint
+        cloned_app_doc["files"] = cloned_files
+        cloned_app_doc["deployed_files"] = cloned_files
+        cloned_app_doc["deployed_at"] = now
+        cloned_app_doc["draft_files"] = None
+    else:
+        cloned_code = source_app["code"]
+        # Validate cloned code
+        is_valid, error_msg, error_line = validate_code(cloned_code)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Cloned code validation failed: {error_msg}", {"line": error_line})
+            )
+        cloned_app_doc["code"] = cloned_code
+        cloned_app_doc["deployed_code"] = cloned_code
+        cloned_app_doc["deployed_at"] = now
+        cloned_app_doc["draft_code"] = None
+
     result = await apps_collection.insert_one(cloned_app_doc)
     cloned_app_doc["_id"] = result.inserted_id
-    
+
     # Deploy cloned app to Kubernetes
     await deploy_and_update_status(cloned_app_doc["_id"], cloned_app_doc, user, is_create=True)
-    
+
     updated_app = await apps_collection.find_one({"_id": result.inserted_id})
     return build_app_response(updated_app)
 
@@ -440,19 +595,45 @@ async def get_app_status(app_id: str, user: dict = Depends(get_current_user)):
 
 @router.post("/validate")
 async def validate_app_code(payload: ValidateRequest, user: dict = Depends(get_current_user)):
-    is_valid, error_msg, error_line = validate_code(payload.code)
-    if not is_valid:
-        return {"valid": False, "message": error_msg, "line": error_line}
-    return {"valid": True, "message": "Code validation passed", "line": None}
+    """Validate code/files before creating an app"""
+    if payload.files:
+        # Multi-file validation
+        entrypoint = payload.entrypoint or "app.py"
+        is_valid, error_msg, error_line, error_file = validate_multifile(payload.files, entrypoint)
+        if not is_valid:
+            return {"valid": False, "message": error_msg, "line": error_line, "file": error_file}
+        return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
+    elif payload.code:
+        # Single-file validation
+        is_valid, error_msg, error_line = validate_code(payload.code)
+        if not is_valid:
+            return {"valid": False, "message": error_msg, "line": error_line, "file": None}
+        return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
+    else:
+        return {"valid": False, "message": "No code or files provided", "line": None, "file": None}
 
 
 @router.post("/{app_id}/validate")
 async def validate_existing_app(app_id: str, payload: ValidateRequest, user: dict = Depends(get_current_user)):
-    await get_user_app(app_id, user)  # Verify app exists and user owns it
-    is_valid, error_msg, error_line = validate_code(payload.code)
-    if not is_valid:
-        return {"valid": False, "message": error_msg, "line": error_line}
-    return {"valid": True, "message": "Code validation passed", "line": None}
+    """Validate code/files for an existing app"""
+    app = await get_user_app(app_id, user)
+    mode = app.get("mode", "single")
+
+    if mode == "multi" or payload.files:
+        # Multi-file validation
+        files = payload.files or app.get("files", {})
+        entrypoint = payload.entrypoint or app.get("entrypoint", "app.py")
+        is_valid, error_msg, error_line, error_file = validate_multifile(files, entrypoint)
+        if not is_valid:
+            return {"valid": False, "message": error_msg, "line": error_line, "file": error_file}
+        return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
+    else:
+        # Single-file validation
+        code = payload.code or app.get("code", "")
+        is_valid, error_msg, error_line = validate_code(code)
+        if not is_valid:
+            return {"valid": False, "message": error_msg, "line": error_line, "file": None}
+        return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
 
 
 @router.get("/{app_id}/deploy-status", response_model=AppDeployStatusResponse)
@@ -536,19 +717,28 @@ async def get_app_events_endpoint(
 async def get_versions(app_id: str, user: dict = Depends(get_current_user)):
     """Get version history for an app"""
     app = await get_user_app(app_id, user)
-    
+    mode = app.get("mode", "single")
+
     version_history = app.get("version_history", [])
-    
+
     # Convert to VersionEntry objects
     versions = [
-        VersionEntry(code=v["code"], deployed_at=v["deployed_at"], code_hash=v["code_hash"])
+        VersionEntry(
+            code=v.get("code"),
+            files=v.get("files"),
+            deployed_at=v["deployed_at"],
+            code_hash=v["code_hash"]
+        )
         for v in version_history
     ]
-    
+
     # Get current deployed hash
-    deployed_code = app.get("deployed_code") or app["code"]
-    current_hash = compute_code_hash(deployed_code)
-    
+    if mode == "multi":
+        deployed_content = app.get("deployed_files") or app.get("files", {})
+    else:
+        deployed_content = app.get("deployed_code") or app.get("code", "")
+    current_hash = compute_code_hash(deployed_content)
+
     return VersionHistoryResponse(
         app_id=app_id,
         versions=versions,
@@ -560,52 +750,70 @@ async def get_versions(app_id: str, user: dict = Depends(get_current_user)):
 async def rollback(app_id: str, version_index: int, user: dict = Depends(get_current_user)):
     """Rollback to a previous version"""
     app = await get_user_app(app_id, user)
-    
+    mode = app.get("mode", "single")
+
     version_history = app.get("version_history", [])
-    
+
     if version_index < 0 or version_index >= len(version_history):
         raise HTTPException(
             status_code=400,
             detail=error_payload("INVALID_VERSION", f"Version index {version_index} is out of range (0-{len(version_history)-1})")
         )
-    
-    # Get the code from the specified version
+
+    # Get the code/files from the specified version
     rollback_version = version_history[version_index]
-    rollback_code = rollback_version["code"]
-    
-    # Validate the code (should be valid but check anyway)
-    is_valid, error_msg, error_line = validate_code(rollback_code)
-    if not is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("VALIDATION_FAILED", f"Rollback code validation failed: {error_msg}", {"line": error_line})
-        )
-    
-    # Snapshot current deployed code to version history before rollback
+
+    # Snapshot current deployed content to version history before rollback
     version_entry = snapshot_version(app)
     new_version_history = add_version_to_history(app, version_entry)
-    
-    # Update app with rollback code
+
     now = datetime.utcnow()
+    update_set = {
+        "status": "deploying",
+        "deploy_stage": "deploying",
+        "last_error": None,
+        "last_deploy_at": now,
+        "version_history": new_version_history
+    }
+
+    if mode == "multi":
+        rollback_files = rollback_version.get("files", {})
+        # Validate the files
+        entrypoint = app.get("entrypoint", "app.py")
+        is_valid, error_msg, error_line, error_file = validate_multifile(rollback_files, entrypoint)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Rollback code validation failed: {error_msg}",
+                                     {"line": error_line, "file": error_file})
+            )
+        update_set["files"] = rollback_files
+        new_deployed_content = rollback_files
+    else:
+        rollback_code = rollback_version.get("code", "")
+        # Validate the code
+        is_valid, error_msg, error_line = validate_code(rollback_code)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("VALIDATION_FAILED", f"Rollback code validation failed: {error_msg}", {"line": error_line})
+            )
+        update_set["code"] = rollback_code
+        new_deployed_content = rollback_code
+
+    # Update app with rollback content
     await apps_collection.update_one(
         {"_id": app["_id"]},
-        {"$set": {
-            "code": rollback_code,
-            "status": "deploying",
-            "deploy_stage": "deploying",
-            "last_error": None,
-            "last_deploy_at": now,
-            "version_history": new_version_history
-        }}
+        {"$set": update_set}
     )
-    
+
     # Deploy the rollback
     updated_app = await apps_collection.find_one({"_id": app["_id"]})
     await deploy_and_update_status(
         app["_id"], updated_app, user,
         is_create=False,
-        new_deployed_code=rollback_code
+        new_deployed_code=new_deployed_content
     )
-    
+
     final_app = await apps_collection.find_one({"_id": app["_id"]})
     return build_app_response(final_app)

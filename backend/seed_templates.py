@@ -707,6 +707,213 @@ async def health():
     "tags": ["slack", "bot", "webhook", "events-api"]
 }
 
+# Multi-file templates
+FASTAPI_MULTIFILE_TEMPLATE = {
+    "name": "FastAPI Multi-File Starter",
+    "description": "An organized FastAPI app with routes, models, services, and helpers in separate files. Uses MongoDB for persistence.",
+    "mode": "multi",
+    "framework": "fastapi",
+    "entrypoint": "app.py",
+    "files": {
+        "app.py": '''from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routes import router
+
+app = FastAPI(title="My API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(router)
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+''',
+        "routes.py": '''from fastapi import APIRouter, HTTPException
+from models import Item, ItemCreate
+from services import get_items, get_item, create_item, delete_item
+
+router = APIRouter(prefix="/api")
+
+@router.get("/items")
+def list_items():
+    return get_items()
+
+@router.get("/items/{item_id}")
+def read_item(item_id: str):
+    item = get_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+@router.post("/items")
+def add_item(item: ItemCreate):
+    return create_item(item)
+
+@router.delete("/items/{item_id}")
+def remove_item(item_id: str):
+    return delete_item(item_id)
+''',
+        "models.py": '''from pydantic import BaseModel
+from typing import Optional
+
+class ItemCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class Item(ItemCreate):
+    id: str
+''',
+        "services.py": '''from pymongo import MongoClient
+from bson import ObjectId
+import os
+
+db = MongoClient(os.environ["PLATFORM_MONGO_URI"]).get_default_database()
+
+def get_items():
+    items = list(db.items.find())
+    return [{"id": str(item["_id"]), **{k: v for k, v in item.items() if k != "_id"}} for item in items]
+
+def get_item(item_id: str):
+    item = db.items.find_one({"_id": ObjectId(item_id)})
+    if item:
+        return {"id": str(item["_id"]), **{k: v for k, v in item.items() if k != "_id"}}
+    return None
+
+def create_item(item):
+    result = db.items.insert_one(item.model_dump())
+    return {"id": str(result.inserted_id), **item.model_dump()}
+
+def delete_item(item_id: str):
+    db.items.delete_one({"_id": ObjectId(item_id)})
+    return {"success": True}
+''',
+        "helpers.py": '''"""Utility functions for the app."""
+
+def format_id(obj_id) -> str:
+    """Convert ObjectId to string."""
+    return str(obj_id)
+'''
+    },
+    "complexity": "medium",
+    "is_global": True,
+    "user_id": None,
+    "created_at": datetime.utcnow(),
+    "tags": ["multifile", "fastapi", "mongodb", "crud", "organized"]
+}
+
+FASTHTML_MULTIFILE_TEMPLATE = {
+    "name": "FastHTML Multi-File Starter",
+    "description": "An organized FastHTML app with HTMX interactions. Routes, services, and HTML components in separate files.",
+    "mode": "multi",
+    "framework": "fasthtml",
+    "entrypoint": "app.py",
+    "files": {
+        "app.py": '''from fasthtml.common import *
+from routes import setup_routes
+
+app, rt = fast_app()
+setup_routes(rt)
+
+@rt("/health")
+def health():
+    return {"status": "ok"}
+''',
+        "routes.py": '''from fasthtml.common import *
+from services import get_items, create_item, delete_item
+from components import item_list, item_form, page_layout
+
+def setup_routes(rt):
+    @rt("/")
+    def home():
+        items = get_items()
+        return page_layout(
+            H1("My Items"),
+            item_form(),
+            item_list(items)
+        )
+
+    @rt("/items", methods=["POST"])
+    def add_item(name: str):
+        create_item(name)
+        items = get_items()
+        return item_list(items)
+
+    @rt("/items/{item_id}", methods=["DELETE"])
+    def remove_item(item_id: str):
+        delete_item(item_id)
+        items = get_items()
+        return item_list(items)
+''',
+        "models.py": '''"""Data models for the app."""
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class Item:
+    id: str
+    name: str
+    description: Optional[str] = None
+''',
+        "services.py": '''from pymongo import MongoClient
+from bson import ObjectId
+import os
+
+db = MongoClient(os.environ["PLATFORM_MONGO_URI"]).get_default_database()
+
+def get_items():
+    items = list(db.items.find())
+    return [{"id": str(item["_id"]), "name": item["name"]} for item in items]
+
+def create_item(name: str):
+    db.items.insert_one({"name": name})
+
+def delete_item(item_id: str):
+    db.items.delete_one({"_id": ObjectId(item_id)})
+''',
+        "components.py": '''from fasthtml.common import *
+
+def page_layout(*children):
+    return Titled("FastHTML App", *children)
+
+def item_form():
+    return Form(
+        Input(name="name", placeholder="Item name", required=True),
+        Button("Add Item"),
+        hx_post="/items",
+        hx_target="#item-list",
+        hx_swap="outerHTML"
+    )
+
+def item_list(items):
+    return Ul(
+        *[item_row(item) for item in items],
+        id="item-list"
+    )
+
+def item_row(item):
+    return Li(
+        Span(item["name"]),
+        Button("x",
+            hx_delete=f"/items/{item['id']}",
+            hx_target="#item-list",
+            hx_swap="outerHTML"
+        )
+    )
+'''
+    },
+    "complexity": "medium",
+    "is_global": True,
+    "user_id": None,
+    "created_at": datetime.utcnow(),
+    "tags": ["multifile", "fasthtml", "htmx", "mongodb", "organized"]
+}
+
 async def ensure_indexes(templates_collection):
     """Ensure unique index on template name + is_global to prevent duplicates"""
     try:
@@ -742,8 +949,11 @@ async def seed_templates(client=None, force_update=False):
     # Ensure indexes for data integrity
     await ensure_indexes(templates_collection)
     
-    templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE, FULLSTACK_MONGO_TEMPLATE, SLACK_BOT_TEMPLATE]
-    
+    templates_to_seed = [
+        SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE, FULLSTACK_MONGO_TEMPLATE,
+        SLACK_BOT_TEMPLATE, FASTAPI_MULTIFILE_TEMPLATE, FASTHTML_MULTIFILE_TEMPLATE
+    ]
+
     for template in templates_to_seed:
         # Use upsert (replace or insert) to ensure template is always present
         # This makes templates persistent - they'll be restored even if deleted
@@ -751,17 +961,35 @@ async def seed_templates(client=None, force_update=False):
             "name": template["name"],
             "is_global": True
         }
-        
+
         # Prepare update document - preserve _id if exists, update everything else
+        # Handle both single-file (code) and multi-file (files) templates
+        set_fields = {
+            "description": template["description"],
+            "complexity": template["complexity"],
+            "tags": template["tags"],
+            "is_global": template["is_global"],
+            "user_id": template["user_id"]
+        }
+
+        # Add mode-specific fields
+        if template.get("mode") == "multi":
+            set_fields["mode"] = "multi"
+            set_fields["framework"] = template["framework"]
+            set_fields["entrypoint"] = template["entrypoint"]
+            set_fields["files"] = template["files"]
+            # Remove code field if it exists (shouldn't be present for multi-file)
+            set_fields["code"] = None
+        else:
+            set_fields["mode"] = "single"
+            set_fields["code"] = template["code"]
+            # Clear multi-file fields
+            set_fields["files"] = None
+            set_fields["framework"] = None
+            set_fields["entrypoint"] = None
+
         update_doc = {
-            "$set": {
-                "description": template["description"],
-                "code": template["code"],
-                "complexity": template["complexity"],
-                "tags": template["tags"],
-                "is_global": template["is_global"],
-                "user_id": template["user_id"]
-            },
+            "$set": set_fields,
             "$setOnInsert": {
                 "created_at": template["created_at"]
             }

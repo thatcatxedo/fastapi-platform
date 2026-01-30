@@ -201,20 +201,38 @@ Files unchanged (appropriately sized):
 
 ---
 
-## Phase 2 — Multi-File Mode
+## Quick Wins
+
+Small improvements that can be shipped quickly between major phases:
+
+- [ ] App descriptions/notes
+  - Add optional `description` field to app documents (stored in MongoDB)
+  - Display description on dashboard app cards
+  - Editable in app settings or app page header
+  - Helps users document what each app does, especially as app count grows
+
+---
+
+## Phase 2 — Multi-File Mode (in progress)
 
 **Goal:** Support real-world app structure without losing simplicity.
 
+**Status:** Implementation plan created. See `docs/architecture-reviews/` for detailed implementation plan.
+
 - [ ] Project structure
-  - Files: `main.py`, `routers/`, `models/`, `schemas/`
-  - Simple file tree in editor with add/rename/delete
+  - Files: `app.py`, `routes.py`, `models.py`, `services.py`, `helpers.py` (FastAPI preset)
+  - Files: `app.py`, `routes.py`, `models.py`, `services.py`, `components.py` (FastHTML preset)
+  - Tabbed file editor with fixed file set per framework preset
 - [ ] Build/run model
-  - Bundle files into ConfigMap or archive
-  - Entrypoint: `main.py` with `app = FastAPI()`
+  - Multi-file ConfigMap with all files mounted at `/app`
+  - Entrypoint via `CODE_PATH` env var (e.g., `/app/app.py`)
+  - Runner adds `/app` to `sys.path` for imports
 - [ ] Size limits for bundled projects (guardrail for ConfigMap/archives)
+  - Max 10 files, 100KB per file, 500KB total
 - [ ] Backward compatibility
   - Single-file mode remains default
-  - "Convert to multi-file" scaffolds structure
+  - New apps can choose single-file or multi-file mode
+  - Framework selection: FastAPI (API-focused) or FastHTML (HTML/HTMX-focused)
 
 ## Phase 3 — Custom Dependencies
 

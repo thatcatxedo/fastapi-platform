@@ -27,13 +27,41 @@ def get_app_labels(user_id: str, app_id: str) -> dict:
     }
 
 
+def build_configmap_data(app_doc: dict) -> dict:
+    """Build ConfigMap data from app document (single or multi-file)."""
+    mode = app_doc.get("mode", "single")
+
+    if mode == "multi":
+        # Multi-file: each file becomes a ConfigMap key
+        return app_doc.get("files", {})
+    else:
+        # Single-file: wrap in main.py for backwards compatibility
+        return {"main.py": app_doc["code"]}
+
+
+def compute_code_hash(app_doc: dict) -> str:
+    """Compute hash of code for deployment rollout trigger."""
+    mode = app_doc.get("mode", "single")
+
+    if mode == "multi":
+        # Hash all files sorted by name for consistency
+        files = app_doc.get("files", {})
+        content = "".join(f"{k}:{v}" for k, v in sorted(files.items()))
+    else:
+        content = app_doc.get("code", "")
+
+    return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+
 async def create_configmap(app_doc: dict, user: dict):
-    """Create ConfigMap with user code"""
+    """Create ConfigMap with user code (single or multi-file)"""
     if not core_v1:
         raise Exception("Kubernetes client not available")
 
     app_id = app_doc["app_id"]
     user_id = str(user["_id"])
+
+    configmap_data = build_configmap_data(app_doc)
 
     configmap = k8s_client.V1ConfigMap(
         metadata=k8s_client.V1ObjectMeta(
@@ -41,9 +69,7 @@ async def create_configmap(app_doc: dict, user: dict):
             namespace=PLATFORM_NAMESPACE,
             labels=get_app_labels(user_id, app_id)
         ),
-        data={
-            "user_code.py": app_doc["code"]
-        }
+        data=configmap_data
     )
 
     create_or_update_resource(
@@ -54,22 +80,30 @@ async def create_configmap(app_doc: dict, user: dict):
 
 
 async def create_deployment(app_doc: dict, user: dict):
-    """Create Deployment for user app"""
+    """Create Deployment for user app (single or multi-file)"""
     if not apps_v1:
         raise Exception("Kubernetes client not available")
 
     app_id = app_doc["app_id"]
     user_id = str(user["_id"])
     deployment_name = f"app-{app_id}"
+    mode = app_doc.get("mode", "single")
 
     # Compute a hash of the code to use as a restart trigger
     # When code changes, this annotation changes, forcing a pod rollout
-    code_hash = hashlib.sha256(app_doc["code"].encode()).hexdigest()[:16]
+    code_hash = compute_code_hash(app_doc)
+
+    # Determine CODE_PATH based on mode
+    if mode == "multi":
+        entrypoint = app_doc.get("entrypoint", "app.py")
+        code_path = f"/app/{entrypoint}"
+    else:
+        code_path = "/app/main.py"
 
     # Build environment variables list with per-user MongoDB credentials
     mongo_uri = get_user_mongo_uri_secure(user_id, user)
     env_list = [
-        k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py"),
+        k8s_client.V1EnvVar(name="CODE_PATH", value=code_path),
         k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=mongo_uri)
     ]
     # Add user-defined env vars
@@ -77,7 +111,7 @@ async def create_deployment(app_doc: dict, user: dict):
         for key, value in app_doc["env_vars"].items():
             env_list.append(k8s_client.V1EnvVar(name=key, value=str(value)))
 
-    # Container spec
+    # Container spec - mount entire ConfigMap as directory
     container = k8s_client.V1Container(
         name="runner",
         image=RUNNER_IMAGE,
@@ -85,8 +119,7 @@ async def create_deployment(app_doc: dict, user: dict):
         volume_mounts=[
             k8s_client.V1VolumeMount(
                 name="code",
-                mount_path="/app/user_code.py",
-                sub_path="user_code.py"
+                mount_path="/app"
             )
         ],
         env=env_list,
