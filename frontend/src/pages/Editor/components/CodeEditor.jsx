@@ -6,7 +6,8 @@ function CodeEditor({
   onChange,
   onMount,
   onDeploy,
-  onValidate
+  onValidate,
+  onSaveDraft
 }) {
   const [editorHeight, setEditorHeight] = useState(500)
   const editorContainerRef = useRef(null)
@@ -39,9 +40,11 @@ function CodeEditor({
 
   const handleEditorMount = (editor, monaco) => {
     // Keyboard shortcuts
-    // Ctrl/Cmd + S = Prevent browser save dialog
+    // Ctrl/Cmd + S = Save draft
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      // Future: save draft. For now, just prevent default.
+      if (onSaveDraft) {
+        onSaveDraft()
+      }
     })
 
     // Ctrl/Cmd + Enter = Deploy
@@ -106,6 +109,8 @@ function CodeEditor({
         />
       </div>
       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem', textAlign: 'right' }}>
+        <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+S</kbd> Save Draft
+        {' • '}
         <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+Enter</kbd> Deploy
         {' • '}
         <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+Shift+V</kbd> Validate

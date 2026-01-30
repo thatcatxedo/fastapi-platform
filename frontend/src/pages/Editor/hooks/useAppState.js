@@ -27,6 +27,13 @@ function useAppState(appId) {
   const [envVars, setEnvVars] = useState([])
   const [isEditing, setIsEditing] = useState(false)
   
+  // Draft/Version tracking state
+  const [deployedCode, setDeployedCode] = useState(null)
+  const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false)
+  const [lastSavedCode, setLastSavedCode] = useState(null)
+  const [savingDraft, setSavingDraft] = useState(false)
+  const [draftSaved, setDraftSaved] = useState(false)
+  
   // UI state
   const [loading, setLoading] = useState(false)
   const [validating, setValidating] = useState(false)
@@ -85,6 +92,11 @@ function useAppState(appId) {
         const envVarsList = Object.entries(app.env_vars).map(([key, value]) => ({ key, value }))
         setEnvVars(envVarsList)
       }
+      
+      // Track deployed code for change detection
+      setDeployedCode(app.deployed_code || app.code)
+      setLastSavedCode(app.code)
+      setHasUnpublishedChanges(app.has_unpublished_changes || false)
     } catch (err) {
       setError(err.message)
     }
@@ -112,6 +124,11 @@ function useAppState(appId) {
               const duration = ((Date.now() - deployStartTime) / 1000).toFixed(1)
               setDeployDuration(duration)
             }
+            // Reset change tracking after successful deploy
+            setDeployedCode(code)
+            setLastSavedCode(code)
+            setHasUnpublishedChanges(false)
+            
             setSuccess('App deployed successfully!')
             setTimeout(() => {
               navigate('/dashboard')
@@ -138,7 +155,7 @@ function useAppState(appId) {
     }
 
     checkStatus()
-  }, [deployStartTime, navigate])
+  }, [deployStartTime, navigate, code])
 
   const handleValidate = async () => {
     if (!name.trim()) {
@@ -280,6 +297,55 @@ function useAppState(appId) {
     }
   }
 
+  const handleSaveDraft = useCallback(async () => {
+    if (!appId || !isEditing) return
+    
+    // Don't save if code hasn't changed from last save
+    if (code === lastSavedCode) {
+      setSuccess('No changes to save')
+      setTimeout(() => setSuccess(''), 2000)
+      return
+    }
+
+    setError('')
+    setSavingDraft(true)
+    setDraftSaved(false)
+
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}/api/apps/${appId}/draft`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ code })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        const message = parseApiError(data, 'Failed to save draft')
+        throw new Error(message)
+      }
+
+      setLastSavedCode(code)
+      setHasUnpublishedChanges(data.has_unpublished_changes)
+      setDraftSaved(true)
+      setSuccess('Draft saved')
+      
+      // Clear the "saved" message after a short delay
+      setTimeout(() => {
+        setDraftSaved(false)
+        setSuccess('')
+      }, 2000)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSavingDraft(false)
+    }
+  }, [appId, isEditing, code, lastSavedCode])
+
   // Editor helpers
   const highlightErrorLine = (lineNumber) => {
     if (!editorRef.current || !monacoRef.current || !lineNumber) return
@@ -313,6 +379,9 @@ function useAppState(appId) {
     monacoRef.current = monaco
   }
 
+  // Compute if there are unsaved local changes (editor differs from last save)
+  const hasLocalChanges = code !== lastSavedCode && lastSavedCode !== null
+
   return {
     // Core state
     code,
@@ -322,6 +391,13 @@ function useAppState(appId) {
     envVars,
     setEnvVars,
     isEditing,
+    
+    // Draft/Version tracking
+    deployedCode,
+    hasUnpublishedChanges,
+    hasLocalChanges,
+    savingDraft,
+    draftSaved,
     
     // UI state
     loading,
@@ -342,6 +418,7 @@ function useAppState(appId) {
     handleValidate,
     handleDeploy,
     handleDelete,
+    handleSaveDraft,
     
     // Editor helpers
     setEditorRefs,

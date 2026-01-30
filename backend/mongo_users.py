@@ -179,17 +179,15 @@ def build_user_mongo_uri(user_id: str, password: str) -> str:
     port = parsed.port or 27017
     
     # Build new URI with user credentials
-    # Preserve query parameters (like authSource, replicaSet, etc.)
     netloc = f"{encoded_username}:{encoded_password}@{hostname}:{port}"
-    
-    # Add authSource if not present (user is created in admin db)
-    query = parsed.query
-    if "authSource" not in query:
-        if query:
-            query = f"{query}&authSource=admin"
-        else:
-            query = "authSource=admin"
-    
+
+    # Set authSource=admin (user is created in admin db)
+    # Must replace any existing authSource since base URI may have different value
+    from urllib.parse import parse_qs, urlencode
+    query_params = parse_qs(parsed.query)
+    query_params['authSource'] = ['admin']  # Always use admin for per-user auth
+    query = urlencode(query_params, doseq=True)
+
     return urlunparse((
         parsed.scheme,
         netloc,

@@ -11,6 +11,7 @@ import NotificationsPanel from './components/NotificationsPanel'
 import EnvVarsPanel from './components/EnvVarsPanel'
 import CodeEditor from './components/CodeEditor'
 import TemplatesModal from './components/TemplatesModal'
+import VersionHistoryModal from './components/VersionHistoryModal'
 
 // Styles
 import styles from './Editor.module.css'
@@ -28,6 +29,12 @@ function EditorPage({ user }) {
     envVars,
     setEnvVars,
     isEditing,
+    // Draft/Version tracking
+    hasUnpublishedChanges,
+    hasLocalChanges,
+    savingDraft,
+    draftSaved,
+    // UI state
     loading,
     validating,
     error,
@@ -42,6 +49,7 @@ function EditorPage({ user }) {
     handleValidate,
     handleDeploy,
     handleDelete,
+    handleSaveDraft,
     setEditorRefs,
     clearErrorHighlight
   } = useAppState(appId)
@@ -50,6 +58,9 @@ function EditorPage({ user }) {
   const { templates, loadingTemplates } = useTemplates(!appId)
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
   const [envVarsExpanded, setEnvVarsExpanded] = useState(envVars.length > 0)
+  
+  // Version history modal
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
 
   const handleUseTemplate = (template) => {
     setCode(template.code)
@@ -71,11 +82,17 @@ function EditorPage({ user }) {
         loading={loading}
         validating={validating}
         deploymentStatus={deploymentStatus}
+        hasUnpublishedChanges={hasUnpublishedChanges}
+        hasLocalChanges={hasLocalChanges}
+        savingDraft={savingDraft}
+        draftSaved={draftSaved}
         onValidate={handleValidate}
         onDeploy={handleDeploy}
+        onSaveDraft={handleSaveDraft}
         onCancel={() => navigate('/dashboard')}
         onDelete={handleDelete}
         onBrowseTemplates={() => setTemplatesModalOpen(true)}
+        onOpenHistory={() => setHistoryModalOpen(true)}
       />
 
       <NotificationsPanel
@@ -117,6 +134,7 @@ function EditorPage({ user }) {
           onMount={setEditorRefs}
           onDeploy={handleDeploy}
           onValidate={handleValidate}
+          onSaveDraft={handleSaveDraft}
         />
       </div>
 

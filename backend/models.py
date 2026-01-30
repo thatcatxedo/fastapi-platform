@@ -1,8 +1,9 @@
 """
 Pydantic models for FastAPI Platform API
 """
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Dict
+from datetime import datetime
 
 
 class UserSignup(BaseModel):
@@ -45,6 +46,10 @@ class AppUpdate(BaseModel):
     env_vars: Optional[Dict[str, str]] = None
 
 
+class DraftUpdate(BaseModel):
+    code: str
+
+
 class AppResponse(BaseModel):
     id: str
     app_id: str
@@ -62,6 +67,22 @@ class AppResponse(BaseModel):
 class AppDetailResponse(AppResponse):
     code: str
     env_vars: Optional[Dict[str, str]] = None
+    draft_code: Optional[str] = None
+    deployed_code: Optional[str] = None
+    deployed_at: Optional[str] = None
+    has_unpublished_changes: bool = False
+
+
+class VersionEntry(BaseModel):
+    code: str
+    deployed_at: str
+    code_hash: str
+
+
+class VersionHistoryResponse(BaseModel):
+    app_id: str
+    versions: List[VersionEntry]
+    current_deployed_hash: Optional[str] = None
 
 
 class AppStatusResponse(BaseModel):
