@@ -208,6 +208,15 @@ Implementation notes:
 
 These are ideas that need real user feedback before committing:
 
+- **Container Image Automation** — Current gap: CI builds versioned tags
+  (`ts-{timestamp}-{sha}`) but deployments only reference `:latest`, and no
+  Flux Image Automation is configured to pick up new tags. Result: manual
+  `kubectl rollout restart` required after every CI build. Options to explore:
+  - Flux Image Automation with ImageRepository/ImagePolicy CRDs to auto-update
+    manifests when new `ts-*` tags appear
+  - GitHub Actions webhook to trigger rollout after image push
+  - Add `kubectl rollout restart` step to CI workflow (simplest)
+  - Use `imagePullPolicy: Always` with a rolling update annotation
 - **Advanced Admin Observability** — Prometheus/Grafana stack, alerting,
   detailed resource tracking. Only if lightweight metrics prove insufficient.
 - **GridFS Templates** — File upload/storage patterns. Wait for user demand.

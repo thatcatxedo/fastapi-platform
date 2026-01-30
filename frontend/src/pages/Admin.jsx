@@ -288,7 +288,7 @@ function Admin({ user }) {
               <tr style={{ borderBottom: '2px solid var(--border)' }}>
                 <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Username</th>
                 <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Email</th>
-                <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Apps</th>
+                <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Apps (Running)</th>
                 <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Created</th>
                 <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Actions</th>
               </tr>
@@ -301,7 +301,7 @@ function Admin({ user }) {
                     {u.is_admin && <span style={{ marginLeft: '0.5rem', padding: '0.125rem 0.5rem', background: 'var(--primary)', color: 'white', borderRadius: '4px', fontSize: '0.75rem' }}>Admin</span>}
                   </td>
                   <td style={{ padding: '0.75rem' }}>{u.email}</td>
-                  <td style={{ padding: '0.75rem' }}>{u.app_count}</td>
+                  <td style={{ padding: '0.75rem' }}>{u.app_count} <span style={{ color: 'var(--text-muted)' }}>({u.running_app_count} running)</span></td>
                   <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{formatDate(u.created_at)}</td>
                   <td style={{ padding: '0.75rem' }}>
                     {u.id !== user.id ? (

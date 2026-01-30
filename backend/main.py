@@ -1221,13 +1221,15 @@ async def list_all_users(admin: dict = Depends(require_admin)):
     users = []
     async for user in users_collection.find().sort("created_at", -1):
         app_count = await apps_collection.count_documents({"user_id": user["_id"]})
+        running_app_count = await apps_collection.count_documents({"user_id": user["_id"], "status": "running"})
         users.append({
             "id": str(user["_id"]),
             "username": user["username"],
             "email": user["email"],
             "created_at": user["created_at"].isoformat(),
             "is_admin": user.get("is_admin", False),
-            "app_count": app_count
+            "app_count": app_count,
+            "running_app_count": running_app_count
         })
     return users
 
