@@ -109,7 +109,6 @@ function Admin({ user }) {
         throw new Error(data.detail || 'Failed to create user')
       }
 
-      // Reset form and refresh users list
       setCreateUserData({ username: '', email: '', password: '' })
       setShowCreateForm(false)
       fetchUsers()
@@ -139,7 +138,6 @@ function Admin({ user }) {
         throw new Error(data.detail?.message || 'Failed to delete user')
       }
 
-      // Refresh users and stats
       fetchUsers()
       fetchStats()
     } catch (err) {
@@ -151,7 +149,7 @@ function Admin({ user }) {
 
   const formatDate = (dateString) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleDateString()
   }
 
   if (loading) {
@@ -159,168 +157,202 @@ function Admin({ user }) {
   }
 
   return (
-    <div className="container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
-      <h1 style={{ marginBottom: '2rem' }}>Admin Dashboard</h1>
-
-      {/* Settings Card */}
-      <div className="card" style={{ marginBottom: '2rem' }}>
-        <h2>Platform Settings</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={settings.allow_signups}
-              onChange={(e) => updateSettings(e.target.checked)}
-            />
-            <span>Allow Public Signups</span>
-          </label>
-        </div>
-        {!settings.allow_signups && (
-          <div style={{ marginTop: '1rem' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              style={{ fontSize: '0.875rem' }}
-            >
-              {showCreateForm ? 'Hide' : 'Create User Manually'}
-            </button>
-            {showCreateForm && (
-              <form onSubmit={handleCreateUser} style={{ marginTop: '1rem', padding: '1rem', background: 'var(--bg-secondary)', borderRadius: '4px' }}>
-                {createError && <div className="error" style={{ marginBottom: '1rem' }}>{createError}</div>}
-                <div className="form-group">
-                  <label>Username</label>
-                  <input
-                    type="text"
-                    value={createUserData.username}
-                    onChange={(e) => setCreateUserData({ ...createUserData, username: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Email</label>
-                  <input
-                    type="email"
-                    value={createUserData.email}
-                    onChange={(e) => setCreateUserData({ ...createUserData, email: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Password</label>
-                  <input
-                    type="password"
-                    value={createUserData.password}
-                    onChange={(e) => setCreateUserData({ ...createUserData, password: e.target.value })}
-                    required
-                  />
-                </div>
-                <button type="submit" className="btn btn-primary" disabled={createLoading}>
-                  {createLoading ? 'Creating...' : 'Create User'}
-                </button>
-              </form>
-            )}
-          </div>
-        )}
+    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <h1 style={{ margin: 0 }}>Admin Dashboard</h1>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+          <input
+            type="checkbox"
+            checked={settings.allow_signups}
+            onChange={(e) => updateSettings(e.target.checked)}
+          />
+          <span>Allow Signups</span>
+        </label>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Row - All in one line */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          <div className="card">
-            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem' }}>{stats.users}</h3>
-            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Total Users</p>
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
+            <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.users}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Users</div>
           </div>
-          <div className="card">
-            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem' }}>{stats.apps}</h3>
-            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Total Apps</p>
+          <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
+            <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.apps}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Apps</div>
           </div>
-          <div className="card">
-            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem' }}>{stats.running_apps}</h3>
-            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Running Apps</p>
+          <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
+            <div style={{ fontSize: '1.75rem', fontWeight: '600', color: 'var(--success)' }}>{stats.running_apps}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Running</div>
           </div>
-          <div className="card">
-            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem' }}>{stats.templates}</h3>
-            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Templates</p>
+          <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
+            <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.templates}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Templates</div>
           </div>
-        </div>
-      )}
-
-      {/* Recent Activity */}
-      {stats && (stats.recent_signups.length > 0 || stats.recent_deploys.length > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          {stats.recent_signups.length > 0 && (
-            <div className="card">
-              <h3>Recent Signups</h3>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {stats.recent_signups.map((signup, idx) => (
-                  <li key={idx} style={{ padding: '0.5rem 0', borderBottom: idx < stats.recent_signups.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <strong>{signup.username}</strong>
-                    <br />
-                    <small style={{ color: 'var(--text-muted)' }}>{formatDate(signup.created_at)}</small>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {stats.recent_deploys.length > 0 && (
-            <div className="card">
-              <h3>Recent Deploys</h3>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {stats.recent_deploys.map((deploy, idx) => (
-                  <li key={idx} style={{ padding: '0.5rem 0', borderBottom: idx < stats.recent_deploys.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <strong>{deploy.name}</strong>
-                    <br />
-                    <small style={{ color: 'var(--text-muted)' }}>{formatDate(deploy.created_at)}</small>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {stats.mongo && !stats.mongo.error && (
+            <>
+              <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.mongo.user_databases}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>User DBs</div>
+              </div>
+              <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.mongo.total_storage_mb}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>User MB</div>
+              </div>
+              <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.mongo.total_documents}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Documents</div>
+              </div>
+            </>
           )}
         </div>
       )}
 
-      {/* Users Table */}
-      <div className="card">
-        <h2>Users</h2>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Username</th>
-                <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Email</th>
-                <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Apps (Running)</th>
-                <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Created</th>
-                <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: '600' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '0.75rem' }}>
-                    {u.username}
-                    {u.is_admin && <span style={{ marginLeft: '0.5rem', padding: '0.125rem 0.5rem', background: 'var(--primary)', color: 'white', borderRadius: '4px', fontSize: '0.75rem' }}>Admin</span>}
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>{u.email}</td>
-                  <td style={{ padding: '0.75rem' }}>{u.app_count} <span style={{ color: 'var(--text-muted)' }}>({u.running_app_count} running)</span></td>
-                  <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{formatDate(u.created_at)}</td>
-                  <td style={{ padding: '0.75rem' }}>
-                    {u.id !== user.id ? (
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => handleDeleteUser(u.id)}
-                        disabled={deleteLoading === u.id}
-                        style={{ fontSize: '0.875rem', padding: '0.25rem 0.75rem' }}
-                      >
-                        {deleteLoading === u.id ? 'Deleting...' : 'Delete'}
-                      </button>
-                    ) : (
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>You</span>
-                    )}
-                  </td>
+      {/* Two column layout: Users table + Activity sidebar */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '1.5rem' }}>
+        {/* Users Table */}
+        <div className="card" style={{ padding: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Users ({users.length})</h2>
+            {!settings.allow_signups && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowCreateForm(!showCreateForm)}
+                style={{ fontSize: '0.8rem', padding: '0.25rem 0.75rem' }}
+              >
+                {showCreateForm ? 'Cancel' : '+ Add User'}
+              </button>
+            )}
+          </div>
+
+          {showCreateForm && (
+            <form onSubmit={handleCreateUser} style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '4px' }}>
+              {createError && <div className="error" style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>{createError}</div>}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={createUserData.username}
+                  onChange={(e) => setCreateUserData({ ...createUserData, username: e.target.value })}
+                  required
+                  style={{ padding: '0.4rem', fontSize: '0.85rem' }}
+                />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={createUserData.email}
+                  onChange={(e) => setCreateUserData({ ...createUserData, email: e.target.value })}
+                  required
+                  style={{ padding: '0.4rem', fontSize: '0.85rem' }}
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={createUserData.password}
+                  onChange={(e) => setCreateUserData({ ...createUserData, password: e.target.value })}
+                  required
+                  style={{ padding: '0.4rem', fontSize: '0.85rem' }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={createLoading} style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>
+                  {createLoading ? '...' : 'Create'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                  <th style={{ textAlign: 'left', padding: '0.5rem', fontWeight: '600' }}>Username</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem', fontWeight: '600' }}>Email</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}>Apps</th>
+                  <th style={{ textAlign: 'left', padding: '0.5rem', fontWeight: '600' }}>Created</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '0.5rem' }}>
+                      {u.username}
+                      {u.is_admin && <span style={{ marginLeft: '0.4rem', padding: '0.1rem 0.4rem', background: 'var(--primary)', color: 'white', borderRadius: '3px', fontSize: '0.7rem' }}>Admin</span>}
+                    </td>
+                    <td style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>{u.email}</td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      {u.app_count}
+                      {u.running_app_count > 0 && <span style={{ color: 'var(--success)', marginLeft: '0.25rem' }}>({u.running_app_count})</span>}
+                    </td>
+                    <td style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>{formatDate(u.created_at)}</td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      {u.id !== user.id ? (
+                        <button
+                          onClick={() => handleDeleteUser(u.id)}
+                          disabled={deleteLoading === u.id}
+                          style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          {deleteLoading === u.id ? '...' : '✕'}
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>you</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Activity Sidebar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {stats?.recent_signups?.length > 0 && (
+            <div className="card" style={{ padding: '1rem' }}>
+              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Recent Signups</h3>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem' }}>
+                {stats.recent_signups.slice(0, 5).map((signup, idx) => (
+                  <li key={idx} style={{ padding: '0.35rem 0', borderBottom: idx < Math.min(stats.recent_signups.length, 5) - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <strong>{signup.username}</strong>
+                    <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem', fontSize: '0.8rem' }}>{formatDate(signup.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {stats?.recent_deploys?.length > 0 && (
+            <div className="card" style={{ padding: '1rem' }}>
+              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Recent Deploys</h3>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem' }}>
+                {stats.recent_deploys.slice(0, 5).map((deploy, idx) => (
+                  <li key={idx} style={{ padding: '0.35rem 0', borderBottom: idx < Math.min(stats.recent_deploys.length, 5) - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <strong style={{ wordBreak: 'break-all' }}>{deploy.name}</strong>
+                    <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem', fontSize: '0.8rem' }}>{formatDate(deploy.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {stats?.mongo && !stats.mongo.error && (
+            <div className="card" style={{ padding: '1rem' }}>
+              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>MongoDB</h3>
+              <div style={{ fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Platform DB</span>
+                  <span>{stats.mongo.platform_storage_mb} MB</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>User Data</span>
+                  <span>{stats.mongo.total_storage_mb} MB</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Collections</span>
+                  <span>{stats.mongo.total_collections}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ import logging
 
 from models import AdminSettingsUpdate, UserSignup, UserResponse
 from auth import require_admin, hash_password
+from routers.auth import build_user_response
 from database import (
     users_collection, apps_collection, templates_collection,
     settings_collection, viewer_instances_collection, client
@@ -69,15 +70,52 @@ async def get_platform_stats(admin: dict = Depends(require_admin)):
     app_count = await apps_collection.count_documents({})
     running_apps = await apps_collection.count_documents({"status": "running"})
     template_count = await templates_collection.count_documents({})
-    
+
     recent_users = await users_collection.find().sort("created_at", -1).limit(5).to_list(5)
     recent_apps = await apps_collection.find().sort("created_at", -1).limit(5).to_list(5)
-    
+
+    # MongoDB stats
+    mongo_stats = {}
+    try:
+        # Get list of user databases
+        db_list = await client.list_database_names()
+        user_dbs = [db for db in db_list if db.startswith("user_")]
+
+        total_storage = 0
+        total_collections = 0
+        total_documents = 0
+
+        for db_name in user_dbs:
+            try:
+                db = client[db_name]
+                stats = await db.command("dbStats")
+                total_storage += stats.get("storageSize", 0)
+                total_collections += stats.get("collections", 0)
+                total_documents += stats.get("objects", 0)
+            except Exception:
+                pass
+
+        # Platform DB stats
+        platform_db = client.fastapi_platform_db
+        platform_stats = await platform_db.command("dbStats")
+
+        mongo_stats = {
+            "user_databases": len(user_dbs),
+            "total_storage_mb": round(total_storage / (1024 * 1024), 2),
+            "total_collections": total_collections,
+            "total_documents": total_documents,
+            "platform_storage_mb": round(platform_stats.get("storageSize", 0) / (1024 * 1024), 2)
+        }
+    except Exception as e:
+        logger.warning(f"Failed to get MongoDB stats: {e}")
+        mongo_stats = {"error": str(e)}
+
     return {
         "users": user_count,
         "apps": app_count,
         "running_apps": running_apps,
         "templates": template_count,
+        "mongo": mongo_stats,
         "recent_signups": [
             {"username": u["username"], "created_at": u["created_at"].isoformat()}
             for u in recent_users
@@ -125,13 +163,7 @@ async def admin_create_user(
         logger.error(f"Failed to create MongoDB user: {e}")
     
     user = await users_collection.find_one({"_id": result.inserted_id})
-    return UserResponse(
-        id=str(user["_id"]),
-        username=user["username"],
-        email=user["email"],
-        created_at=user["created_at"].isoformat(),
-        is_admin=user.get("is_admin", False)
-    )
+    return build_user_response(user)
 
 
 @router.delete("/users/{user_id}")

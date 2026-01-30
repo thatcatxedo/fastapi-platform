@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def build_user_response(user: dict) -> UserResponse:
+    """Build a UserResponse from a user document."""
+    return UserResponse(
+        id=str(user["_id"]),
+        username=user["username"],
+        email=user["email"],
+        created_at=user["created_at"].isoformat(),
+        is_admin=user.get("is_admin", False)
+    )
+
+
 @router.post("/signup", response_model=UserResponse)
 async def signup(user_data: UserSignup):
     # Check if signups are allowed
@@ -76,13 +87,7 @@ async def signup(user_data: UserSignup):
         logger.error(f"Failed to create MongoDB user for {result.inserted_id}: {e}")
     
     user = await users_collection.find_one({"_id": result.inserted_id})
-    return UserResponse(
-        id=str(user["_id"]),
-        username=user["username"],
-        email=user["email"],
-        created_at=user["created_at"].isoformat(),
-        is_admin=user.get("is_admin", False)
-    )
+    return build_user_response(user)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -97,10 +102,4 @@ async def login(credentials: UserLogin):
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(user: dict = Depends(get_current_user)):
-    return UserResponse(
-        id=str(user["_id"]),
-        username=user["username"],
-        email=user["email"],
-        created_at=user["created_at"].isoformat(),
-        is_admin=user.get("is_admin", False)
-    )
+    return build_user_response(user)

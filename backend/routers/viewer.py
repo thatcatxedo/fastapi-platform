@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/viewer", tags=["viewer"])
 
 
+def build_viewer_response(
+    url: str,
+    username: str,
+    password: str = None,
+    password_provided: bool = False,
+    status_info: dict = None
+) -> ViewerResponse:
+    """Build a ViewerResponse from viewer data."""
+    return ViewerResponse(
+        url=url,
+        username=username,
+        password=password,
+        password_provided=password_provided,
+        ready=status_info["ready"] if status_info else False,
+        pod_status=status_info["pod_status"] if status_info else None
+    )
+
+
 @router.post("", response_model=ViewerResponse)
 async def provision_viewer(user: dict = Depends(get_current_user)):
     user_id = str(user["_id"])
@@ -44,14 +62,7 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
                 {"$set": {"last_access": datetime.utcnow()}}
             )
 
-        return ViewerResponse(
-            url=current_url,
-            username=viewer["username"],
-            password=None,
-            password_provided=False,
-            ready=status_info["ready"] if status_info else False,
-            pod_status=status_info["pod_status"] if status_info else None
-        )
+        return build_viewer_response(current_url, viewer["username"], status_info=status_info)
 
     username = f"user_{user_id}"
     password = generate_viewer_password()
@@ -73,14 +84,7 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
         "last_access": datetime.utcnow()
     })
 
-    return ViewerResponse(
-        url=url,
-        username=username,
-        password=password,
-        password_provided=True,
-        ready=status_info["ready"] if status_info else False,
-        pod_status=status_info["pod_status"] if status_info else None
-    )
+    return build_viewer_response(url, username, password, password_provided=True, status_info=status_info)
 
 
 @router.post("/rotate", response_model=ViewerResponse)
@@ -116,11 +120,4 @@ async def rotate_viewer_credentials(user: dict = Depends(get_current_user)):
         update_doc["created_at"] = datetime.utcnow()
         await viewer_instances_collection.insert_one(update_doc)
 
-    return ViewerResponse(
-        url=url,
-        username=username,
-        password=password,
-        password_provided=True,
-        ready=status_info["ready"] if status_info else False,
-        pod_status=status_info["pod_status"] if status_info else None
-    )
+    return build_viewer_response(url, username, password, password_provided=True, status_info=status_info)

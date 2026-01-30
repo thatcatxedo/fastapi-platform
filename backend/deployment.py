@@ -136,6 +136,62 @@ def get_viewer_labels(user_id: str) -> dict:
 def get_viewer_name(user_id: str) -> str:
     return f"mongo-viewer-{user_id}"
 
+
+def create_or_update_resource(create_fn, patch_fn, name: str, body, resource_type: str):
+    """
+    Create a K8s resource, or patch if it already exists (409 conflict).
+    
+    Args:
+        create_fn: Function to create the resource (called with namespace, body)
+        patch_fn: Function to patch the resource (called with name, namespace, body)
+        name: Resource name (used for patching and logging)
+        body: Resource body/spec
+        resource_type: Human-readable type for logging (e.g., "Deployment", "Service")
+    """
+    try:
+        create_fn(namespace=PLATFORM_NAMESPACE, body=body)
+        logger.info(f"Created {resource_type} {name}")
+    except ApiException as e:
+        if e.status == 409:
+            patch_fn(name=name, namespace=PLATFORM_NAMESPACE, body=body)
+            logger.info(f"Updated {resource_type} {name}")
+        else:
+            raise
+
+
+def create_or_update_custom_object(name: str, body: dict, resource_type: str):
+    """
+    Create a Traefik IngressRoute custom object, or patch if it already exists.
+    
+    Args:
+        name: Resource name
+        body: Resource body/spec (dict)
+        resource_type: Human-readable type for logging
+    """
+    try:
+        custom_objects.create_namespaced_custom_object(
+            group="traefik.io",
+            version="v1alpha1",
+            namespace=PLATFORM_NAMESPACE,
+            plural="ingressroutes",
+            body=body
+        )
+        logger.info(f"Created {resource_type} {name}")
+    except ApiException as e:
+        if e.status == 409:
+            custom_objects.patch_namespaced_custom_object(
+                group="traefik.io",
+                version="v1alpha1",
+                namespace=PLATFORM_NAMESPACE,
+                plural="ingressroutes",
+                name=name,
+                body=body
+            )
+            logger.info(f"Updated {resource_type} {name}")
+        else:
+            raise
+
+
 async def create_mongo_viewer_deployment(user_id: str, user: dict, username: str, password: str):
     """Create Deployment for per-user MongoDB viewer"""
     if not apps_v1:
@@ -193,22 +249,11 @@ async def create_mongo_viewer_deployment(user_id: str, user: dict, username: str
         spec=deployment_spec
     )
 
-    try:
-        apps_v1.create_namespaced_deployment(
-            namespace=PLATFORM_NAMESPACE,
-            body=deployment
-        )
-        logger.info(f"Created mongo viewer Deployment for user {user_id}")
-    except ApiException as e:
-        if e.status == 409:
-            apps_v1.patch_namespaced_deployment(
-                name=deployment_name,
-                namespace=PLATFORM_NAMESPACE,
-                body=deployment
-            )
-            logger.info(f"Updated mongo viewer Deployment for user {user_id}")
-        else:
-            raise
+    create_or_update_resource(
+        apps_v1.create_namespaced_deployment,
+        apps_v1.patch_namespaced_deployment,
+        deployment_name, deployment, f"mongo viewer Deployment for user {user_id}"
+    )
 
 async def create_mongo_viewer_service(user_id: str):
     """Create Service for per-user MongoDB viewer"""
@@ -235,22 +280,11 @@ async def create_mongo_viewer_service(user_id: str):
         )
     )
 
-    try:
-        core_v1.create_namespaced_service(
-            namespace=PLATFORM_NAMESPACE,
-            body=service
-        )
-        logger.info(f"Created mongo viewer Service for user {user_id}")
-    except ApiException as e:
-        if e.status == 409:
-            core_v1.patch_namespaced_service(
-                name=service_name,
-                namespace=PLATFORM_NAMESPACE,
-                body=service
-            )
-            logger.info(f"Updated mongo viewer Service for user {user_id}")
-        else:
-            raise
+    create_or_update_resource(
+        core_v1.create_namespaced_service,
+        core_v1.patch_namespaced_service,
+        service_name, service, f"mongo viewer Service for user {user_id}"
+    )
 
 async def create_mongo_viewer_ingress_route(user_id: str):
     """Create Traefik IngressRoute for per-user MongoDB viewer with subdomain routing"""
@@ -285,28 +319,9 @@ async def create_mongo_viewer_ingress_route(user_id: str):
         }
     }
 
-    try:
-        custom_objects.create_namespaced_custom_object(
-            group="traefik.io",
-            version="v1alpha1",
-            namespace=PLATFORM_NAMESPACE,
-            plural="ingressroutes",
-            body=ingress_route
-        )
-        logger.info(f"Created mongo viewer IngressRoute for user {user_id}")
-    except ApiException as e:
-        if e.status == 409:
-            custom_objects.patch_namespaced_custom_object(
-                group="traefik.io",
-                version="v1alpha1",
-                namespace=PLATFORM_NAMESPACE,
-                plural="ingressroutes",
-                name=ingress_name,
-                body=ingress_route
-            )
-            logger.info(f"Updated mongo viewer IngressRoute for user {user_id}")
-        else:
-            raise
+    create_or_update_custom_object(
+        ingress_name, ingress_route, f"mongo viewer IngressRoute for user {user_id}"
+    )
 
 async def create_mongo_viewer_resources(user_id: str, user: dict, username: str, password: str):
     """Create all Kubernetes resources for a per-user MongoDB viewer"""
@@ -381,23 +396,11 @@ async def create_configmap(app_doc: dict, user: dict):
         }
     )
     
-    try:
-        core_v1.create_namespaced_config_map(
-            namespace=PLATFORM_NAMESPACE,
-            body=configmap
-        )
-        logger.info(f"Created ConfigMap for app {app_id}")
-    except ApiException as e:
-        if e.status == 409:  # Already exists
-            # Update instead
-            core_v1.patch_namespaced_config_map(
-                name=f"app-{app_id}-code",
-                namespace=PLATFORM_NAMESPACE,
-                body=configmap
-            )
-            logger.info(f"Updated ConfigMap for app {app_id}")
-        else:
-            raise
+    create_or_update_resource(
+        core_v1.create_namespaced_config_map,
+        core_v1.patch_namespaced_config_map,
+        f"app-{app_id}-code", configmap, f"ConfigMap for app {app_id}"
+    )
 
 async def create_deployment(app_doc: dict, user: dict):
     """Create Deployment for user app"""
@@ -503,23 +506,11 @@ async def create_deployment(app_doc: dict, user: dict):
         spec=deployment_spec
     )
     
-    try:
-        apps_v1.create_namespaced_deployment(
-            namespace=PLATFORM_NAMESPACE,
-            body=deployment
-        )
-        logger.info(f"Created Deployment for app {app_id}")
-    except ApiException as e:
-        if e.status == 409:  # Already exists
-            # Update instead
-            apps_v1.patch_namespaced_deployment(
-                name=deployment_name,
-                namespace=PLATFORM_NAMESPACE,
-                body=deployment
-            )
-            logger.info(f"Updated Deployment for app {app_id}")
-        else:
-            raise
+    create_or_update_resource(
+        apps_v1.create_namespaced_deployment,
+        apps_v1.patch_namespaced_deployment,
+        deployment_name, deployment, f"Deployment for app {app_id}"
+    )
 
 async def create_service(app_doc: dict, user: dict):
     """Create Service for user app"""
@@ -548,23 +539,11 @@ async def create_service(app_doc: dict, user: dict):
         )
     )
     
-    try:
-        core_v1.create_namespaced_service(
-            namespace=PLATFORM_NAMESPACE,
-            body=service
-        )
-        logger.info(f"Created Service for app {app_id}")
-    except ApiException as e:
-        if e.status == 409:  # Already exists
-            # Update instead
-            core_v1.patch_namespaced_service(
-                name=service_name,
-                namespace=PLATFORM_NAMESPACE,
-                body=service
-            )
-            logger.info(f"Updated Service for app {app_id}")
-        else:
-            raise
+    create_or_update_resource(
+        core_v1.create_namespaced_service,
+        core_v1.patch_namespaced_service,
+        service_name, service, f"Service for app {app_id}"
+    )
 
 async def create_ingress_route(app_doc: dict, user: dict):
     """Create Traefik IngressRoute for user app using subdomain routing"""
@@ -602,29 +581,9 @@ async def create_ingress_route(app_doc: dict, user: dict):
         }
     }
     
-    try:
-        custom_objects.create_namespaced_custom_object(
-            group="traefik.io",
-            version="v1alpha1",
-            namespace=PLATFORM_NAMESPACE,
-            plural="ingressroutes",
-            body=ingress_route
-        )
-        logger.info(f"Created IngressRoute for app {app_id}")
-    except ApiException as e:
-        if e.status == 409:  # Already exists
-            # Update instead
-            custom_objects.patch_namespaced_custom_object(
-                group="traefik.io",
-                version="v1alpha1",
-                namespace=PLATFORM_NAMESPACE,
-                plural="ingressroutes",
-                name=ingress_name,
-                body=ingress_route
-            )
-            logger.info(f"Updated IngressRoute for app {app_id}")
-        else:
-            raise
+    create_or_update_custom_object(
+        ingress_name, ingress_route, f"IngressRoute for app {app_id}"
+    )
 
 async def create_app_deployment(app_doc: dict, user: dict):
     """Create all Kubernetes resources for an app"""

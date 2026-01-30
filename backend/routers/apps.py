@@ -242,9 +242,7 @@ async def get_app(app_id: str, user: dict = Depends(get_current_user)):
 
 @router.put("/{app_id}", response_model=AppResponse)
 async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_current_user)):
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     update_data = {}
     needs_redeploy = False
@@ -272,22 +270,8 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
         update_data["last_deploy_at"] = datetime.utcnow()
         
         # Snapshot current deployed code to version history before deploying
-        current_deployed_code = app.get("deployed_code") or app["code"]
-        current_deployed_at = app.get("deployed_at") or app.get("last_deploy_at") or app["created_at"]
-        
-        version_entry = {
-            "code": current_deployed_code,
-            "deployed_at": current_deployed_at.isoformat() if hasattr(current_deployed_at, 'isoformat') else str(current_deployed_at),
-            "code_hash": compute_code_hash(current_deployed_code)
-        }
-        
-        # Get existing version history and add new entry
-        version_history = app.get("version_history", [])
-        version_history.insert(0, version_entry)  # Most recent first
-        
-        # Limit to MAX_VERSION_HISTORY entries
-        version_history = version_history[:MAX_VERSION_HISTORY]
-        update_data["version_history"] = version_history
+        version_entry = snapshot_version(app)
+        update_data["version_history"] = add_version_to_history(app, version_entry)
 
     if not update_data:
         raise HTTPException(status_code=400, detail=error_payload("INVALID_REQUEST", "No fields to update"))
@@ -300,52 +284,21 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
     # Update deployment if code or env_vars changed
     if needs_redeploy:
         updated_app = await apps_collection.find_one({"_id": app["_id"]})
-        try:
-            await update_app_deployment(updated_app, user)
-            # On successful deploy, update deployed_code and clear draft
-            new_deployed_code = app_data.code if app_data.code else app["code"]
-            await apps_collection.update_one(
-                {"_id": app["_id"]},
-                {"$set": {
-                    "status": "running", 
-                    "deploy_stage": "running", 
-                    "last_error": None,
-                    "deployed_code": new_deployed_code,
-                    "deployed_at": datetime.utcnow(),
-                    "draft_code": None  # Clear draft after successful deploy
-                }}
-            )
-        except Exception as e:
-            error_msg = friendly_k8s_error(str(e))
-            
-            await apps_collection.update_one(
-                {"_id": app["_id"]},
-                {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
-            )
-            raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
+        new_deployed_code = app_data.code if app_data.code else app["code"]
+        await deploy_and_update_status(
+            app["_id"], updated_app, user, 
+            is_create=False, 
+            new_deployed_code=new_deployed_code
+        )
     
     updated_app = await apps_collection.find_one({"_id": app["_id"]})
-    return AppResponse(
-        id=str(updated_app["_id"]),
-        app_id=updated_app["app_id"],
-        name=updated_app["name"],
-        status=updated_app["status"],
-        created_at=updated_app["created_at"].isoformat(),
-        last_activity=updated_app.get("last_activity").isoformat() if updated_app.get("last_activity") else None,
-        deployment_url=updated_app["deployment_url"],
-        error_message=updated_app.get("error_message"),
-        deploy_stage=updated_app.get("deploy_stage"),
-        last_error=updated_app.get("last_error"),
-        last_deploy_at=updated_app.get("last_deploy_at").isoformat() if updated_app.get("last_deploy_at") else None
-    )
+    return build_app_response(updated_app)
 
 
 @router.put("/{app_id}/draft", response_model=AppDetailResponse)
 async def save_draft(app_id: str, draft: DraftUpdate, user: dict = Depends(get_current_user)):
     """Save draft code without deploying"""
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     # Validate draft code (still need valid syntax)
     is_valid, error_msg, error_line = validate_code(draft.code)
@@ -372,32 +325,12 @@ async def save_draft(app_id: str, draft: DraftUpdate, user: dict = Depends(get_c
     deployed_code = updated_app.get("deployed_code") or updated_app["code"]
     has_unpublished_changes = compute_code_hash(draft.code) != compute_code_hash(deployed_code)
     
-    return AppDetailResponse(
-        id=str(updated_app["_id"]),
-        app_id=updated_app["app_id"],
-        name=updated_app["name"],
-        code=updated_app["code"],
-        env_vars=updated_app.get("env_vars"),
-        status=updated_app["status"],
-        created_at=updated_app["created_at"].isoformat(),
-        last_activity=updated_app.get("last_activity").isoformat() if updated_app.get("last_activity") else None,
-        deployment_url=updated_app["deployment_url"],
-        error_message=updated_app.get("error_message"),
-        deploy_stage=updated_app.get("deploy_stage"),
-        last_error=updated_app.get("last_error"),
-        last_deploy_at=updated_app.get("last_deploy_at").isoformat() if updated_app.get("last_deploy_at") else None,
-        draft_code=updated_app.get("draft_code"),
-        deployed_code=deployed_code,
-        deployed_at=updated_app.get("deployed_at").isoformat() if updated_app.get("deployed_at") else None,
-        has_unpublished_changes=has_unpublished_changes
-    )
+    return build_app_detail_response(updated_app, deployed_code, has_unpublished_changes)
 
 
 @router.delete("/{app_id}")
 async def delete_app(app_id: str, user: dict = Depends(get_current_user)):
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     # Delete from Kubernetes
     try:
@@ -417,10 +350,7 @@ async def delete_app(app_id: str, user: dict = Depends(get_current_user)):
 @router.post("/{app_id}/clone", response_model=AppResponse)
 async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
     """Clone an existing app - copies code and env var keys (not values)"""
-    # Find the source app
-    source_app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not source_app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    source_app = await get_user_app(app_id, user)
     
     # Generate unique app_id for the clone
     new_app_id = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
@@ -475,43 +405,16 @@ async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
     cloned_app_doc["_id"] = result.inserted_id
     
     # Deploy cloned app to Kubernetes
-    try:
-        await create_app_deployment(cloned_app_doc, user)
-        await apps_collection.update_one(
-            {"_id": result.inserted_id},
-            {"$set": {"status": "running", "deploy_stage": "running", "last_error": None}}
-        )
-    except Exception as e:
-        error_msg = friendly_k8s_error(str(e))
-        
-        await apps_collection.update_one(
-            {"_id": result.inserted_id},
-            {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
-        )
-        raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
+    await deploy_and_update_status(cloned_app_doc["_id"], cloned_app_doc, user, is_create=True)
     
     updated_app = await apps_collection.find_one({"_id": result.inserted_id})
-    return AppResponse(
-        id=str(updated_app["_id"]),
-        app_id=updated_app["app_id"],
-        name=updated_app["name"],
-        status=updated_app["status"],
-        created_at=updated_app["created_at"].isoformat(),
-        last_activity=updated_app.get("last_activity").isoformat() if updated_app.get("last_activity") else None,
-        deployment_url=updated_app["deployment_url"],
-        error_message=updated_app.get("error_message"),
-        deploy_stage=updated_app.get("deploy_stage"),
-        last_error=updated_app.get("last_error"),
-        last_deploy_at=updated_app.get("last_deploy_at").isoformat() if updated_app.get("last_deploy_at") else None
-    )
+    return build_app_response(updated_app)
 
 
 @router.get("/{app_id}/status", response_model=AppStatusResponse)
 async def get_app_status(app_id: str, user: dict = Depends(get_current_user)):
     """Get deployment status for an app"""
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     pod_status = None
     deployment_ready = False
@@ -545,9 +448,7 @@ async def validate_app_code(payload: ValidateRequest, user: dict = Depends(get_c
 
 @router.post("/{app_id}/validate")
 async def validate_existing_app(app_id: str, payload: ValidateRequest, user: dict = Depends(get_current_user)):
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    await get_user_app(app_id, user)  # Verify app exists and user owns it
     is_valid, error_msg, error_line = validate_code(payload.code)
     if not is_valid:
         return {"valid": False, "message": error_msg, "line": error_line}
@@ -556,9 +457,7 @@ async def validate_existing_app(app_id: str, payload: ValidateRequest, user: dic
 
 @router.get("/{app_id}/deploy-status", response_model=AppDeployStatusResponse)
 async def get_app_deploy_status(app_id: str, user: dict = Depends(get_current_user)):
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
 
     pod_status = None
     deployment_ready = False
@@ -582,9 +481,7 @@ async def get_app_deploy_status(app_id: str, user: dict = Depends(get_current_us
 
 @router.post("/{app_id}/activity")
 async def record_activity(app_id: str, user: dict = Depends(get_current_user)):
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     await apps_collection.update_one(
         {"_id": app["_id"]},
@@ -602,9 +499,7 @@ async def get_app_logs(
     user: dict = Depends(get_current_user)
 ):
     """Get live pod logs for an app"""
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    await get_user_app(app_id, user)  # Verify app exists and user owns it
 
     result = await get_pod_logs(app_id, tail_lines, since_seconds)
 
@@ -625,9 +520,7 @@ async def get_app_events_endpoint(
     user: dict = Depends(get_current_user)
 ):
     """Get K8s events for an app's deployment"""
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    await get_user_app(app_id, user)  # Verify app exists and user owns it
 
     result = await get_app_events(app_id, limit)
 
@@ -642,20 +535,15 @@ async def get_app_events_endpoint(
 @router.get("/{app_id}/versions", response_model=VersionHistoryResponse)
 async def get_versions(app_id: str, user: dict = Depends(get_current_user)):
     """Get version history for an app"""
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     version_history = app.get("version_history", [])
     
     # Convert to VersionEntry objects
-    versions = []
-    for v in version_history:
-        versions.append(VersionEntry(
-            code=v["code"],
-            deployed_at=v["deployed_at"],
-            code_hash=v["code_hash"]
-        ))
+    versions = [
+        VersionEntry(code=v["code"], deployed_at=v["deployed_at"], code_hash=v["code_hash"])
+        for v in version_history
+    ]
     
     # Get current deployed hash
     deployed_code = app.get("deployed_code") or app["code"]
@@ -671,9 +559,7 @@ async def get_versions(app_id: str, user: dict = Depends(get_current_user)):
 @router.post("/{app_id}/rollback/{version_index}", response_model=AppResponse)
 async def rollback(app_id: str, version_index: int, user: dict = Depends(get_current_user)):
     """Rollback to a previous version"""
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     version_history = app.get("version_history", [])
     
@@ -696,18 +582,8 @@ async def rollback(app_id: str, version_index: int, user: dict = Depends(get_cur
         )
     
     # Snapshot current deployed code to version history before rollback
-    current_deployed_code = app.get("deployed_code") or app["code"]
-    current_deployed_at = app.get("deployed_at") or app.get("last_deploy_at") or app["created_at"]
-    
-    version_entry = {
-        "code": current_deployed_code,
-        "deployed_at": current_deployed_at.isoformat() if hasattr(current_deployed_at, 'isoformat') else str(current_deployed_at),
-        "code_hash": compute_code_hash(current_deployed_code)
-    }
-    
-    # Add to history and limit size
-    new_version_history = [version_entry] + version_history
-    new_version_history = new_version_history[:MAX_VERSION_HISTORY]
+    version_entry = snapshot_version(app)
+    new_version_history = add_version_to_history(app, version_entry)
     
     # Update app with rollback code
     now = datetime.utcnow()
@@ -725,38 +601,11 @@ async def rollback(app_id: str, version_index: int, user: dict = Depends(get_cur
     
     # Deploy the rollback
     updated_app = await apps_collection.find_one({"_id": app["_id"]})
-    try:
-        await update_app_deployment(updated_app, user)
-        await apps_collection.update_one(
-            {"_id": app["_id"]},
-            {"$set": {
-                "status": "running",
-                "deploy_stage": "running",
-                "last_error": None,
-                "deployed_code": rollback_code,
-                "deployed_at": now,
-                "draft_code": None
-            }}
-        )
-    except Exception as e:
-        error_msg = friendly_k8s_error(str(e))
-        await apps_collection.update_one(
-            {"_id": app["_id"]},
-            {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
-        )
-        raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
+    await deploy_and_update_status(
+        app["_id"], updated_app, user,
+        is_create=False,
+        new_deployed_code=rollback_code
+    )
     
     final_app = await apps_collection.find_one({"_id": app["_id"]})
-    return AppResponse(
-        id=str(final_app["_id"]),
-        app_id=final_app["app_id"],
-        name=final_app["name"],
-        status=final_app["status"],
-        created_at=final_app["created_at"].isoformat(),
-        last_activity=final_app.get("last_activity").isoformat() if final_app.get("last_activity") else None,
-        deployment_url=final_app["deployment_url"],
-        error_message=final_app.get("error_message"),
-        deploy_stage=final_app.get("deploy_stage"),
-        last_error=final_app.get("last_error"),
-        last_deploy_at=final_app.get("last_deploy_at").isoformat() if final_app.get("last_deploy_at") else None
-    )
+    return build_app_response(final_app)
