@@ -17,19 +17,18 @@ ALLOWED_IMPORTS = {
     'httpx', 'slack_sdk', 'google.auth', 'googleapiclient'
 }
 
+# Forbidden patterns - dangerous operations that should never be allowed
+# Note: Import restrictions are handled separately via ALLOWED_IMPORTS
 FORBIDDEN_PATTERNS = [
     r'__import__',
-    r'eval\s*\(',
-    r'exec\s*\(',
-    r'compile\s*\(',
-    r'open\s*\(',
-    r'file\s*\(',
-    r'subprocess',
+    r'\beval\s*\(',
+    r'\bexec\s*\(',
+    r'\bcompile\s*\(',
+    r'\bopen\s*\(',
+    r'\bfile\s*\(',
+    r'\bsubprocess\b',
     r'os\.system',
     r'os\.popen',
-    r'socket',
-    r'urllib\.request',
-    r'urllib2',
 ]
 
 
@@ -159,6 +158,7 @@ def validate_code(
 
     # Check for forbidden patterns with better error messages
     # Use \b word boundary to avoid false positives (e.g., urlopen matching open)
+    # Note: Import-based restrictions are handled by allowed_imports, not here
     forbidden_patterns_map = {
         r'__import__': "Direct use of __import__() is not allowed for security reasons.",
         r'\beval\s*\(': "eval() is not allowed for security reasons. Use proper code structure instead.",
@@ -169,9 +169,6 @@ def validate_code(
         r'\bsubprocess\b': "subprocess is not allowed for security reasons.",
         r'os\.system': "os.system() is not allowed for security reasons.",
         r'os\.popen': "os.popen() is not allowed for security reasons.",
-        r'socket': "Network sockets are not allowed. Use FastAPI's HTTP handling instead.",
-        r'urllib\.request': "urllib.request is not allowed. Use urllib.parse for URL parsing instead.",
-        r'urllib2': "urllib2 is not allowed. Use urllib.parse for URL parsing instead.",
     }
     
     for pattern, friendly_msg in forbidden_patterns_map.items():
@@ -246,6 +243,7 @@ def validate_code_syntax_only(
 
     # Check for forbidden patterns
     # Use \b word boundary to avoid false positives (e.g., urlopen matching open)
+    # Note: Import-based restrictions are handled by allowed_imports, not here
     forbidden_patterns_map = {
         r'__import__': "Direct use of __import__() is not allowed for security reasons.",
         r'\beval\s*\(': "eval() is not allowed for security reasons.",
@@ -256,9 +254,6 @@ def validate_code_syntax_only(
         r'\bsubprocess\b': "subprocess is not allowed for security reasons.",
         r'os\.system': "os.system() is not allowed for security reasons.",
         r'os\.popen': "os.popen() is not allowed for security reasons.",
-        r'\bsocket\b': "Network sockets are not allowed.",
-        r'urllib\.request': "urllib.request is not allowed.",
-        r'urllib2': "urllib2 is not allowed.",
     }
 
     for pattern, friendly_msg in forbidden_patterns_map.items():
