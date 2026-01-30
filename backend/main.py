@@ -860,14 +860,30 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
     user_id = str(user["_id"])
     viewer = await viewer_instances_collection.find_one({"user_id": user["_id"]})
 
+    # Always compute current URL format (in case routing scheme changed)
+    current_url = f"https://mongo-{user_id}.{APP_DOMAIN}"
+
     if viewer:
         status_info = await get_mongo_viewer_status(user_id)
-        await viewer_instances_collection.update_one(
-            {"_id": viewer["_id"]},
-            {"$set": {"last_access": datetime.utcnow()}}
-        )
+
+        # If URL format changed, update the IngressRoute and DB
+        if viewer.get("url") != current_url:
+            try:
+                await create_mongo_viewer_resources(user_id, viewer["username"], "")
+            except Exception as e:
+                logger.warning(f"Failed to update viewer resources: {e}")
+            await viewer_instances_collection.update_one(
+                {"_id": viewer["_id"]},
+                {"$set": {"last_access": datetime.utcnow(), "url": current_url}}
+            )
+        else:
+            await viewer_instances_collection.update_one(
+                {"_id": viewer["_id"]},
+                {"$set": {"last_access": datetime.utcnow()}}
+            )
+
         return ViewerResponse(
-            url=viewer["url"],
+            url=current_url,
             username=viewer["username"],
             password=None,
             password_provided=False,
