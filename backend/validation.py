@@ -24,8 +24,6 @@ FORBIDDEN_PATTERNS = [
     r'compile\s*\(',
     r'open\s*\(',
     r'file\s*\(',
-    r'input\s*\(',
-    r'raw_input\s*\(',
     r'subprocess',
     r'os\.system',
     r'os\.popen',
@@ -33,6 +31,15 @@ FORBIDDEN_PATTERNS = [
     r'urllib\.request',
     r'urllib2',
 ]
+
+
+def find_forbidden_calls(tree: ast.AST, names: set) -> Optional[tuple[str, int]]:
+    """Return (name, line) for forbidden call names found in AST."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in names:
+                return node.func.id, node.lineno
+    return None
 
 
 def validate_code(
@@ -126,6 +133,15 @@ def validate_code(
                     suggestion_text = f" {suggestions[0]}" if suggestions else ""
                     return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
 
+    # Check for forbidden call names (case-sensitive to avoid FastHTML Input)
+    forbidden_call = find_forbidden_calls(tree, {"input", "raw_input"})
+    if forbidden_call:
+        name, line_num = forbidden_call
+        message = "input() is not allowed. Use FastAPI request parameters instead."
+        if name == "raw_input":
+            message = "raw_input() is not allowed. Use FastAPI request parameters instead."
+        return False, message, line_num
+
     # Check for forbidden patterns with better error messages
     forbidden_patterns_map = {
         r'__import__': "Direct use of __import__() is not allowed for security reasons.",
@@ -134,8 +150,6 @@ def validate_code(
         r'compile\s*\(': "compile() is not allowed for security reasons.",
         r'open\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
         r'file\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
-        r'input\s*\(': "input() is not allowed. Use FastAPI request parameters instead.",
-        r'raw_input\s*\(': "raw_input() is not allowed. Use FastAPI request parameters instead.",
         r'subprocess': "subprocess is not allowed for security reasons.",
         r'os\.system': "os.system() is not allowed for security reasons.",
         r'os\.popen': "os.popen() is not allowed for security reasons.",
@@ -203,6 +217,15 @@ def validate_code_syntax_only(
                 if module_name not in allowed:
                     return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
 
+    # Check for forbidden call names (case-sensitive to avoid FastHTML Input)
+    forbidden_call = find_forbidden_calls(tree, {"input", "raw_input"})
+    if forbidden_call:
+        name, line_num = forbidden_call
+        message = "input() is not allowed."
+        if name == "raw_input":
+            message = "raw_input() is not allowed."
+        return False, message, line_num
+
     # Check for forbidden patterns
     forbidden_patterns_map = {
         r'__import__': "Direct use of __import__() is not allowed for security reasons.",
@@ -211,8 +234,6 @@ def validate_code_syntax_only(
         r'compile\s*\(': "compile() is not allowed for security reasons.",
         r'open\s*\(': "File operations are not allowed.",
         r'file\s*\(': "File operations are not allowed.",
-        r'input\s*\(': "input() is not allowed.",
-        r'raw_input\s*\(': "raw_input() is not allowed.",
         r'subprocess': "subprocess is not allowed for security reasons.",
         r'os\.system': "os.system() is not allowed for security reasons.",
         r'os\.popen': "os.popen() is not allowed for security reasons.",

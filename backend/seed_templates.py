@@ -914,6 +914,245 @@ def item_row(item):
     "tags": ["multifile", "fasthtml", "htmx", "mongodb", "organized"]
 }
 
+FASTHTML_WEATHER_AGGREGATOR_TEMPLATE = {
+    "name": "Community Weather Tracker",
+    "description": "Collect and share weather snapshots for user-chosen locations. Uses Open-Meteo by default and supports optional OpenWeatherMap API keys.",
+    "mode": "multi",
+    "framework": "fasthtml",
+    "entrypoint": "app.py",
+    "files": {
+        "app.py": '''from fasthtml.common import *
+from routes import setup_routes
+
+app, rt = fast_app()
+setup_routes(rt)
+
+@rt("/health")
+def health():
+    return {"status": "ok"}
+''',
+        "routes.py": '''from fasthtml.common import *
+from services import fetch_and_store_weather, get_latest_records
+from components import page_layout, weather_form, records_container, status_banner
+
+def setup_routes(rt):
+    @rt("/")
+    def home():
+        records = get_latest_records()
+        return page_layout(
+            H1("Community Weather Tracker"),
+            P("Submit a location to record current weather. All records are public."),
+            weather_form(),
+            records_container(records)
+        )
+
+    @rt("/submit", methods=["POST"])
+    def submit(lat: str, lon: str, label: str = "", api_key: str = ""):
+        try:
+            lat_value = float(lat)
+            lon_value = float(lon)
+        except ValueError:
+            records = get_latest_records()
+            return records_container(
+                records,
+                status_banner("Latitude and longitude must be valid numbers.", success=False)
+            )
+
+        result = fetch_and_store_weather(lat_value, lon_value, label, api_key)
+        records = get_latest_records()
+        return records_container(
+            records,
+            status_banner(result.get("message", "Recorded weather snapshot."), success=result.get("ok", True))
+        )
+''',
+        "models.py": '''from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+@dataclass
+class WeatherRecord:
+    lat: float
+    lon: float
+    label: str
+    temp_c: float
+    conditions: str
+    source: str
+    created_at: datetime
+    user_id: Optional[str] = None
+''',
+        "services.py": '''import json
+import os
+from datetime import datetime
+from urllib.request import urlopen
+from urllib.parse import urlencode
+
+from pymongo import MongoClient
+
+db = MongoClient(os.environ["PLATFORM_MONGO_URI"]).get_default_database()
+
+WEATHER_CODE_MAP = {
+    0: "Clear sky",
+    1: "Mostly clear",
+    2: "Partly cloudy",
+    3: "Overcast",
+    45: "Fog",
+    48: "Depositing rime fog",
+    51: "Light drizzle",
+    53: "Drizzle",
+    55: "Dense drizzle",
+    61: "Light rain",
+    63: "Rain",
+    65: "Heavy rain",
+    71: "Light snow",
+    73: "Snow",
+    75: "Heavy snow",
+    80: "Rain showers",
+    81: "Heavy rain showers",
+    82: "Violent rain showers",
+    95: "Thunderstorm",
+}
+
+def _fetch_json(url: str) -> dict:
+    with urlopen(url, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+def _fetch_open_meteo(lat: float, lon: float) -> dict:
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "current": "temperature_2m,weather_code",
+        "temperature_unit": "celsius"
+    }
+    url = "https://api.open-meteo.com/v1/forecast?" + urlencode(params)
+    data = _fetch_json(url)
+    current = data.get("current", {})
+    temp_c = current.get("temperature_2m")
+    code = current.get("weather_code")
+    conditions = WEATHER_CODE_MAP.get(code, "Unknown")
+    return {"temp_c": temp_c, "conditions": conditions, "source": "open-meteo"}
+
+def _fetch_openweather(lat: float, lon: float, api_key: str) -> dict:
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "appid": api_key,
+        "units": "metric"
+    }
+    url = "https://api.openweathermap.org/data/2.5/weather?" + urlencode(params)
+    data = _fetch_json(url)
+    temp_c = data.get("main", {}).get("temp")
+    conditions = ""
+    weather_list = data.get("weather", [])
+    if weather_list:
+        conditions = weather_list[0].get("description", "")
+    return {"temp_c": temp_c, "conditions": conditions or "Unknown", "source": "openweathermap"}
+
+def fetch_and_store_weather(lat: float, lon: float, label: str = "", api_key: str = "") -> dict:
+    try:
+        if api_key:
+            payload = _fetch_openweather(lat, lon, api_key)
+        else:
+            payload = _fetch_open_meteo(lat, lon)
+    except Exception as exc:
+        return {"ok": False, "message": f"Weather lookup failed: {exc}"}
+
+    location_label = label.strip() or f"{lat:.3f}, {lon:.3f}"
+    record = {
+        "lat": lat,
+        "lon": lon,
+        "label": location_label,
+        "temp_c": payload.get("temp_c"),
+        "conditions": payload.get("conditions"),
+        "source": payload.get("source"),
+        "created_at": datetime.utcnow(),
+        "location_key": f"{lat:.3f},{lon:.3f}",
+        "user_id": None,
+    }
+    db.weather_records.insert_one(record)
+    return {"ok": True, "message": f"Recorded {payload.get('temp_c')} C and {payload.get('conditions')}", "record": record}
+
+def get_latest_records(limit: int = 50) -> list:
+    cursor = db.weather_records.find().sort("created_at", -1).limit(200)
+    records = list(cursor)
+    seen = set()
+    latest = []
+    for record in records:
+        key = record.get("location_key")
+        if key in seen:
+            continue
+        seen.add(key)
+        latest.append(record)
+        if len(latest) >= limit:
+            break
+    return latest
+''',
+        "components.py": '''from fasthtml.common import *
+
+def page_layout(*children):
+    return Titled("Community Weather Tracker", Div(*children))
+
+def weather_form():
+    return Form(
+        Div(
+            Input(name="lat", placeholder="Latitude", required=True),
+            Input(name="lon", placeholder="Longitude", required=True),
+            Input(name="label", placeholder="Label (optional)"),
+            Input(name="api_key", placeholder="OpenWeather API key (optional)", type="password"),
+            style="display:flex;flex-direction:column;gap:8px;max-width:420px;"
+        ),
+        Button("Record Weather"),
+        hx_post="/submit",
+        hx_target="#records-container",
+        hx_swap="outerHTML"
+    )
+
+def status_banner(message: str, success: bool = True):
+    color = "#16a34a" if success else "#dc2626"
+    return Div(
+        message,
+        style=f"margin:12px 0;color:{color};font-weight:600;"
+    )
+
+def records_container(records, status=None):
+    children = []
+    if status is not None:
+        children.append(status)
+    children.append(records_table(records))
+    return Div(*children, id="records-container")
+
+def records_table(records):
+    header = Tr(
+        Th("Location"),
+        Th("Temp (C)"),
+        Th("Conditions"),
+        Th("Source"),
+        Th("Recorded")
+    )
+    rows = [
+        Tr(
+            Td(record.get("label", "")),
+            Td(f"{record.get('temp_c')}"),
+            Td(record.get("conditions", "")),
+            Td(record.get("source", "")),
+            Td(str(record.get("created_at", ""))[:19])
+        )
+        for record in records
+    ]
+    return Div(
+        H2("Latest by location"),
+        Table(Thead(header), Tbody(*rows)) if rows else P("No records yet."),
+        P("Records are public and retained indefinitely."),
+        style="margin-top:16px;"
+    )
+'''
+    },
+    "complexity": "medium",
+    "is_global": True,
+    "user_id": None,
+    "created_at": datetime.utcnow(),
+    "tags": ["multifile", "fasthtml", "htmx", "weather", "community"]
+}
+
 async def ensure_indexes(templates_collection):
     """Ensure unique index on template name + is_global to prevent duplicates"""
     try:
@@ -951,7 +1190,8 @@ async def seed_templates(client=None, force_update=False):
     
     templates_to_seed = [
         SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE, FULLSTACK_MONGO_TEMPLATE,
-        SLACK_BOT_TEMPLATE, FASTAPI_MULTIFILE_TEMPLATE, FASTHTML_MULTIFILE_TEMPLATE
+        SLACK_BOT_TEMPLATE, FASTAPI_MULTIFILE_TEMPLATE, FASTHTML_MULTIFILE_TEMPLATE,
+        FASTHTML_WEATHER_AGGREGATOR_TEMPLATE
     ]
 
     for template in templates_to_seed:

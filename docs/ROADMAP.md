@@ -210,6 +210,9 @@ Small improvements that can be shipped quickly between major phases:
   - Display description on dashboard app cards
   - Editable in app settings or app page header
   - Helps users document what each app does, especially as app count grows
+- [ ] Save applications as templates
+  - Allow users to promote an app into the template library
+  - Capture code, metadata, and version at save time
 
 ---
 
