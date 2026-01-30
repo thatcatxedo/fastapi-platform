@@ -1,6 +1,14 @@
-[13 tools called]
+# Codex Architecture Review
 
-Below is a full architecture review of the FastAPI platform app plus its cluster configuration, based on the current code and manifests. I’m in Ask mode so I’m only reporting and recommending; no changes made.
+> **Note**: This review covers both this repository (`fastapi-platform`) and the separate GitOps repository (`homelab-cluster`). File paths starting with `apps/fastapi-platform/` or `clusters/` refer to the external GitOps repo, not this repository.
+>
+> **Last Updated**: January 2025
+>
+> **Key Updates Since Review**:
+> - ✅ Migrated to subdomain routing (`app-{id}.{APP_DOMAIN}`) - path-based routing removed
+> - ✅ This repo uses namespace-scoped `Role` (not ClusterRole) - see `deploy/base/rbac.yaml`
+> - ✅ Added per-user MongoDB databases and mongo-viewer feature
+> - ✅ Secret name in this repo is `platform-secrets` (external GitOps may differ)
 
 ## Architecture Review
 

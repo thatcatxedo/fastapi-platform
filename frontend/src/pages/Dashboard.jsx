@@ -145,7 +145,8 @@ function Dashboard({ user }) {
   }
 
   const copyAppUrl = async (app) => {
-    const fullUrl = `${window.location.origin}${app.deployment_url}`
+    // deployment_url is already a full URL in subdomain format (https://app-{id}.{domain})
+    const fullUrl = app.deployment_url
     try {
       await navigator.clipboard.writeText(fullUrl)
       setCopiedUrl(app.app_id)

@@ -27,29 +27,28 @@ Our niche: **Dead-simple FastAPI prototyping with batteries included.**
 - [x] Local dev cluster workflows documented
 - [x] Logs + deployment events (basic lifecycle visibility)
 
-## Phase 1a — Core Polish (in progress)
+## Phase 1a — Core Polish (complete)
 
 **Goal:** Make the core loop feel fast and polished.
 
-- [ ] App Settings (env vars + secrets)
+- [x] App Settings (env vars + secrets)
   - Per-app environment variables UI
   - Secure storage, injected at runtime
-  - *In progress*
-- [ ] Error line highlighting in editor
-- [ ] OpenGraph meta tags on app URLs (better sharing)
-- [ ] App deletion (self-serve cleanup of throwaway apps)
+- [x] Error line highlighting in editor
+- [x] OpenGraph meta tags on app URLs (better sharing)
+- [x] App deletion (self-serve cleanup of throwaway apps)
 
-## Phase 1b — Platform Database (near-term)
+## Phase 1b — Platform Database (complete)
 
 **Goal:** Zero-config persistence for full-stack apps.
 
-- [ ] Per-user MongoDB database
+- [x] Per-user MongoDB database
   - One shared MongoDB instance, database per user (`user_{user_id}`)
   - Auto-provision on first use
   - Inject `PLATFORM_MONGO_URI` as magic env var
-- [ ] Add `pymongo` to runner image
-- [ ] Full-stack starter template (HTML + MongoDB CRUD)
-- [ ] Allow `jinja2` import for server-rendered HTML
+- [x] Add `pymongo` to runner image
+- [x] Full-stack starter template ("Full-Stack Notes App" with MongoDB + HTML)
+- [x] Allow `jinja2` import for server-rendered HTML
 
 This enables:
 ```python
@@ -76,10 +75,29 @@ Constraints (document, enforce later):
 - Mongo query limits / timeouts for runaway ops
 - Abuse guardrails (cryptomining or other misuse)
 
-## Phase 1c — Drafts & Safety
+## Phase 1c — Database UI & Security (in progress)
+
+**Goal:** Give users visibility into their data and secure multi-tenancy.
+
+- [x] Database stats page (`/database`)
+  - Collection list with document counts
+  - Total database size
+  - Per-collection size and avg doc size
+- [x] mongo-viewer integration
+  - Subdomain routing (`mongo-{user_id}.{APP_DOMAIN}`)
+  - Basic auth with rotate credentials
+- [ ] Per-user MongoDB authentication (in progress)
+  - Each user gets dedicated MongoDB credentials
+  - Credentials created on signup
+  - User apps can only access their own database
+  - Prevents cross-user data access
+
+## Phase 1d — Drafts & Safety (near-term)
 
 **Goal:** Enable iteration without deployment risk.
 
+- [x] Clone app
+  - Duplicate with new ID from latest draft or deployed code
 - [ ] Draft save (explicit save without deploy)
   - Backend stores draft code + timestamp
   - "Saved vs Deployed" status indicator
@@ -88,8 +106,6 @@ Constraints (document, enforce later):
   - UI shows "Up to date" vs "Changes not deployed"
 - [ ] Version history (last N deploys)
   - "Revert to last good deploy" action
-- [ ] Clone app
-  - Duplicate with new ID from latest draft or deployed code
 
 ## Phase 2 — Multi-File Mode
 

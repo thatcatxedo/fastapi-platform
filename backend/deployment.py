@@ -35,8 +35,12 @@ APP_DOMAIN = os.getenv("APP_DOMAIN", "gatorlunch.com")  # Apps at app-{id}.{APP_
 MONGO_VIEWER_IMAGE = os.getenv("MONGO_VIEWER_IMAGE", "mongo-express:latest")
 MONGO_VIEWER_PORT = int(os.getenv("MONGO_VIEWER_PORT", "8081"))
 
-def get_user_mongo_uri(user_id: str) -> str:
-    """Construct per-user MongoDB URI by replacing database name."""
+def get_user_mongo_uri_legacy(user_id: str) -> str:
+    """
+    DEPRECATED: Construct per-user MongoDB URI using shared platform credentials.
+    This is insecure and only used for backwards compatibility during migration.
+    Use get_user_mongo_uri_secure() for new deployments.
+    """
     base_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/fastapi_platform_db")
     parsed = urlparse(base_uri)
     user_db_path = f"/user_{user_id}"
@@ -48,6 +52,68 @@ def get_user_mongo_uri(user_id: str) -> str:
         parsed.query,
         parsed.fragment
     ))
+
+
+def get_user_mongo_uri_secure(user_id: str, user: dict) -> str:
+    """
+    Construct per-user MongoDB URI with user-specific credentials.
+    
+    Args:
+        user_id: Platform user ID
+        user: User document containing mongo_password_encrypted
+        
+    Returns:
+        MongoDB URI with per-user credentials, or legacy URI if credentials not available
+    """
+    from urllib.parse import quote_plus
+    
+    encrypted_password = user.get("mongo_password_encrypted")
+    if not encrypted_password:
+        # Fallback to legacy for users without MongoDB credentials
+        logger.warning(f"User {user_id} has no MongoDB credentials, using legacy URI")
+        return get_user_mongo_uri_legacy(user_id)
+    
+    try:
+        from mongo_users import decrypt_password, get_mongo_username
+        
+        password = decrypt_password(encrypted_password)
+        username = get_mongo_username(user_id)
+        db_name = f"user_{user_id}"
+        
+        base_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/fastapi_platform_db")
+        parsed = urlparse(base_uri)
+        
+        # URL-encode username and password for safety
+        encoded_username = quote_plus(username)
+        encoded_password = quote_plus(password)
+        
+        # Determine host:port
+        hostname = parsed.hostname or "localhost"
+        port = parsed.port or 27017
+        
+        # Build new URI with user credentials
+        netloc = f"{encoded_username}:{encoded_password}@{hostname}:{port}"
+        
+        # Add authSource if not present (user is created in admin db)
+        query = parsed.query
+        if "authSource" not in query:
+            if query:
+                query = f"{query}&authSource=admin"
+            else:
+                query = "authSource=admin"
+        
+        return urlunparse((
+            parsed.scheme,
+            netloc,
+            f"/{db_name}",
+            parsed.params,
+            query,
+            parsed.fragment
+        ))
+    except Exception as e:
+        logger.error(f"Failed to build secure MongoDB URI for user {user_id}: {e}")
+        # Fallback to legacy if decryption fails
+        return get_user_mongo_uri_legacy(user_id)
 
 def get_app_labels(user_id: str, app_id: str) -> dict:
     """Get standard labels for app resources"""
@@ -69,7 +135,7 @@ def get_viewer_labels(user_id: str) -> dict:
 def get_viewer_name(user_id: str) -> str:
     return f"mongo-viewer-{user_id}"
 
-async def create_mongo_viewer_deployment(user_id: str, username: str, password: str):
+async def create_mongo_viewer_deployment(user_id: str, user: dict, username: str, password: str):
     """Create Deployment for per-user MongoDB viewer"""
     if not apps_v1:
         raise Exception("Kubernetes client not available")
@@ -77,8 +143,10 @@ async def create_mongo_viewer_deployment(user_id: str, username: str, password: 
     deployment_name = get_viewer_name(user_id)
 
     # Using subdomain routing - no base URL prefix needed
+    # Use per-user MongoDB credentials for secure access
+    mongo_uri = get_user_mongo_uri_secure(user_id, user)
     env_list = [
-        k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_URL", value=get_user_mongo_uri(user_id)),
+        k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_URL", value=mongo_uri),
         k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_ENABLE_ADMIN", value="false"),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_USERNAME", value=username),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_PASSWORD", value=password),
@@ -239,10 +307,10 @@ async def create_mongo_viewer_ingress_route(user_id: str):
         else:
             raise
 
-async def create_mongo_viewer_resources(user_id: str, username: str, password: str):
+async def create_mongo_viewer_resources(user_id: str, user: dict, username: str, password: str):
     """Create all Kubernetes resources for a per-user MongoDB viewer"""
     try:
-        await create_mongo_viewer_deployment(user_id, username, password)
+        await create_mongo_viewer_deployment(user_id, user, username, password)
         await create_mongo_viewer_service(user_id)
         await create_mongo_viewer_ingress_route(user_id)
     except Exception as e:
@@ -339,10 +407,11 @@ async def create_deployment(app_doc: dict, user: dict):
     user_id = str(user["_id"])
     deployment_name = f"app-{app_id}"
     
-    # Build environment variables list
+    # Build environment variables list with per-user MongoDB credentials
+    mongo_uri = get_user_mongo_uri_secure(user_id, user)
     env_list = [
         k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py"),
-        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=get_user_mongo_uri(user_id))
+        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=mongo_uri)
     ]
     # Add user-defined env vars
     if app_doc.get("env_vars"):

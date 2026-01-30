@@ -9,11 +9,14 @@ import os
 import bcrypt
 import secrets
 import string
+import logging
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import ast
 import re
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 # MongoDB setup (must be before lifespan)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
@@ -29,17 +32,27 @@ viewer_instances_collection = db.viewer_instances
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: seed templates
-    import logging
-    logger = logging.getLogger("uvicorn")
+    startup_logger = logging.getLogger("uvicorn")
     try:
         from seed_templates import seed_templates
-        logger.info("Starting template seeding...")
+        startup_logger.info("Starting template seeding...")
         await seed_templates(client)
-        logger.info("✓ Template seeding completed on startup")
+        startup_logger.info("Template seeding completed on startup")
     except Exception as e:
-        logger.error(f"Warning: Template seeding failed: {e}")
+        startup_logger.error(f"Warning: Template seeding failed: {e}")
         import traceback
-        logger.error(traceback.format_exc())
+        startup_logger.error(traceback.format_exc())
+    
+    # Startup: migrate existing users to per-user MongoDB auth
+    try:
+        from migrate_mongo_users import migrate_existing_users
+        startup_logger.info("Starting MongoDB user migration...")
+        stats = await migrate_existing_users(client)
+        startup_logger.info(f"MongoDB user migration completed: {stats['newly_migrated']} new, {stats['already_migrated']} existing, {stats['failed']} failed")
+    except Exception as e:
+        startup_logger.error(f"Warning: MongoDB user migration failed: {e}")
+        import traceback
+        startup_logger.error(traceback.format_exc())
     
     yield
     # Shutdown (if needed)
@@ -451,6 +464,21 @@ async def signup(user_data: UserSignup):
     }
     result = await users_collection.insert_one(user_doc)
     
+    # Create per-user MongoDB credentials for data isolation
+    try:
+        from mongo_users import create_mongo_user, encrypt_password
+        mongo_username, mongo_password = await create_mongo_user(client, str(result.inserted_id))
+        
+        # Store encrypted MongoDB password in user document
+        await users_collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"mongo_password_encrypted": encrypt_password(mongo_password)}}
+        )
+        logger.info(f"Created MongoDB user {mongo_username} for platform user {result.inserted_id}")
+    except Exception as e:
+        # Log error but don't fail signup - user can still use platform without MongoDB access
+        logger.error(f"Failed to create MongoDB user for {result.inserted_id}: {e}")
+    
     user = await users_collection.find_one({"_id": result.inserted_id})
     return UserResponse(
         id=str(user["_id"]),
@@ -487,9 +515,6 @@ from deployment import (
     create_mongo_viewer_resources,
     get_mongo_viewer_status
 )
-import logging
-
-logger = logging.getLogger(__name__)
 
 @app.get("/api/apps", response_model=List[AppResponse])
 async def list_apps(user: dict = Depends(get_current_user)):
@@ -869,7 +894,7 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
         # If URL format changed, update the IngressRoute and DB
         if viewer.get("url") != current_url:
             try:
-                await create_mongo_viewer_resources(user_id, viewer["username"], "")
+                await create_mongo_viewer_resources(user_id, user, viewer["username"], "")
             except Exception as e:
                 logger.warning(f"Failed to update viewer resources: {e}")
             await viewer_instances_collection.update_one(
@@ -896,7 +921,7 @@ async def provision_viewer(user: dict = Depends(get_current_user)):
     url = f"https://mongo-{user_id}.{APP_DOMAIN}"
 
     try:
-        await create_mongo_viewer_resources(user_id, username, password)
+        await create_mongo_viewer_resources(user_id, user, username, password)
     except Exception as e:
         raise HTTPException(status_code=500, detail=error_payload("VIEWER_CREATE_FAILED", str(e)))
 
@@ -930,7 +955,7 @@ async def rotate_viewer_credentials(user: dict = Depends(get_current_user)):
     url = f"https://mongo-{user_id}.{APP_DOMAIN}"
 
     try:
-        await create_mongo_viewer_resources(user_id, username, password)
+        await create_mongo_viewer_resources(user_id, user, username, password)
     except Exception as e:
         raise HTTPException(status_code=500, detail=error_payload("VIEWER_ROTATE_FAILED", str(e)))
 
