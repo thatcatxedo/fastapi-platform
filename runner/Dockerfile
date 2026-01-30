@@ -3,10 +3,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install whitelisted packages
+# Note: fastcore must be installed before python-fasthtml for XT type
 RUN pip install --no-cache-dir \
     fastapi==0.109.0 \
     uvicorn[standard]==0.27.0 \
     pydantic==2.5.3 \
+    fastcore \
     python-fasthtml \
     pymongo==4.6.1 \
     jinja2==3.1.3 \
