@@ -614,6 +614,99 @@ async def api_list_notes():
     "tags": ["fullstack", "mongodb", "crud", "html", "persistence"]
 }
 
+SLACK_BOT_TEMPLATE = {
+    "name": "Hello World Slack Bot",
+    "description": "A simple Slack bot that responds to mentions using the Slack Events API. Learn how to build Slack integrations with webhooks and event handling.",
+    "code": """from fastapi import FastAPI, Request, HTTPException, Header
+from slack_sdk.signature import SignatureVerifier
+from slack_sdk.web import WebClient
+import os
+import json
+
+app = FastAPI()
+
+# Slack configuration - set these as environment variables in your app settings
+# Get these from https://api.slack.com/apps -> Your App -> Basic Information
+SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
+
+# Initialize Slack signature verifier and web client
+signature_verifier = SignatureVerifier(signing_secret=SLACK_SIGNING_SECRET)
+slack_client = WebClient(token=SLACK_BOT_TOKEN) if SLACK_BOT_TOKEN else None
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Slack Bot is running!",
+        "instructions": "Configure SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN environment variables, then set your Slack app's Event Subscriptions URL to: https://your-app-url/slack/events"
+    }
+
+@app.post("/slack/events")
+async def slack_events(request: Request, x_slack_signature: str = Header(None), x_slack_request_timestamp: str = Header(None)):
+    """
+    Handle Slack Events API webhook.
+    
+    Setup instructions:
+    1. Create a Slack app at https://api.slack.com/apps
+    2. Go to "Event Subscriptions" and enable it
+    3. Set Request URL to: https://your-app-url/slack/events
+    4. Subscribe to "app_mentions" event (bot_events)
+    5. Install app to workspace and get Bot User OAuth Token
+    6. Copy Signing Secret from Basic Information
+    7. Add both as environment variables: SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN
+    """
+    body = await request.body()
+    
+    # Verify request signature
+    if not signature_verifier.is_valid(
+        body=body,
+        timestamp=x_slack_request_timestamp,
+        signature=x_slack_signature
+    ):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+    
+    data = await request.json()
+    
+    # Handle URL verification challenge (Slack sends this when you first add the URL)
+    if data.get("type") == "url_verification":
+        return {"challenge": data.get("challenge")}
+    
+    # Handle events
+    if data.get("type") == "event_callback":
+        event = data.get("event", {})
+        event_type = event.get("type")
+        
+        # Respond to app_mention events (when someone mentions your bot)
+        if event_type == "app_mention":
+            channel = event.get("channel")
+            text = event.get("text", "")
+            user = event.get("user")
+            
+            # Simple response
+            if slack_client:
+                try:
+                    slack_client.chat_postMessage(
+                        channel=channel,
+                        text="Hello World! 👋 You mentioned me!"
+                    )
+                except Exception as e:
+                    print(f"Error posting message: {e}")
+            
+            return {"status": "ok"}
+    
+    return {"status": "ok"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+""",
+    "complexity": "simple",
+    "is_global": True,
+    "user_id": None,
+    "created_at": datetime.utcnow(),
+    "tags": ["slack", "bot", "webhook", "events-api"]
+}
+
 async def ensure_indexes(templates_collection):
     """Ensure unique index on template name + is_global to prevent duplicates"""
     try:
@@ -649,7 +742,7 @@ async def seed_templates(client=None, force_update=False):
     # Ensure indexes for data integrity
     await ensure_indexes(templates_collection)
     
-    templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE, FULLSTACK_MONGO_TEMPLATE]
+    templates_to_seed = [SIMPLE_TEMPLATE, MEDIUM_TEMPLATE, FASTHTML_TEMPLATE, FULLSTACK_MONGO_TEMPLATE, SLACK_BOT_TEMPLATE]
     
     for template in templates_to_seed:
         # Use upsert (replace or insert) to ensure template is always present

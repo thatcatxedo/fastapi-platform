@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Database from './pages/Database'
 import Editor from './pages/Editor'
 import AppView from './pages/AppView'
+import Admin from './pages/Admin'
 import './index.css'
 
 const API_URL = window.location.hostname === 'localhost' 
@@ -74,6 +75,7 @@ function App() {
                   <a href="/dashboard">Dashboard</a>
                   <a href="/database">Database</a>
                   <a href="/editor">New App</a>
+                  {user?.is_admin && <a href="/admin">Admin</a>}
                   <span style={{ color: 'var(--text-muted)' }}>{user.username}</span>
                   <button className="btn btn-secondary" onClick={logout} style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
                     Logout
@@ -99,6 +101,7 @@ function App() {
             <Route path="/editor" element={user ? <Editor user={user} /> : <Navigate to="/login" />} />
             <Route path="/editor/:appId" element={user ? <Editor user={user} /> : <Navigate to="/login" />} />
             <Route path="/app/:appId" element={user ? <AppView user={user} /> : <Navigate to="/login" />} />
+            <Route path="/admin" element={user?.is_admin ? <Admin user={user} /> : <Navigate to="/dashboard" />} />
           </Routes>
         </main>
       </div>

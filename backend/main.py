@@ -28,6 +28,7 @@ users_collection = db.users
 apps_collection = db.apps
 templates_collection = db.templates
 viewer_instances_collection = db.viewer_instances
+settings_collection = db.platform_settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +52,17 @@ async def lifespan(app: FastAPI):
         startup_logger.info(f"MongoDB user migration completed: {stats['newly_migrated']} new, {stats['already_migrated']} existing, {stats['failed']} failed")
     except Exception as e:
         startup_logger.error(f"Warning: MongoDB user migration failed: {e}")
+        import traceback
+        startup_logger.error(traceback.format_exc())
+    
+    # Startup: Set first user as admin if no admin exists
+    try:
+        from migrate_admin_role import migrate_admin_role
+        startup_logger.info("Starting admin role migration...")
+        await migrate_admin_role(client)
+        startup_logger.info("Admin role migration completed")
+    except Exception as e:
+        startup_logger.error(f"Warning: Admin role migration failed: {e}")
         import traceback
         startup_logger.error(traceback.format_exc())
     
@@ -113,10 +125,14 @@ class UserResponse(BaseModel):
     username: str
     email: str
     created_at: str
+    is_admin: bool = False
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
+
+class AdminSettingsUpdate(BaseModel):
+    allow_signups: bool
 
 class AppCreate(BaseModel):
     name: str
@@ -259,6 +275,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     user = await users_collection.find_one({"_id": ObjectId(user_id)})
     if user is None:
         raise credentials_exception
+    return user
+
+async def require_admin(user: dict = Depends(get_current_user)):
+    """Require authenticated user to be an admin"""
+    if not user.get("is_admin"):
+        raise HTTPException(
+            status_code=403,
+            detail=error_payload("ADMIN_REQUIRED", "Admin access required")
+        )
     return user
 
 # Code validation
@@ -446,6 +471,14 @@ async def health():
 
 @app.post("/api/auth/signup", response_model=UserResponse)
 async def signup(user_data: UserSignup):
+    # Check if signups are allowed
+    settings = await settings_collection.find_one({"_id": "global"})
+    if settings and not settings.get("allow_signups", True):
+        raise HTTPException(
+            status_code=403,
+            detail=error_payload("SIGNUPS_DISABLED", "Public signups are disabled")
+        )
+    
     # Check if username or email already exists
     existing = await users_collection.find_one({
         "$or": [
@@ -456,14 +489,30 @@ async def signup(user_data: UserSignup):
     if existing:
         raise HTTPException(status_code=400, detail="Username or email already exists")
     
+    # Check if this is the first user (becomes admin)
+    user_count = await users_collection.count_documents({})
+    is_first_user = user_count == 0
+    
     # Create user
     user_doc = {
         "username": user_data.username,
         "email": user_data.email,
         "password_hash": hash_password(user_data.password),
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
+        "is_admin": is_first_user  # First user is admin
     }
     result = await users_collection.insert_one(user_doc)
+    
+    # Initialize settings on first signup
+    if is_first_user:
+        await settings_collection.update_one(
+            {"_id": "global"},
+            {"$setOnInsert": {
+                "allow_signups": True,
+                "updated_at": datetime.utcnow()
+            }},
+            upsert=True
+        )
     
     # Create per-user MongoDB credentials for data isolation
     try:
@@ -485,7 +534,8 @@ async def signup(user_data: UserSignup):
         id=str(user["_id"]),
         username=user["username"],
         email=user["email"],
-        created_at=user["created_at"].isoformat()
+        created_at=user["created_at"].isoformat(),
+        is_admin=user.get("is_admin", False)
     )
 
 @app.post("/api/auth/login", response_model=TokenResponse)
@@ -503,7 +553,8 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
         id=str(user["_id"]),
         username=user["username"],
         email=user["email"],
-        created_at=user["created_at"].isoformat()
+        created_at=user["created_at"].isoformat(),
+        is_admin=user.get("is_admin", False)
     )
 
 from deployment import (
@@ -1140,6 +1191,170 @@ async def get_app_events_endpoint(
         deployment_phase=result.get("deployment_phase", "unknown"),
         error=result.get("error")
     )
+
+# Admin endpoints
+@app.get("/api/admin/settings")
+async def get_admin_settings(admin: dict = Depends(require_admin)):
+    settings = await settings_collection.find_one({"_id": "global"})
+    return {
+        "allow_signups": settings.get("allow_signups", True) if settings else True
+    }
+
+@app.put("/api/admin/settings")
+async def update_admin_settings(
+    settings: AdminSettingsUpdate,
+    admin: dict = Depends(require_admin)
+):
+    await settings_collection.update_one(
+        {"_id": "global"},
+        {"$set": {
+            "allow_signups": settings.allow_signups,
+            "updated_at": datetime.utcnow(),
+            "updated_by": admin["_id"]
+        }},
+        upsert=True
+    )
+    return {"success": True}
+
+@app.get("/api/admin/users")
+async def list_all_users(admin: dict = Depends(require_admin)):
+    users = []
+    async for user in users_collection.find().sort("created_at", -1):
+        app_count = await apps_collection.count_documents({"user_id": user["_id"]})
+        users.append({
+            "id": str(user["_id"]),
+            "username": user["username"],
+            "email": user["email"],
+            "created_at": user["created_at"].isoformat(),
+            "is_admin": user.get("is_admin", False),
+            "app_count": app_count
+        })
+    return users
+
+@app.get("/api/admin/stats")
+async def get_platform_stats(admin: dict = Depends(require_admin)):
+    user_count = await users_collection.count_documents({})
+    app_count = await apps_collection.count_documents({})
+    running_apps = await apps_collection.count_documents({"status": "running"})
+    template_count = await templates_collection.count_documents({})
+    
+    recent_users = await users_collection.find().sort("created_at", -1).limit(5).to_list(5)
+    recent_apps = await apps_collection.find().sort("created_at", -1).limit(5).to_list(5)
+    
+    return {
+        "users": user_count,
+        "apps": app_count,
+        "running_apps": running_apps,
+        "templates": template_count,
+        "recent_signups": [
+            {"username": u["username"], "created_at": u["created_at"].isoformat()}
+            for u in recent_users
+        ],
+        "recent_deploys": [
+            {"name": a["name"], "app_id": a["app_id"], "created_at": a["created_at"].isoformat()}
+            for a in recent_apps
+        ]
+    }
+
+@app.post("/api/admin/users", response_model=UserResponse)
+async def admin_create_user(
+    user_data: UserSignup,
+    admin: dict = Depends(require_admin)
+):
+    # Reuse signup logic but skip signups_allowed check
+    existing = await users_collection.find_one({
+        "$or": [
+            {"username": user_data.username},
+            {"email": user_data.email}
+        ]
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail="Username or email already exists")
+    
+    user_doc = {
+        "username": user_data.username,
+        "email": user_data.email,
+        "password_hash": hash_password(user_data.password),
+        "created_at": datetime.utcnow(),
+        "is_admin": False  # Admin-created users are not admins
+    }
+    result = await users_collection.insert_one(user_doc)
+    
+    # Create MongoDB user
+    try:
+        from mongo_users import create_mongo_user, encrypt_password
+        mongo_username, mongo_password = await create_mongo_user(client, str(result.inserted_id))
+        await users_collection.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"mongo_password_encrypted": encrypt_password(mongo_password)}}
+        )
+    except Exception as e:
+        logger.error(f"Failed to create MongoDB user: {e}")
+    
+    user = await users_collection.find_one({"_id": result.inserted_id})
+    return UserResponse(
+        id=str(user["_id"]),
+        username=user["username"],
+        email=user["email"],
+        created_at=user["created_at"].isoformat(),
+        is_admin=user.get("is_admin", False)
+    )
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(
+    user_id: str,
+    admin: dict = Depends(require_admin)
+):
+    # Prevent self-deletion
+    if str(admin["_id"]) == user_id:
+        raise HTTPException(
+            status_code=400,
+            detail=error_payload("CANNOT_DELETE_SELF", "Cannot delete your own account")
+        )
+    
+    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail=error_payload("USER_NOT_FOUND", "User not found")
+        )
+    
+    # Delete user's apps (K8s resources + DB records)
+    async for app in apps_collection.find({"user_id": ObjectId(user_id)}):
+        try:
+            await delete_app_deployment(app, user)
+        except Exception as e:
+            logger.warning(f"Failed to delete app {app['app_id']}: {e}")
+    
+    await apps_collection.delete_many({"user_id": ObjectId(user_id)})
+    
+    # Delete MongoDB user
+    try:
+        from mongo_users import delete_mongo_user
+        await delete_mongo_user(client, user_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete MongoDB user for {user_id}: {e}")
+    
+    # Delete user's database
+    try:
+        await client.drop_database(f"user_{user_id}")
+    except Exception as e:
+        logger.warning(f"Failed to drop database for {user_id}: {e}")
+    
+    # Delete viewer instance and resources
+    viewer = await viewer_instances_collection.find_one({"user_id": ObjectId(user_id)})
+    if viewer:
+        try:
+            from deployment import delete_mongo_viewer_resources
+            await delete_mongo_viewer_resources(user_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete viewer resources for {user_id}: {e}")
+        await viewer_instances_collection.delete_many({"user_id": ObjectId(user_id)})
+    
+    # Delete user record
+    await users_collection.delete_one({"_id": ObjectId(user_id)})
+    
+    return {"success": True, "deleted_user_id": user_id}
 
 if __name__ == "__main__":
     import uvicorn
