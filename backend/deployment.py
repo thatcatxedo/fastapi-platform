@@ -75,14 +75,13 @@ async def create_mongo_viewer_deployment(user_id: str, username: str, password: 
         raise Exception("Kubernetes client not available")
 
     deployment_name = get_viewer_name(user_id)
-    base_url = f"/user/{user_id}/mongo"
 
+    # Using subdomain routing - no base URL prefix needed
     env_list = [
         k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_URL", value=get_user_mongo_uri(user_id)),
         k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_ENABLE_ADMIN", value="false"),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_USERNAME", value=username),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_PASSWORD", value=password),
-        k8s_client.V1EnvVar(name="ME_CONFIG_SITE_BASEURL", value=base_url)
     ]
 
     container = k8s_client.V1Container(
@@ -185,12 +184,12 @@ async def create_mongo_viewer_service(user_id: str):
             raise
 
 async def create_mongo_viewer_ingress_route(user_id: str):
-    """Create Traefik IngressRoute for per-user MongoDB viewer"""
+    """Create Traefik IngressRoute for per-user MongoDB viewer with subdomain routing"""
     if not custom_objects:
         raise Exception("Kubernetes client not available")
 
     ingress_name = get_viewer_name(user_id)
-    path_prefix = f"/user/{user_id}/mongo"
+    viewer_hostname = f"mongo-{user_id}.{APP_DOMAIN}"
 
     ingress_route = {
         "apiVersion": "traefik.io/v1alpha1",
@@ -204,7 +203,7 @@ async def create_mongo_viewer_ingress_route(user_id: str):
             "entryPoints": ["web"],
             "routes": [
                 {
-                    "match": f"Host(`{BASE_DOMAIN}`) && PathPrefix(`{path_prefix}`)",
+                    "match": f"Host(`{viewer_hostname}`)",
                     "kind": "Rule",
                     "services": [
                         {

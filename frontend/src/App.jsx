@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
+import Database from './pages/Database'
 import Editor from './pages/Editor'
 import AppView from './pages/AppView'
 import './index.css'
@@ -71,6 +72,7 @@ function App() {
               {user ? (
                 <>
                   <a href="/dashboard">Dashboard</a>
+                  <a href="/database">Database</a>
                   <a href="/editor">New App</a>
                   <span style={{ color: 'var(--text-muted)' }}>{user.username}</span>
                   <button className="btn btn-secondary" onClick={logout} style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
@@ -93,6 +95,7 @@ function App() {
             <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login onLogin={setUser} />} />
             <Route path="/signup" element={user ? <Navigate to="/dashboard" /> : <Signup onSignup={setUser} />} />
             <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
+            <Route path="/database" element={user ? <Database user={user} /> : <Navigate to="/login" />} />
             <Route path="/editor" element={user ? <Editor user={user} /> : <Navigate to="/login" />} />
             <Route path="/editor/:appId" element={user ? <Editor user={user} /> : <Navigate to="/login" />} />
             <Route path="/app/:appId" element={user ? <AppView user={user} /> : <Navigate to="/login" />} />
