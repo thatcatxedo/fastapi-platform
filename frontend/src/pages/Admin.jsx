@@ -4,7 +4,7 @@ import { API_URL } from '../App'
 function Admin({ user }) {
   const [stats, setStats] = useState(null)
   const [users, setUsers] = useState([])
-  const [settings, setSettings] = useState({ allow_signups: true })
+  const [settings, setSettings] = useState({ allow_signups: true, allowed_imports: [] })
   const [loading, setLoading] = useState(true)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createUserData, setCreateUserData] = useState({ username: '', email: '', password: '' })
@@ -12,6 +12,9 @@ function Admin({ user }) {
   const [createLoading, setCreateLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(null)
   const [adminToggleLoading, setAdminToggleLoading] = useState(null)
+  const [allowedImportsText, setAllowedImportsText] = useState('')
+  const [allowedImportsSaving, setAllowedImportsSaving] = useState(false)
+  const [allowedImportsError, setAllowedImportsError] = useState('')
 
   useEffect(() => {
     fetchStats()
@@ -60,13 +63,14 @@ function Admin({ user }) {
       if (response.ok) {
         const data = await response.json()
         setSettings(data)
+        setAllowedImportsText((data.allowed_imports || []).join('\n'))
       }
     } catch (err) {
       console.error('Failed to fetch settings:', err)
     }
   }
 
-  const updateSettings = async (allowSignups) => {
+  const updateSettings = async (payload) => {
     try {
       const token = localStorage.getItem('token')
       const response = await fetch(`${API_URL}/api/admin/settings`, {
@@ -75,16 +79,22 @@ function Admin({ user }) {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ allow_signups: allowSignups })
+        body: JSON.stringify(payload)
       })
       if (response.ok) {
-        setSettings({ allow_signups: allowSignups })
+        setSettings(payload)
+        if (payload.allowed_imports) {
+          setAllowedImportsText(payload.allowed_imports.join('\n'))
+        }
+        return true
       } else {
         const data = await response.json()
         alert(data.detail?.message || 'Failed to update settings')
+        return false
       }
     } catch (err) {
       alert('Failed to update settings')
+      return false
     }
   }
 
@@ -184,6 +194,14 @@ function Admin({ user }) {
     return date.toLocaleDateString()
   }
 
+  const parseAllowedImports = (value) => {
+    const entries = value
+      .split('\n')
+      .map((line) => line.trim().toLowerCase())
+      .filter(Boolean)
+    return Array.from(new Set(entries))
+  }
+
   if (loading) {
     return <div className="loading">Loading...</div>
   }
@@ -196,10 +214,57 @@ function Admin({ user }) {
           <input
             type="checkbox"
             checked={settings.allow_signups}
-            onChange={(e) => updateSettings(e.target.checked)}
+            onChange={(e) => updateSettings({
+              allow_signups: e.target.checked,
+              allowed_imports: parseAllowedImports(allowedImportsText)
+            })}
           />
           <span>Allow Signups</span>
         </label>
+      </div>
+
+      <div className="card" style={{ padding: '1rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Allowed Imports</h2>
+          <button
+            className="btn btn-primary"
+            disabled={allowedImportsSaving}
+            onClick={async () => {
+              setAllowedImportsError('')
+              const allowedImports = parseAllowedImports(allowedImportsText)
+              if (allowedImports.length === 0) {
+                setAllowedImportsError('Provide at least one module name.')
+                return
+              }
+              setAllowedImportsSaving(true)
+              const ok = await updateSettings({
+                allow_signups: settings.allow_signups,
+                allowed_imports: allowedImports
+              })
+              if (!ok) {
+                setAllowedImportsError('Failed to update allowed imports.')
+              }
+              setAllowedImportsSaving(false)
+            }}
+          >
+            {allowedImportsSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <textarea
+          rows={6}
+          value={allowedImportsText}
+          onChange={(e) => setAllowedImportsText(e.target.value)}
+          placeholder="one.module.per.line"
+          style={{ width: '100%', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '0.85rem' }}
+        />
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+          One module per line. Changes apply to all new validations.
+        </div>
+        {allowedImportsError && (
+          <div className="error" style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+            {allowedImportsError}
+          </div>
+        )}
       </div>
 
       {/* Stats Row - All in one line */}

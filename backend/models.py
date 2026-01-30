@@ -32,6 +32,7 @@ class TokenResponse(BaseModel):
 
 class AdminSettingsUpdate(BaseModel):
     allow_signups: bool
+    allowed_imports: List[str]
 
 
 class AdminStatusUpdate(BaseModel):

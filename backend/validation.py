@@ -4,12 +4,12 @@ Validates user-submitted Python code for syntax and security
 """
 import ast
 import re
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Iterable, Set
 
 ALLOWED_IMPORTS = {
     'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math',
     'random', 'string', 'collections', 'itertools', 'functools',
-    'operator', 're', 'uuid', 'hashlib', 'base64', 'urllib.parse',
+    'operator', 're', 'uuid', 'hashlib', 'base64', 'urllib', 'urllib.parse',
     'fasthtml', 'fastlite', 'os', 'sys', 'pathlib', 'time', 'enum',
     'dataclasses', 'decimal', 'html', 'http', 'copy', 'textwrap',
     'calendar', 'locale', 'secrets', 'statistics',
@@ -42,9 +42,23 @@ def find_forbidden_calls(tree: ast.AST, names: set) -> Optional[tuple[str, int]]
     return None
 
 
+def _normalize_allowed_imports(
+    allowed_imports_override: Optional[Iterable[str]]
+) -> Optional[Set[str]]:
+    if allowed_imports_override is None:
+        return None
+    normalized = {
+        item.strip().lower()
+        for item in allowed_imports_override
+        if isinstance(item, str) and item.strip()
+    }
+    return normalized or None
+
+
 def validate_code(
     code: str,
-    local_modules: Optional[set] = None
+    local_modules: Optional[set] = None,
+    allowed_imports_override: Optional[Iterable[str]] = None
 ) -> tuple[bool, Optional[str], Optional[int]]:
     """Validate user code for syntax and security.
     Returns (is_valid, error_message, line_number)
@@ -100,7 +114,8 @@ def validate_code(
 
     # Security checks - check imports
     # Combine allowed imports with local modules for multi-file apps
-    allowed = ALLOWED_IMPORTS | local_modules
+    base_allowed = _normalize_allowed_imports(allowed_imports_override) or ALLOWED_IMPORTS
+    allowed = base_allowed | local_modules
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -117,7 +132,7 @@ def validate_code(
                         suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
 
                     suggestion_text = f" {suggestions[0]}" if suggestions else ""
-                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(base_allowed))}", node.lineno
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 module_name = node.module.split('.')[0]
@@ -131,7 +146,7 @@ def validate_code(
                         suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
 
                     suggestion_text = f" {suggestions[0]}" if suggestions else ""
-                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(base_allowed))}", node.lineno
 
     # Check for forbidden call names (case-sensitive to avoid FastHTML Input)
     forbidden_call = find_forbidden_calls(tree, {"input", "raw_input"})
@@ -170,7 +185,8 @@ def validate_code(
 
 def validate_code_syntax_only(
     code: str,
-    local_modules: Optional[set] = None
+    local_modules: Optional[set] = None,
+    allowed_imports_override: Optional[Iterable[str]] = None
 ) -> tuple[bool, Optional[str], Optional[int]]:
     """Validate code syntax and security without requiring app definition.
     Used for non-entrypoint files in multi-file mode.
@@ -203,19 +219,20 @@ def validate_code_syntax_only(
 
     # Security checks - check imports
     # Combine allowed imports with local modules for multi-file apps
-    allowed = ALLOWED_IMPORTS | local_modules
+    base_allowed = _normalize_allowed_imports(allowed_imports_override) or ALLOWED_IMPORTS
+    allowed = base_allowed | local_modules
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 module_name = alias.name.split('.')[0]
                 if module_name not in allowed:
-                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(base_allowed))}", node.lineno
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 module_name = node.module.split('.')[0]
                 if module_name not in allowed:
-                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+                    return False, f"Import '{module_name}' is not allowed. Allowed imports: {', '.join(sorted(base_allowed))}", node.lineno
 
     # Check for forbidden call names (case-sensitive to avoid FastHTML Input)
     forbidden_call = find_forbidden_calls(tree, {"input", "raw_input"})
@@ -253,7 +270,8 @@ def validate_code_syntax_only(
 
 def validate_multifile(
     files: Dict[str, str],
-    entrypoint: str = "app.py"
+    entrypoint: str = "app.py",
+    allowed_imports_override: Optional[Iterable[str]] = None
 ) -> Tuple[bool, str, Optional[int], Optional[str]]:
     """
     Validate all files in a multi-file app.
@@ -295,10 +313,18 @@ def validate_multifile(
 
         if filename == entrypoint:
             # Entrypoint must define an app
-            is_valid, error_msg, error_line = validate_code(content, local_modules)
+            is_valid, error_msg, error_line = validate_code(
+                content,
+                local_modules,
+                allowed_imports_override
+            )
         else:
             # Other files: syntax and security only, no app required
-            is_valid, error_msg, error_line = validate_code_syntax_only(content, local_modules)
+            is_valid, error_msg, error_line = validate_code_syntax_only(
+                content,
+                local_modules,
+                allowed_imports_override
+            )
 
         if not is_valid:
             return False, error_msg, error_line, filename

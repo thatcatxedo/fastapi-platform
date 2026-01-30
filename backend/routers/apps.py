@@ -16,7 +16,7 @@ from models import (
     LogLine, K8sEvent, DraftUpdate, VersionEntry, VersionHistoryResponse
 )
 from auth import get_current_user
-from database import apps_collection
+from database import apps_collection, settings_collection
 from validation import validate_code, validate_multifile
 from utils import error_payload, friendly_k8s_error
 from config import APP_DOMAIN
@@ -59,6 +59,19 @@ async def get_user_app(app_id: str, user: dict) -> dict:
     if not app:
         raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
     return app
+
+
+async def get_allowed_imports_override() -> Optional[set]:
+    settings = await settings_collection.find_one({"_id": "global"})
+    allowed_imports = settings.get("allowed_imports") if settings else None
+    if not allowed_imports:
+        return None
+    normalized = {
+        item.strip().lower()
+        for item in allowed_imports
+        if isinstance(item, str) and item.strip()
+    }
+    return normalized or None
 
 
 def build_app_response(app: dict) -> AppResponse:
@@ -207,6 +220,7 @@ async def list_apps(user: dict = Depends(get_current_user)):
 @router.post("", response_model=AppResponse)
 async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)):
     mode = app_data.mode or "single"
+    allowed_imports_override = await get_allowed_imports_override()
 
     # Validate based on mode
     if mode == "multi":
@@ -227,7 +241,11 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
             )
 
         entrypoint = app_data.entrypoint or "app.py"
-        is_valid, error_msg, error_line, error_file = validate_multifile(app_data.files, entrypoint)
+        is_valid, error_msg, error_line, error_file = validate_multifile(
+            app_data.files,
+            entrypoint,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,
@@ -241,7 +259,10 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
                 status_code=400,
                 detail=error_payload("INVALID_REQUEST", "code required for single-file mode")
             )
-        is_valid, error_msg, error_line = validate_code(app_data.code)
+        is_valid, error_msg, error_line = validate_code(
+            app_data.code,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,
@@ -327,6 +348,7 @@ async def get_app(app_id: str, user: dict = Depends(get_current_user)):
 async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_current_user)):
     app = await get_user_app(app_id, user)
     mode = app.get("mode", "single")
+    allowed_imports_override = await get_allowed_imports_override()
 
     update_data = {}
     needs_redeploy = False
@@ -340,7 +362,11 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
         if app_data.files is not None:
             # Validate multi-file
             entrypoint = app.get("entrypoint", "app.py")
-            is_valid, error_msg, error_line, error_file = validate_multifile(app_data.files, entrypoint)
+            is_valid, error_msg, error_line, error_file = validate_multifile(
+                app_data.files,
+                entrypoint,
+                allowed_imports_override=allowed_imports_override
+            )
             if not is_valid:
                 raise HTTPException(
                     status_code=400,
@@ -353,7 +379,10 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
     else:
         if app_data.code is not None:
             # Validate single-file code
-            is_valid, error_msg, error_line = validate_code(app_data.code)
+            is_valid, error_msg, error_line = validate_code(
+                app_data.code,
+                allowed_imports_override=allowed_imports_override
+            )
             if not is_valid:
                 raise HTTPException(
                     status_code=400,
@@ -403,6 +432,7 @@ async def save_draft(app_id: str, draft: DraftUpdate, user: dict = Depends(get_c
     """Save draft code/files without deploying"""
     app = await get_user_app(app_id, user)
     mode = app.get("mode", "single")
+    allowed_imports_override = await get_allowed_imports_override()
 
     if mode == "multi":
         if not draft.files:
@@ -412,7 +442,11 @@ async def save_draft(app_id: str, draft: DraftUpdate, user: dict = Depends(get_c
             )
         # Validate draft files
         entrypoint = app.get("entrypoint", "app.py")
-        is_valid, error_msg, error_line, error_file = validate_multifile(draft.files, entrypoint)
+        is_valid, error_msg, error_line, error_file = validate_multifile(
+            draft.files,
+            entrypoint,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,
@@ -441,7 +475,10 @@ async def save_draft(app_id: str, draft: DraftUpdate, user: dict = Depends(get_c
                 detail=error_payload("INVALID_REQUEST", "code required for single-file mode draft")
             )
         # Validate draft code (still need valid syntax)
-        is_valid, error_msg, error_line = validate_code(draft.code)
+        is_valid, error_msg, error_line = validate_code(
+            draft.code,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,
@@ -490,6 +527,7 @@ async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
     """Clone an existing app - copies code/files and env var keys (not values)"""
     source_app = await get_user_app(app_id, user)
     mode = source_app.get("mode", "single")
+    allowed_imports_override = await get_allowed_imports_override()
 
     # Generate unique app_id for the clone
     new_app_id = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
@@ -529,7 +567,11 @@ async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
         cloned_files = source_app.get("files", {})
         # Validate cloned files
         entrypoint = source_app.get("entrypoint", "app.py")
-        is_valid, error_msg, error_line, error_file = validate_multifile(cloned_files, entrypoint)
+        is_valid, error_msg, error_line, error_file = validate_multifile(
+            cloned_files,
+            entrypoint,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,
@@ -545,7 +587,10 @@ async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
     else:
         cloned_code = source_app["code"]
         # Validate cloned code
-        is_valid, error_msg, error_line = validate_code(cloned_code)
+        is_valid, error_msg, error_line = validate_code(
+            cloned_code,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,
@@ -596,16 +641,24 @@ async def get_app_status(app_id: str, user: dict = Depends(get_current_user)):
 @router.post("/validate")
 async def validate_app_code(payload: ValidateRequest, user: dict = Depends(get_current_user)):
     """Validate code/files before creating an app"""
+    allowed_imports_override = await get_allowed_imports_override()
     if payload.files:
         # Multi-file validation
         entrypoint = payload.entrypoint or "app.py"
-        is_valid, error_msg, error_line, error_file = validate_multifile(payload.files, entrypoint)
+        is_valid, error_msg, error_line, error_file = validate_multifile(
+            payload.files,
+            entrypoint,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             return {"valid": False, "message": error_msg, "line": error_line, "file": error_file}
         return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
     elif payload.code:
         # Single-file validation
-        is_valid, error_msg, error_line = validate_code(payload.code)
+        is_valid, error_msg, error_line = validate_code(
+            payload.code,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             return {"valid": False, "message": error_msg, "line": error_line, "file": None}
         return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
@@ -618,19 +671,27 @@ async def validate_existing_app(app_id: str, payload: ValidateRequest, user: dic
     """Validate code/files for an existing app"""
     app = await get_user_app(app_id, user)
     mode = app.get("mode", "single")
+    allowed_imports_override = await get_allowed_imports_override()
 
     if mode == "multi" or payload.files:
         # Multi-file validation
         files = payload.files or app.get("files", {})
         entrypoint = payload.entrypoint or app.get("entrypoint", "app.py")
-        is_valid, error_msg, error_line, error_file = validate_multifile(files, entrypoint)
+        is_valid, error_msg, error_line, error_file = validate_multifile(
+            files,
+            entrypoint,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             return {"valid": False, "message": error_msg, "line": error_line, "file": error_file}
         return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
     else:
         # Single-file validation
         code = payload.code or app.get("code", "")
-        is_valid, error_msg, error_line = validate_code(code)
+        is_valid, error_msg, error_line = validate_code(
+            code,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             return {"valid": False, "message": error_msg, "line": error_line, "file": None}
         return {"valid": True, "message": "Code validation passed", "line": None, "file": None}
@@ -751,6 +812,7 @@ async def rollback(app_id: str, version_index: int, user: dict = Depends(get_cur
     """Rollback to a previous version"""
     app = await get_user_app(app_id, user)
     mode = app.get("mode", "single")
+    allowed_imports_override = await get_allowed_imports_override()
 
     version_history = app.get("version_history", [])
 
@@ -780,7 +842,11 @@ async def rollback(app_id: str, version_index: int, user: dict = Depends(get_cur
         rollback_files = rollback_version.get("files", {})
         # Validate the files
         entrypoint = app.get("entrypoint", "app.py")
-        is_valid, error_msg, error_line, error_file = validate_multifile(rollback_files, entrypoint)
+        is_valid, error_msg, error_line, error_file = validate_multifile(
+            rollback_files,
+            entrypoint,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,
@@ -792,7 +858,10 @@ async def rollback(app_id: str, version_index: int, user: dict = Depends(get_cur
     else:
         rollback_code = rollback_version.get("code", "")
         # Validate the code
-        is_valid, error_msg, error_line = validate_code(rollback_code)
+        is_valid, error_msg, error_line = validate_code(
+            rollback_code,
+            allowed_imports_override=allowed_imports_override
+        )
         if not is_valid:
             raise HTTPException(
                 status_code=400,

@@ -108,6 +108,9 @@ Constraints (document, enforce later):
   - User list with app counts, last activity
   - Platform stats: total users, apps, running apps, templates
   - Recent activity feed (signups, deploys)
+- [x] Allowed imports configuration
+  - Admin-editable allowlist for code validation
+  - Overrides default allowed imports globally
 - [x] User management
   - List users with app counts
   - Delete user (cascades to apps, MongoDB user, database)

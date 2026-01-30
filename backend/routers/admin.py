@@ -14,6 +14,7 @@ from database import (
     settings_collection, viewer_instances_collection, client
 )
 from utils import error_payload
+from validation import ALLOWED_IMPORTS
 from deployment import delete_app_deployment, delete_mongo_viewer_resources
 
 logger = logging.getLogger(__name__)
@@ -21,11 +22,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
+def normalize_allowed_imports(allowed_imports: list[str]) -> list[str]:
+    normalized = [
+        item.strip().lower()
+        for item in allowed_imports
+        if isinstance(item, str)
+    ]
+    normalized = [item for item in normalized if item]
+    return sorted(set(normalized))
+
+
 @router.get("/settings")
 async def get_admin_settings(admin: dict = Depends(require_admin)):
     settings = await settings_collection.find_one({"_id": "global"})
+    allowed_imports = settings.get("allowed_imports") if settings else None
+    if not allowed_imports:
+        allowed_imports = sorted(ALLOWED_IMPORTS)
+    else:
+        allowed_imports = normalize_allowed_imports(allowed_imports)
     return {
-        "allow_signups": settings.get("allow_signups", True) if settings else True
+        "allow_signups": settings.get("allow_signups", True) if settings else True,
+        "allowed_imports": allowed_imports
     }
 
 
@@ -34,10 +51,17 @@ async def update_admin_settings(
     settings: AdminSettingsUpdate,
     admin: dict = Depends(require_admin)
 ):
+    allowed_imports = normalize_allowed_imports(settings.allowed_imports)
+    if not allowed_imports:
+        raise HTTPException(
+            status_code=400,
+            detail=error_payload("INVALID_SETTINGS", "allowed_imports must include at least one module")
+        )
     await settings_collection.update_one(
         {"_id": "global"},
         {"$set": {
             "allow_signups": settings.allow_signups,
+            "allowed_imports": allowed_imports,
             "updated_at": datetime.utcnow(),
             "updated_by": admin["_id"]
         }},
