@@ -9,7 +9,11 @@ RUN pip install --no-cache-dir \
     pydantic==2.5.3 \
     python-fasthtml \
     pymongo==4.6.1 \
-    jinja2==3.1.3
+    jinja2==3.1.3 \
+    httpx==0.26.0 \
+    slack-sdk==3.27.1 \
+    google-auth==2.27.0 \
+    google-api-python-client==2.108.0
 
 # Copy entrypoint script
 COPY entrypoint.py .

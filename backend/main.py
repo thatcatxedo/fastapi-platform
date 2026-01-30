@@ -269,7 +269,8 @@ ALLOWED_IMPORTS = {
     'fasthtml', 'fastlite', 'os', 'sys', 'pathlib', 'time', 'enum',
     'dataclasses', 'decimal', 'html', 'http', 'copy', 'textwrap',
     'calendar', 'locale', 'secrets', 'statistics',
-    'pymongo', 'bson', 'jinja2'
+    'pymongo', 'bson', 'jinja2',
+    'httpx', 'slack_sdk', 'google.auth', 'googleapiclient'
 }
 
 FORBIDDEN_PATTERNS = [
