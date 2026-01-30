@@ -94,11 +94,12 @@ async def create_deployment(app_doc: dict, user: dict):
     code_hash = compute_code_hash(app_doc)
 
     # Determine CODE_PATH based on mode
+    # User code is mounted at /code to avoid overwriting runner's /app/entrypoint.py
     if mode == "multi":
         entrypoint = app_doc.get("entrypoint", "app.py")
-        code_path = f"/app/{entrypoint}"
+        code_path = f"/code/{entrypoint}"
     else:
-        code_path = "/app/main.py"
+        code_path = "/code/main.py"
 
     # Build environment variables list with per-user MongoDB credentials
     mongo_uri = get_user_mongo_uri_secure(user_id, user)
@@ -111,7 +112,7 @@ async def create_deployment(app_doc: dict, user: dict):
         for key, value in app_doc["env_vars"].items():
             env_list.append(k8s_client.V1EnvVar(name=key, value=str(value)))
 
-    # Container spec - mount entire ConfigMap as directory
+    # Container spec - mount user code at /code (not /app, which has entrypoint.py)
     container = k8s_client.V1Container(
         name="runner",
         image=RUNNER_IMAGE,
@@ -119,7 +120,7 @@ async def create_deployment(app_doc: dict, user: dict):
         volume_mounts=[
             k8s_client.V1VolumeMount(
                 name="code",
-                mount_path="/app"
+                mount_path="/code"
             )
         ],
         env=env_list,

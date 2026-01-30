@@ -9,7 +9,7 @@ import sys
 import importlib.util
 from pathlib import Path
 
-CODE_PATH = os.getenv("CODE_PATH", "/app/main.py")
+CODE_PATH = os.getenv("CODE_PATH", "/code/main.py")
 CODE_DIR = os.path.dirname(CODE_PATH)
 
 # Add code directory to Python path for multi-file imports
