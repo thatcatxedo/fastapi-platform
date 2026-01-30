@@ -42,23 +42,133 @@ def compute_code_hash(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()[:16]
 
 
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+async def get_user_app(app_id: str, user: dict) -> dict:
+    """Fetch an app by app_id for the given user, raising 404 if not found."""
+    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not app:
+        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    return app
+
+
+def build_app_response(app: dict) -> AppResponse:
+    """Build an AppResponse from an app document."""
+    return AppResponse(
+        id=str(app["_id"]),
+        app_id=app["app_id"],
+        name=app["name"],
+        status=app["status"],
+        created_at=app["created_at"].isoformat(),
+        last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
+        deployment_url=app["deployment_url"],
+        error_message=app.get("error_message"),
+        deploy_stage=app.get("deploy_stage"),
+        last_error=app.get("last_error"),
+        last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None
+    )
+
+
+def build_app_detail_response(
+    app: dict,
+    deployed_code: str,
+    has_unpublished_changes: bool
+) -> AppDetailResponse:
+    """Build an AppDetailResponse from an app document."""
+    return AppDetailResponse(
+        id=str(app["_id"]),
+        app_id=app["app_id"],
+        name=app["name"],
+        code=app["code"],
+        env_vars=app.get("env_vars"),
+        status=app["status"],
+        created_at=app["created_at"].isoformat(),
+        last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
+        deployment_url=app["deployment_url"],
+        error_message=app.get("error_message"),
+        deploy_stage=app.get("deploy_stage"),
+        last_error=app.get("last_error"),
+        last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None,
+        draft_code=app.get("draft_code"),
+        deployed_code=deployed_code,
+        deployed_at=app.get("deployed_at").isoformat() if app.get("deployed_at") else None,
+        has_unpublished_changes=has_unpublished_changes
+    )
+
+
+def snapshot_version(app: dict) -> dict:
+    """Create a version history entry from the current deployed state of an app."""
+    current_deployed_code = app.get("deployed_code") or app["code"]
+    current_deployed_at = app.get("deployed_at") or app.get("last_deploy_at") or app["created_at"]
+    
+    return {
+        "code": current_deployed_code,
+        "deployed_at": current_deployed_at.isoformat() if hasattr(current_deployed_at, 'isoformat') else str(current_deployed_at),
+        "code_hash": compute_code_hash(current_deployed_code)
+    }
+
+
+def add_version_to_history(app: dict, version_entry: dict) -> list:
+    """Add a version entry to history and limit to MAX_VERSION_HISTORY entries."""
+    version_history = app.get("version_history", [])
+    version_history.insert(0, version_entry)  # Most recent first
+    return version_history[:MAX_VERSION_HISTORY]
+
+
+async def deploy_and_update_status(
+    app_id,
+    app_doc: dict,
+    user: dict,
+    is_create: bool = False,
+    new_deployed_code: str = None
+) -> None:
+    """
+    Deploy an app and update its status in the database.
+    Raises HTTPException on failure after updating error status.
+    """
+    try:
+        if is_create:
+            await create_app_deployment(app_doc, user)
+        else:
+            await update_app_deployment(app_doc, user)
+        
+        # Build success update
+        success_update = {
+            "status": "running",
+            "deploy_stage": "running",
+            "last_error": None
+        }
+        
+        # If we have new deployed code, update version tracking fields
+        if new_deployed_code is not None:
+            success_update["deployed_code"] = new_deployed_code
+            success_update["deployed_at"] = datetime.utcnow()
+            success_update["draft_code"] = None  # Clear draft after successful deploy
+        
+        await apps_collection.update_one(
+            {"_id": app_doc["_id"]},
+            {"$set": success_update}
+        )
+    except Exception as e:
+        error_msg = friendly_k8s_error(str(e))
+        await apps_collection.update_one(
+            {"_id": app_doc["_id"]},
+            {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
+        )
+        raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
+
+
+# =============================================================================
+# Routes
+# =============================================================================
+
 @router.get("", response_model=List[AppResponse])
 async def list_apps(user: dict = Depends(get_current_user)):
     apps = []
     async for app in apps_collection.find({"user_id": user["_id"], "status": {"$ne": "deleted"}}):
-        apps.append(AppResponse(
-            id=str(app["_id"]),
-            app_id=app["app_id"],
-            name=app["name"],
-            status=app["status"],
-            created_at=app["created_at"].isoformat(),
-            last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
-            deployment_url=app["deployment_url"],
-            error_message=app.get("error_message"),
-            deploy_stage=app.get("deploy_stage"),
-            last_error=app.get("last_error"),
-            last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None
-        ))
+        apps.append(build_app_response(app))
     return apps
 
 
@@ -101,42 +211,15 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
     app_doc["_id"] = result.inserted_id
     
     # Deploy to Kubernetes
-    try:
-        await create_app_deployment(app_doc, user)
-        await apps_collection.update_one(
-            {"_id": result.inserted_id},
-            {"$set": {"status": "running", "deploy_stage": "running", "last_error": None}}
-        )
-    except Exception as e:
-        error_msg = friendly_k8s_error(str(e))
-        
-        await apps_collection.update_one(
-            {"_id": result.inserted_id},
-            {"$set": {"status": "error", "deploy_stage": "error", "error_message": error_msg, "last_error": error_msg}}
-        )
-        raise HTTPException(status_code=500, detail=error_payload("DEPLOY_FAILED", error_msg))
+    await deploy_and_update_status(app_doc["_id"], app_doc, user, is_create=True)
     
     updated_app = await apps_collection.find_one({"_id": result.inserted_id})
-    return AppResponse(
-        id=str(updated_app["_id"]),
-        app_id=updated_app["app_id"],
-        name=updated_app["name"],
-        status=updated_app["status"],
-        created_at=updated_app["created_at"].isoformat(),
-        last_activity=updated_app.get("last_activity").isoformat() if updated_app.get("last_activity") else None,
-        deployment_url=updated_app["deployment_url"],
-        error_message=updated_app.get("error_message"),
-        deploy_stage=updated_app.get("deploy_stage"),
-        last_error=updated_app.get("last_error"),
-        last_deploy_at=updated_app.get("last_deploy_at").isoformat() if updated_app.get("last_deploy_at") else None
-    )
+    return build_app_response(updated_app)
 
 
 @router.get("/{app_id}", response_model=AppDetailResponse)
 async def get_app(app_id: str, user: dict = Depends(get_current_user)):
-    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
-    if not app:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "App not found"))
+    app = await get_user_app(app_id, user)
     
     # Migration: if deployed_code doesn't exist, set it to code
     deployed_code = app.get("deployed_code")
@@ -148,33 +231,13 @@ async def get_app(app_id: str, user: dict = Depends(get_current_user)):
             {"$set": {"deployed_code": deployed_code, "deployed_at": app.get("last_deploy_at") or app["created_at"]}}
         )
     
-    # Get draft code (falls back to deployed code if not set)
-    draft_code = app.get("draft_code")
-    
     # Compute whether there are unpublished changes
     # Compare draft_code (or code) against deployed_code
+    draft_code = app.get("draft_code")
     current_code = draft_code if draft_code is not None else app["code"]
     has_unpublished_changes = compute_code_hash(current_code) != compute_code_hash(deployed_code)
     
-    return AppDetailResponse(
-        id=str(app["_id"]),
-        app_id=app["app_id"],
-        name=app["name"],
-        code=app["code"],
-        env_vars=app.get("env_vars"),
-        status=app["status"],
-        created_at=app["created_at"].isoformat(),
-        last_activity=app.get("last_activity").isoformat() if app.get("last_activity") else None,
-        deployment_url=app["deployment_url"],
-        error_message=app.get("error_message"),
-        deploy_stage=app.get("deploy_stage"),
-        last_error=app.get("last_error"),
-        last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None,
-        draft_code=draft_code,
-        deployed_code=deployed_code,
-        deployed_at=app.get("deployed_at").isoformat() if app.get("deployed_at") else None,
-        has_unpublished_changes=has_unpublished_changes
-    )
+    return build_app_detail_response(app, deployed_code, has_unpublished_changes)
 
 
 @router.put("/{app_id}", response_model=AppResponse)

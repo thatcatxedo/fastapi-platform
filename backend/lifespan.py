@@ -4,17 +4,22 @@ Handles application startup and shutdown lifecycle
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import asyncio
 import logging
 
-from database import client
+from database import client, setup_ttl_indexes
 
 logger = logging.getLogger(__name__)
+
+# Track background tasks for cleanup on shutdown
+background_tasks = []
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: seed templates
     startup_logger = logging.getLogger("uvicorn")
+    
+    # Startup: seed templates
     try:
         from seed_templates import seed_templates
         startup_logger.info("Starting template seeding...")
@@ -47,5 +52,52 @@ async def lifespan(app: FastAPI):
         import traceback
         startup_logger.error(traceback.format_exc())
     
+    # Startup: Setup TTL indexes for observability collections
+    try:
+        startup_logger.info("Setting up TTL indexes...")
+        await setup_ttl_indexes()
+        startup_logger.info("TTL indexes setup completed")
+    except Exception as e:
+        startup_logger.error(f"Warning: TTL index setup failed: {e}")
+        import traceback
+        startup_logger.error(traceback.format_exc())
+    
+    # Startup: Start background tasks
+    try:
+        from cleanup import run_cleanup_loop
+        from health_checks import run_health_check_loop
+        from log_parser import run_log_parser_loop
+        
+        startup_logger.info("Starting background tasks...")
+        
+        cleanup_task = asyncio.create_task(run_cleanup_loop())
+        background_tasks.append(cleanup_task)
+        startup_logger.info("Cleanup task started")
+        
+        health_task = asyncio.create_task(run_health_check_loop())
+        background_tasks.append(health_task)
+        startup_logger.info("Health check task started")
+        
+        log_parser_task = asyncio.create_task(run_log_parser_loop())
+        background_tasks.append(log_parser_task)
+        startup_logger.info("Log parser task started")
+        
+    except Exception as e:
+        startup_logger.error(f"Warning: Background task startup failed: {e}")
+        import traceback
+        startup_logger.error(traceback.format_exc())
+    
     yield
-    # Shutdown (if needed)
+    
+    # Shutdown: Cancel background tasks
+    shutdown_logger = logging.getLogger("uvicorn")
+    shutdown_logger.info("Shutting down background tasks...")
+    
+    for task in background_tasks:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    
+    shutdown_logger.info("Background tasks shutdown complete")

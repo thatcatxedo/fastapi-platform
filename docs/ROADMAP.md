@@ -92,26 +92,26 @@ Constraints (document, enforce later):
   - User apps can only access their own database
   - Prevents cross-user data access
 
-## Phase 1d — Admin & Access Control (near-term)
+## Phase 1d — Admin & Access Control (complete)
 
 **Goal:** Secure the platform and enable administrative oversight.
 
-- [ ] Admin role
+- [x] Admin role
   - First user to sign up becomes admin automatically
   - `is_admin` flag in user document
-  - Admin-only API endpoints with role check middleware
-- [ ] Signup control
+  - Admin-only API endpoints with role check middleware (`require_admin`)
+- [x] Signup control
   - Admin setting: allow public signups (on/off)
   - When off, only admin can create new users
   - Stored in platform settings collection
-- [ ] Admin dashboard (`/admin`)
+- [x] Admin dashboard (`/admin`)
   - User list with app counts, last activity
-  - Platform stats: total users, apps, storage
-  - Recent activity feed (signups, deploys, errors)
-- [ ] User management
-  - View user details and their apps
-  - Delete user (cascades to apps, MongoDB user, data)
-  - Future: suspend user, reset password
+  - Platform stats: total users, apps, running apps, templates
+  - Recent activity feed (signups, deploys)
+- [x] User management
+  - List users with app counts
+  - Delete user (cascades to apps, MongoDB user, database)
+  - Admin can create users manually when signups disabled
 
 ## Phase 1e — User Observability (near-term)
 
@@ -135,20 +135,23 @@ Implementation notes:
 - Store minimal metrics in MongoDB (TTL indexed)
 - Avoid heavy infrastructure (no Prometheus/Grafana for now)
 
-## Phase 1f — Drafts & Safety
+## Phase 1f — Drafts & Safety (complete)
 
 **Goal:** Enable iteration without deployment risk.
 
 - [x] Clone app
   - Duplicate with new ID from latest draft or deployed code
-- [ ] Draft save (explicit save without deploy)
-  - Backend stores draft code + timestamp
-  - "Saved vs Deployed" status indicator
-- [ ] "Deployed vs Latest" indicator
-  - Track deployed code hash vs draft hash
-  - UI shows "Up to date" vs "Changes not deployed"
-- [ ] Version history (last N deploys)
-  - "Revert to last good deploy" action
+- [x] Draft save (explicit save without deploy)
+  - `PUT /api/apps/{app_id}/draft` endpoint stores draft code
+  - Ctrl+S keyboard shortcut in editor
+  - "Save Draft" button in editor header
+- [x] "Deployed vs Latest" indicator
+  - Track `deployed_code` vs current code via hash comparison
+  - UI shows "Up to date" / "Unsaved changes" / "Changes not deployed"
+- [x] Version history (last 10 deploys)
+  - `GET /api/apps/{app_id}/versions` returns history
+  - `POST /api/apps/{app_id}/rollback/{index}` reverts to previous version
+  - "History" button opens modal with preview and rollback
 
 ---
 

@@ -2,13 +2,17 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { API_URL } from '../App'
 import LogsPanel from '../components/LogsPanel'
+import ErrorsPanel from '../components/ErrorsPanel'
 
 function Dashboard({ user }) {
   const [apps, setApps] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [logsAppId, setLogsAppId] = useState(null)
+  const [errorsAppId, setErrorsAppId] = useState(null)
   const [copiedUrl, setCopiedUrl] = useState(null)
+  const [appMetrics, setAppMetrics] = useState({}) // { app_id: { request_count, error_count, ... } }
+  const [appHealthStatus, setAppHealthStatus] = useState({}) // { app_id: "healthy" | "degraded" | "unhealthy" | "unknown" }
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const deployingAppId = searchParams.get('deploying')
@@ -92,11 +96,56 @@ function Dashboard({ user }) {
 
       const data = await response.json()
       setApps(data)
+      
+      // Fetch metrics and health for running apps
+      fetchAppObservability(data, token)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchAppObservability = async (appsList, token) => {
+    // Only fetch for running apps
+    const runningApps = appsList.filter(app => app.status === 'running')
+    if (runningApps.length === 0) return
+
+    // Fetch metrics and health in parallel for all running apps
+    const metricsPromises = runningApps.map(app =>
+      fetch(`${API_URL}/api/apps/${app.app_id}/metrics`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).then(r => r.ok ? r.json() : null).catch(() => null)
+    )
+
+    const healthPromises = runningApps.map(app =>
+      fetch(`${API_URL}/api/apps/${app.app_id}/health-status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).then(r => r.ok ? r.json() : null).catch(() => null)
+    )
+
+    const [metricsResults, healthResults] = await Promise.all([
+      Promise.all(metricsPromises),
+      Promise.all(healthPromises)
+    ])
+
+    // Build metrics map
+    const newMetrics = {}
+    runningApps.forEach((app, i) => {
+      if (metricsResults[i]) {
+        newMetrics[app.app_id] = metricsResults[i]
+      }
+    })
+    setAppMetrics(newMetrics)
+
+    // Build health status map
+    const newHealth = {}
+    runningApps.forEach((app, i) => {
+      if (healthResults[i]?.health) {
+        newHealth[app.app_id] = healthResults[i].health.status
+      }
+    })
+    setAppHealthStatus(newHealth)
   }
 
   const deleteApp = async (appId) => {
@@ -193,6 +242,7 @@ function Dashboard({ user }) {
                 <th>Name</th>
                 <th>App ID</th>
                 <th>Status</th>
+                <th>Metrics (24h)</th>
                 <th>Last Activity</th>
                 <th>Links</th>
                 <th>Actions</th>
@@ -223,6 +273,15 @@ function Dashboard({ user }) {
                     <div style={{ 
                       height: '1.25rem', 
                       width: '70px', 
+                      background: 'var(--bg-light)', 
+                      borderRadius: '0.25rem',
+                      animation: 'pulse 1.5s ease-in-out infinite'
+                    }} />
+                  </td>
+                  <td>
+                    <div style={{ 
+                      height: '1rem', 
+                      width: '80px', 
                       background: 'var(--bg-light)', 
                       borderRadius: '0.25rem',
                       animation: 'pulse 1.5s ease-in-out infinite'
@@ -315,6 +374,7 @@ function Dashboard({ user }) {
                 <th>Name</th>
                 <th>App ID</th>
                 <th>Status</th>
+                <th>Metrics (24h)</th>
                 <th>Last Activity</th>
                 <th>Links</th>
                 <th>Actions</th>
@@ -335,14 +395,32 @@ function Dashboard({ user }) {
                     <code style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{app.app_id}</code>
                   </td>
                   <td>
-                    <span className={`status-badge status-${app.status}`}>
-                      {app.status === 'running' && '●'}
-                      {app.status === 'deploying' && (
-                        <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>○</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span className={`status-badge status-${app.status}`}>
+                        {app.status === 'running' && '●'}
+                        {app.status === 'deploying' && (
+                          <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>○</span>
+                        )}
+                        {app.status === 'error' && '●'}
+                        {' '}{app.status}
+                      </span>
+                      {app.status === 'running' && appHealthStatus[app.app_id] && (
+                        <span 
+                          title={`Health: ${appHealthStatus[app.app_id]}`}
+                          style={{
+                            display: 'inline-block',
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: 
+                              appHealthStatus[app.app_id] === 'healthy' ? 'var(--success)' :
+                              appHealthStatus[app.app_id] === 'degraded' ? 'var(--warning, #f59e0b)' :
+                              appHealthStatus[app.app_id] === 'unhealthy' ? 'var(--error)' :
+                              'var(--text-muted)'
+                          }}
+                        />
                       )}
-                      {app.status === 'error' && '●'}
-                      {' '}{app.status}
-                    </span>
+                    </div>
                     {app.deploy_stage && app.deploy_stage !== app.status && (
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
                         Stage: {app.deploy_stage}
@@ -352,6 +430,27 @@ function Dashboard({ user }) {
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem', fontStyle: 'italic' }}>
                         Deploying...
                       </div>
+                    )}
+                  </td>
+                  <td>
+                    {app.status === 'running' && appMetrics[app.app_id] ? (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                          <span title="Requests (24h)">
+                            <strong style={{ color: 'var(--text)' }}>{appMetrics[app.app_id].request_count}</strong> req
+                          </span>
+                          <span title="Errors (24h)" style={{ color: appMetrics[app.app_id].error_count > 0 ? 'var(--error)' : 'inherit' }}>
+                            <strong style={{ color: appMetrics[app.app_id].error_count > 0 ? 'var(--error)' : 'var(--text)' }}>
+                              {appMetrics[app.app_id].error_count}
+                            </strong> err
+                          </span>
+                        </div>
+                        <div style={{ marginTop: '0.25rem' }} title="Avg response time">
+                          <strong style={{ color: 'var(--text)' }}>{appMetrics[app.app_id].avg_response_time_ms}</strong> ms avg
+                        </div>
+                      </div>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>
                     )}
                   </td>
                   <td>
@@ -417,13 +516,26 @@ function Dashboard({ user }) {
                         </button>
                       )}
                       {app.status === 'running' && (
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => setLogsAppId(app.app_id)}
-                          style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
-                        >
-                          Logs
-                        </button>
+                        <>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => setLogsAppId(app.app_id)}
+                            style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
+                          >
+                            Logs
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => setErrorsAppId(app.app_id)}
+                            style={{ 
+                              padding: '0.375rem 0.75rem', 
+                              fontSize: '0.75rem',
+                              color: appMetrics[app.app_id]?.error_count > 0 ? 'var(--error)' : undefined
+                            }}
+                          >
+                            Errors{appMetrics[app.app_id]?.error_count > 0 ? ` (${appMetrics[app.app_id].error_count})` : ''}
+                          </button>
+                        </>
                       )}
                       <button
                         className="btn btn-secondary"
@@ -460,6 +572,12 @@ function Dashboard({ user }) {
         appId={logsAppId}
         isOpen={!!logsAppId}
         onClose={() => setLogsAppId(null)}
+      />
+
+      <ErrorsPanel
+        appId={errorsAppId}
+        isOpen={!!errorsAppId}
+        onClose={() => setErrorsAppId(null)}
       />
     </div>
   )

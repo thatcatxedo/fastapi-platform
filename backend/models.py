@@ -170,3 +170,49 @@ class AppEventsResponse(BaseModel):
     events: List[K8sEvent]
     deployment_phase: str
     error: Optional[str] = None
+
+
+# Observability models (Phase 1e)
+
+class AppMetricsResponse(BaseModel):
+    app_id: str
+    request_count: int = 0
+    error_count: int = 0
+    avg_response_time_ms: float = 0
+    min_response_time_ms: float = 0
+    max_response_time_ms: float = 0
+    period_hours: int = 24
+
+
+class AppErrorEntry(BaseModel):
+    timestamp: str
+    status_code: int
+    request_path: Optional[str] = None
+    request_method: Optional[str] = None
+    error_type: str  # "client_error" or "server_error"
+
+
+class AppErrorsResponse(BaseModel):
+    app_id: str
+    errors: List[AppErrorEntry]
+    total_count: int = 0
+
+
+class HealthStatus(BaseModel):
+    status: str  # "healthy", "degraded", "unhealthy", "unknown"
+    last_check: Optional[str] = None
+    response_time_ms: Optional[float] = None
+    checks_passed: int = 0
+    checks_failed: int = 0
+    uptime_percent: Optional[float] = None
+
+
+class AppHealthStatusResponse(BaseModel):
+    app_id: str
+    health: HealthStatus
+
+
+class AppWithMetrics(AppResponse):
+    """Extended AppResponse with metrics summary for Dashboard"""
+    metrics: Optional[AppMetricsResponse] = None
+    health_status: Optional[str] = None  # "healthy", "degraded", "unhealthy", "unknown"
