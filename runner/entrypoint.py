@@ -101,9 +101,9 @@ def add_health_wrapper(app):
     async def wrapped(scope, receive, send):
         if scope.get("type") == "http":
             path = scope.get("path", "")
-            # Debug: log incoming path
-            print(f"[health_wrapper] type=http, path={path}, root_path={scope.get('root_path', '')}")
-            if path == "/health":
+            # Handle both /health and {root_path}/health due to uvicorn behavior
+            # When root_path is set, uvicorn may prepend it to scope["path"]
+            if path == "/health" or path.endswith("/health"):
                 await send({
                     "type": "http.response.start",
                     "status": 200,
