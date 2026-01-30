@@ -31,6 +31,8 @@ except Exception as e:
 PLATFORM_NAMESPACE = os.getenv("PLATFORM_NAMESPACE", "fastapi-platform")
 RUNNER_IMAGE = os.getenv("RUNNER_IMAGE", "ghcr.io/thatcatxedo/fastapi-platform-runner:latest")
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "platform.gofastapi.xyz")
+MONGO_VIEWER_IMAGE = os.getenv("MONGO_VIEWER_IMAGE", "mongo-express:latest")
+MONGO_VIEWER_PORT = int(os.getenv("MONGO_VIEWER_PORT", "8081"))
 
 def get_user_mongo_uri(user_id: str) -> str:
     """Construct per-user MongoDB URI by replacing database name."""
@@ -54,6 +56,197 @@ def get_app_labels(user_id: str, app_id: str) -> dict:
         "app-id": app_id,
         "managed-by": "fastapi-platform"
     }
+
+def get_viewer_labels(user_id: str) -> dict:
+    """Get standard labels for mongo viewer resources"""
+    return {
+        "app": "mongo-viewer",
+        "user-id": str(user_id),
+        "managed-by": "fastapi-platform"
+    }
+
+def get_viewer_name(user_id: str) -> str:
+    return f"mongo-viewer-{user_id}"
+
+async def create_mongo_viewer_deployment(user_id: str, username: str, password: str):
+    """Create Deployment for per-user MongoDB viewer"""
+    if not apps_v1:
+        raise Exception("Kubernetes client not available")
+
+    deployment_name = get_viewer_name(user_id)
+    base_url = f"/user/{user_id}/mongo"
+
+    env_list = [
+        k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_URL", value=get_user_mongo_uri(user_id)),
+        k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_USERNAME", value=username),
+        k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_PASSWORD", value=password),
+        k8s_client.V1EnvVar(name="ME_CONFIG_SITE_BASEURL", value=base_url)
+    ]
+
+    container = k8s_client.V1Container(
+        name="mongo-express",
+        image=MONGO_VIEWER_IMAGE,
+        ports=[k8s_client.V1ContainerPort(container_port=MONGO_VIEWER_PORT, name="http")],
+        env=env_list,
+        resources=k8s_client.V1ResourceRequirements(
+            requests={"memory": "32Mi", "cpu": "25m"},
+            limits={"memory": "128Mi", "cpu": "200m"}
+        )
+    )
+
+    pod_template = k8s_client.V1PodTemplateSpec(
+        metadata=k8s_client.V1ObjectMeta(
+            labels=get_viewer_labels(user_id)
+        ),
+        spec=k8s_client.V1PodSpec(
+            containers=[container],
+            image_pull_secrets=[k8s_client.V1LocalObjectReference(name="ghcr-auth")]
+        )
+    )
+
+    deployment_spec = k8s_client.V1DeploymentSpec(
+        replicas=1,
+        selector=k8s_client.V1LabelSelector(
+            match_labels=get_viewer_labels(user_id)
+        ),
+        template=pod_template
+    )
+
+    deployment = k8s_client.V1Deployment(
+        api_version="apps/v1",
+        kind="Deployment",
+        metadata=k8s_client.V1ObjectMeta(
+            name=deployment_name,
+            namespace=PLATFORM_NAMESPACE,
+            labels=get_viewer_labels(user_id)
+        ),
+        spec=deployment_spec
+    )
+
+    try:
+        apps_v1.create_namespaced_deployment(
+            namespace=PLATFORM_NAMESPACE,
+            body=deployment
+        )
+        logger.info(f"Created mongo viewer Deployment for user {user_id}")
+    except ApiException as e:
+        if e.status == 409:
+            apps_v1.patch_namespaced_deployment(
+                name=deployment_name,
+                namespace=PLATFORM_NAMESPACE,
+                body=deployment
+            )
+            logger.info(f"Updated mongo viewer Deployment for user {user_id}")
+        else:
+            raise
+
+async def create_mongo_viewer_service(user_id: str):
+    """Create Service for per-user MongoDB viewer"""
+    if not core_v1:
+        raise Exception("Kubernetes client not available")
+
+    service_name = get_viewer_name(user_id)
+
+    service = k8s_client.V1Service(
+        metadata=k8s_client.V1ObjectMeta(
+            name=service_name,
+            namespace=PLATFORM_NAMESPACE,
+            labels=get_viewer_labels(user_id)
+        ),
+        spec=k8s_client.V1ServiceSpec(
+            selector=get_viewer_labels(user_id),
+            ports=[
+                k8s_client.V1ServicePort(
+                    port=80,
+                    target_port=MONGO_VIEWER_PORT,
+                    name="http"
+                )
+            ]
+        )
+    )
+
+    try:
+        core_v1.create_namespaced_service(
+            namespace=PLATFORM_NAMESPACE,
+            body=service
+        )
+        logger.info(f"Created mongo viewer Service for user {user_id}")
+    except ApiException as e:
+        if e.status == 409:
+            core_v1.patch_namespaced_service(
+                name=service_name,
+                namespace=PLATFORM_NAMESPACE,
+                body=service
+            )
+            logger.info(f"Updated mongo viewer Service for user {user_id}")
+        else:
+            raise
+
+async def create_mongo_viewer_ingress_route(user_id: str):
+    """Create Traefik IngressRoute for per-user MongoDB viewer"""
+    if not custom_objects:
+        raise Exception("Kubernetes client not available")
+
+    ingress_name = get_viewer_name(user_id)
+    path_prefix = f"/user/{user_id}/mongo"
+
+    ingress_route = {
+        "apiVersion": "traefik.io/v1alpha1",
+        "kind": "IngressRoute",
+        "metadata": {
+            "name": ingress_name,
+            "namespace": PLATFORM_NAMESPACE,
+            "labels": get_viewer_labels(user_id)
+        },
+        "spec": {
+            "entryPoints": ["web"],
+            "routes": [
+                {
+                    "match": f"Host(`{BASE_DOMAIN}`) && PathPrefix(`{path_prefix}`)",
+                    "kind": "Rule",
+                    "services": [
+                        {
+                            "name": get_viewer_name(user_id),
+                            "port": 80
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+
+    try:
+        custom_objects.create_namespaced_custom_object(
+            group="traefik.io",
+            version="v1alpha1",
+            namespace=PLATFORM_NAMESPACE,
+            plural="ingressroutes",
+            body=ingress_route
+        )
+        logger.info(f"Created mongo viewer IngressRoute for user {user_id}")
+    except ApiException as e:
+        if e.status == 409:
+            custom_objects.patch_namespaced_custom_object(
+                group="traefik.io",
+                version="v1alpha1",
+                namespace=PLATFORM_NAMESPACE,
+                plural="ingressroutes",
+                name=ingress_name,
+                body=ingress_route
+            )
+            logger.info(f"Updated mongo viewer IngressRoute for user {user_id}")
+        else:
+            raise
+
+async def create_mongo_viewer_resources(user_id: str, username: str, password: str):
+    """Create all Kubernetes resources for a per-user MongoDB viewer"""
+    try:
+        await create_mongo_viewer_deployment(user_id, username, password)
+        await create_mongo_viewer_service(user_id)
+        await create_mongo_viewer_ingress_route(user_id)
+    except Exception as e:
+        logger.error(f"Failed to create mongo viewer resources for user {user_id}: {e}")
+        raise
 
 async def create_configmap(app_doc: dict, user: dict):
     """Create ConfigMap with user code"""
@@ -102,9 +295,13 @@ async def create_deployment(app_doc: dict, user: dict):
     deployment_name = f"app-{app_id}"
     
     # Build environment variables list
+    # Build the app's root path for proper URL handling behind reverse proxy
+    app_root_path = f"/user/{user_id}/app/{app_id}"
+
     env_list = [
         k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py"),
-        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=get_user_mongo_uri(user_id))
+        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=get_user_mongo_uri(user_id)),
+        k8s_client.V1EnvVar(name="APP_ROOT_PATH", value=app_root_path)
     ]
     # Add user-defined env vars
     if app_doc.get("env_vars"):
@@ -504,6 +701,49 @@ async def delete_app_deployment(app_doc: dict, user: dict):
         logger.info(f"Deleted all resources for app {app_id}")
     except Exception as e:
         logger.error(f"Failed to delete deployment for app {app_id}: {e}")
+        raise
+
+async def delete_mongo_viewer_resources(user_id: str):
+    """Delete all Kubernetes resources for a per-user MongoDB viewer"""
+    viewer_name = get_viewer_name(user_id)
+
+    try:
+        if custom_objects:
+            try:
+                custom_objects.delete_namespaced_custom_object(
+                    group="traefik.io",
+                    version="v1alpha1",
+                    namespace=PLATFORM_NAMESPACE,
+                    plural="ingressroutes",
+                    name=viewer_name
+                )
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+
+        if core_v1:
+            try:
+                core_v1.delete_namespaced_service(
+                    name=viewer_name,
+                    namespace=PLATFORM_NAMESPACE
+                )
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+
+        if apps_v1:
+            try:
+                apps_v1.delete_namespaced_deployment(
+                    name=viewer_name,
+                    namespace=PLATFORM_NAMESPACE
+                )
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+
+        logger.info(f"Deleted mongo viewer resources for user {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to delete mongo viewer resources for user {user_id}: {e}")
         raise
 
 

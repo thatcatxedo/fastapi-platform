@@ -9,6 +9,7 @@ import importlib.util
 from pathlib import Path
 
 CODE_PATH = os.getenv("CODE_PATH", "/app/user_code.py")
+APP_ROOT_PATH = os.getenv("APP_ROOT_PATH", "")
 
 def load_user_code():
     """Load and validate user code"""
@@ -63,6 +64,37 @@ def execute_code(code: str):
         sys.exit(1)
     
     return user_globals['app']
+
+def add_trailing_slash_redirect(app, root_path: str):
+    """
+    Middleware to redirect requests without trailing slash to include one.
+    This ensures relative URLs in HTML forms resolve correctly.
+    """
+    async def wrapped(scope, receive, send):
+        if scope.get("type") == "http":
+            path = scope.get("path", "")
+            # If request is to root without trailing slash, redirect to add it
+            # The browser sees the full URL, so we redirect to root_path + "/"
+            if path == "" or path == "/":
+                # Check if the original request had a trailing slash by looking at raw_path
+                raw_path = scope.get("raw_path", b"/").decode()
+                if not raw_path.endswith("/"):
+                    redirect_url = f"{root_path}/"
+                    await send({
+                        "type": "http.response.start",
+                        "status": 308,  # Permanent redirect that preserves method
+                        "headers": [
+                            (b"content-type", b"text/plain"),
+                            (b"location", redirect_url.encode()),
+                        ],
+                    })
+                    await send({
+                        "type": "http.response.body",
+                        "body": b"Redirecting...",
+                    })
+                    return
+        await app(scope, receive, send)
+    return wrapped
 
 def add_health_wrapper(app):
     async def wrapped(scope, receive, send):
@@ -126,10 +158,15 @@ def main():
         app.add_middleware(SwaggerUIPatchMiddleware)
 
     app = add_health_wrapper(app)
-    
+
+    # Add trailing slash redirect if we have a root path configured
+    if APP_ROOT_PATH:
+        print(f"Configuring app with root_path: {APP_ROOT_PATH}")
+        app = add_trailing_slash_redirect(app, APP_ROOT_PATH)
+
     print("Starting uvicorn server...")
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, root_path=APP_ROOT_PATH)
 
 if __name__ == "__main__":
     main()
