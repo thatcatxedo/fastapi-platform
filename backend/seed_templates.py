@@ -572,7 +572,7 @@ async def home():
             <h3>{note['title']}</h3>
             <p>{note['content']}</p>
             <small>Created: {note['created_at'].strftime('%Y-%m-%d %H:%M')}</small>
-            <form action="/delete/{note['_id']}" method="post" style="display:inline; margin-left:10px;">
+            <form action="delete/{note['_id']}" method="post" style="display:inline; margin-left:10px;">
                 <button type="submit" class="delete">Delete</button>
             </form>
         </div>"""
@@ -582,26 +582,26 @@ async def home():
     content = f"""
         <h1>My Notes</h1>
         <div class="card">
-            <form action="/create" method="post">
+            <form action="create" method="post">
                 <input name="title" placeholder="Note title" required>
                 <textarea name="content" placeholder="Note content" rows="3" required></textarea>
                 <button type="submit">Add Note</button>
             </form>
         </div>
         {notes_html}
-        <p style="margin-top:20px;color:#666;">Data persists in your database. <a href="/api/notes">JSON API</a></p>
+        <p style="margin-top:20px;color:#666;">Data persists in your database. <a href="api/notes">JSON API</a></p>
     """
     return render_page("My Notes", content)
 
 @app.post("/create")
 async def create_note(title: str = Form(...), content: str = Form(...)):
     notes.insert_one({"title": title, "content": content, "created_at": datetime.utcnow()})
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="./", status_code=303)
 
 @app.post("/delete/{note_id}")
 async def delete_note(note_id: str):
     notes.delete_one({"_id": ObjectId(note_id)})
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="../", status_code=303)
 
 @app.get("/api/notes")
 async def api_list_notes():
