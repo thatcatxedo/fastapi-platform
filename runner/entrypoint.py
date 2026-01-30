@@ -73,6 +73,7 @@ def add_trailing_slash_redirect(app, root_path: str):
     async def wrapped(scope, receive, send):
         if scope.get("type") == "http":
             path = scope.get("path", "")
+            print(f"[trailing_slash] path={path}")
             # If request is to root without trailing slash, redirect to add it
             # The browser sees the full URL, so we redirect to root_path + "/"
             if path == "" or path == "/":
@@ -98,17 +99,21 @@ def add_trailing_slash_redirect(app, root_path: str):
 
 def add_health_wrapper(app):
     async def wrapped(scope, receive, send):
-        if scope.get("type") == "http" and scope.get("path") == "/health":
-            await send({
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [(b"content-type", b"application/json")],
-            })
-            await send({
-                "type": "http.response.body",
-                "body": b'{"status":"healthy"}',
-            })
-            return
+        if scope.get("type") == "http":
+            path = scope.get("path", "")
+            # Debug: log incoming path
+            print(f"[health_wrapper] type=http, path={path}, root_path={scope.get('root_path', '')}")
+            if path == "/health":
+                await send({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"application/json")],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b'{"status":"healthy"}',
+                })
+                return
         await app(scope, receive, send)
 
     return wrapped
