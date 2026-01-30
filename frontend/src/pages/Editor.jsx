@@ -20,6 +20,13 @@ app = FastAPI()
 #     return {"message": "Hello World"}
 `
 
+// Helper to get app URL using subdomain routing
+const getAppUrl = (appId) => {
+  const appDomain = import.meta.env.VITE_APP_DOMAIN ||
+    window.location.hostname.replace(/^platform\./, '')
+  return `https://app-${appId}.${appDomain}`
+}
+
 function EditorPage({ user }) {
   const { appId } = useParams()
   const navigate = useNavigate()
@@ -581,7 +588,7 @@ function EditorPage({ user }) {
               {deployingAppId && deploymentStatus?.status === 'running' && (
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <a
-                    href={`${window.location.origin}/user/${user.id}/app/${deployingAppId}`}
+                    href={getAppUrl(deployingAppId)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn btn-secondary"
@@ -590,7 +597,7 @@ function EditorPage({ user }) {
                     Open App
                   </a>
                   <a
-                    href={`${window.location.origin}/user/${user.id}/app/${deployingAppId}/docs`}
+                    href={`${getAppUrl(deployingAppId)}/docs`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn btn-secondary"
@@ -599,7 +606,7 @@ function EditorPage({ user }) {
                     API Docs
                   </a>
                   <button
-                    onClick={() => copyToClipboard(getCurlSnippet(`${window.location.origin}/user/${user.id}/app/${deployingAppId}`))}
+                    onClick={() => copyToClipboard(getCurlSnippet(getAppUrl(deployingAppId)))}
                     className="btn btn-secondary"
                     style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
                   >
@@ -610,7 +617,7 @@ function EditorPage({ user }) {
             </div>
             {deployingAppId && (
               <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                URL: <code>{window.location.origin}/user/{user.id}/app/{deployingAppId}</code>
+                URL: <code>{getAppUrl(deployingAppId)}</code>
               </div>
             )}
           </div>

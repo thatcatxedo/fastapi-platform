@@ -11,3 +11,5 @@ spec:
           env:
             - name: BASE_DOMAIN
               value: platform.gatorlunch.com
+            - name: APP_DOMAIN
+              value: gatorlunch.com

@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 # MongoDB setup (must be before lifespan)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "platform.gofastapi.xyz")
+APP_DOMAIN = os.getenv("APP_DOMAIN", "gatorlunch.com")  # Apps at app-{id}.{APP_DOMAIN}
 client = AsyncIOMotorClient(MONGO_URI)
 db = client.fastapi_platform_db
 users_collection = db.users
@@ -518,9 +519,9 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
         "last_deploy_at": datetime.utcnow(),
         "created_at": datetime.utcnow(),
         "last_activity": datetime.utcnow(),
-        "deployment_url": f"/user/{str(user['_id'])}/app/{app_id}"
+        "deployment_url": f"https://app-{app_id}.{APP_DOMAIN}"
     }
-    
+
     result = await apps_collection.insert_one(app_doc)
     app_doc["_id"] = result.inserted_id
     
@@ -717,9 +718,9 @@ async def clone_app(app_id: str, user: dict = Depends(get_current_user)):
         "last_deploy_at": datetime.utcnow(),
         "created_at": datetime.utcnow(),
         "last_activity": datetime.utcnow(),
-        "deployment_url": f"/user/{str(user['_id'])}/app/{new_app_id}"
+        "deployment_url": f"https://app-{new_app_id}.{APP_DOMAIN}"
     }
-    
+
     result = await apps_collection.insert_one(cloned_app_doc)
     cloned_app_doc["_id"] = result.inserted_id
     

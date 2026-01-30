@@ -31,6 +31,7 @@ except Exception as e:
 PLATFORM_NAMESPACE = os.getenv("PLATFORM_NAMESPACE", "fastapi-platform")
 RUNNER_IMAGE = os.getenv("RUNNER_IMAGE", "ghcr.io/thatcatxedo/fastapi-platform-runner:latest")
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "platform.gofastapi.xyz")
+APP_DOMAIN = os.getenv("APP_DOMAIN", "gatorlunch.com")  # Apps at app-{id}.{APP_DOMAIN}
 MONGO_VIEWER_IMAGE = os.getenv("MONGO_VIEWER_IMAGE", "mongo-express:latest")
 MONGO_VIEWER_PORT = int(os.getenv("MONGO_VIEWER_PORT", "8081"))
 
@@ -295,13 +296,9 @@ async def create_deployment(app_doc: dict, user: dict):
     deployment_name = f"app-{app_id}"
     
     # Build environment variables list
-    # Build the app's root path for proper URL handling behind reverse proxy
-    app_root_path = f"/user/{user_id}/app/{app_id}"
-
     env_list = [
         k8s_client.V1EnvVar(name="CODE_PATH", value="/app/user_code.py"),
-        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=get_user_mongo_uri(user_id)),
-        k8s_client.V1EnvVar(name="APP_ROOT_PATH", value=app_root_path)
+        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=get_user_mongo_uri(user_id))
     ]
     # Add user-defined env vars
     if app_doc.get("env_vars"):
@@ -447,65 +444,17 @@ async def create_service(app_doc: dict, user: dict):
         else:
             raise
 
-async def create_middleware(app_doc: dict, user: dict):
-    """Create Traefik Middleware to strip path prefix for user app"""
-    if not custom_objects:
-        raise Exception("Kubernetes client not available")
-    
-    app_id = app_doc["app_id"]
-    user_id = str(user["_id"])
-    middleware_name = f"app-{app_id}-strip-prefix"
-    path_prefix = f"/user/{user_id}/app/{app_id}"
-    
-    middleware = {
-        "apiVersion": "traefik.io/v1alpha1",
-        "kind": "Middleware",
-        "metadata": {
-            "name": middleware_name,
-            "namespace": PLATFORM_NAMESPACE,
-            "labels": get_app_labels(user_id, app_id)
-        },
-        "spec": {
-            "stripPrefix": {
-                "prefixes": [path_prefix]
-            }
-        }
-    }
-    
-    try:
-        custom_objects.create_namespaced_custom_object(
-            group="traefik.io",
-            version="v1alpha1",
-            namespace=PLATFORM_NAMESPACE,
-            plural="middlewares",
-            body=middleware
-        )
-        logger.info(f"Created Middleware for app {app_id}")
-    except ApiException as e:
-        if e.status == 409:  # Already exists
-            custom_objects.patch_namespaced_custom_object(
-                group="traefik.io",
-                version="v1alpha1",
-                namespace=PLATFORM_NAMESPACE,
-                plural="middlewares",
-                name=middleware_name,
-                body=middleware
-            )
-            logger.info(f"Updated Middleware for app {app_id}")
-        else:
-            raise
-
 async def create_ingress_route(app_doc: dict, user: dict):
-    """Create Traefik IngressRoute for user app"""
+    """Create Traefik IngressRoute for user app using subdomain routing"""
     if not custom_objects:
         raise Exception("Kubernetes client not available")
-    
+
     app_id = app_doc["app_id"]
     user_id = str(user["_id"])
     ingress_name = f"app-{app_id}"
-    middleware_name = f"app-{app_id}-strip-prefix"
-    
-    # Traefik IngressRoute CRD
+    app_hostname = f"app-{app_id}.{APP_DOMAIN}"
+
+    # Traefik IngressRoute CRD with subdomain-based routing
     ingress_route = {
         "apiVersion": "traefik.io/v1alpha1",
         "kind": "IngressRoute",
@@ -518,18 +467,12 @@ async def create_ingress_route(app_doc: dict, user: dict):
             "entryPoints": ["web"],
             "routes": [
                 {
-                    "match": f"Host(`{BASE_DOMAIN}`) && PathPrefix(`/user/{user_id}/app/{app_id}`)",
+                    "match": f"Host(`{app_hostname}`)",
                     "kind": "Rule",
                     "services": [
                         {
                             "name": f"app-{app_id}",
                             "port": 80
-                        }
-                    ],
-                    "middlewares": [
-                        {
-                            "name": middleware_name,
-                            "namespace": PLATFORM_NAMESPACE
                         }
                     ]
                 }
@@ -567,7 +510,6 @@ async def create_app_deployment(app_doc: dict, user: dict):
         await create_configmap(app_doc, user)
         await create_deployment(app_doc, user)
         await create_service(app_doc, user)
-        await create_middleware(app_doc, user)
         await create_ingress_route(app_doc, user)
     except Exception as e:
         logger.error(f"Failed to create deployment for app {app_doc['app_id']}: {e}")
@@ -651,20 +593,7 @@ async def delete_app_deployment(app_doc: dict, user: dict):
             except ApiException as e:
                 if e.status != 404:
                     raise
-            
-            # Delete Middleware
-            try:
-                custom_objects.delete_namespaced_custom_object(
-                    group="traefik.io",
-                    version="v1alpha1",
-                    namespace=PLATFORM_NAMESPACE,
-                    plural="middlewares",
-                    name=f"app-{app_id}-strip-prefix"
-                )
-            except ApiException as e:
-                if e.status != 404:
-                    raise
-        
+
         # Delete Service
         if core_v1:
             try:

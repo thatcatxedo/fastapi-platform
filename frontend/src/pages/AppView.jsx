@@ -2,6 +2,13 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { API_URL } from '../App'
 
+// Helper to get app URL using subdomain routing
+const getAppUrl = (appId) => {
+  const appDomain = import.meta.env.VITE_APP_DOMAIN ||
+    window.location.hostname.replace(/^platform\./, '')
+  return `https://app-${appId}.${appDomain}`
+}
+
 function AppView({ user }) {
   const { appId } = useParams()
   const [loading, setLoading] = useState(true)
@@ -24,7 +31,7 @@ function AppView({ user }) {
     }
   }
 
-  const appUrl = `${window.location.origin}/user/${user.id}/app/${appId}`
+  const appUrl = getAppUrl(appId)
 
   return (
     <div>

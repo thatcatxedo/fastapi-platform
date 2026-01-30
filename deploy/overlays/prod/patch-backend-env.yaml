@@ -11,3 +11,5 @@ spec:
           env:
             - name: BASE_DOMAIN
               value: platform.gofastapi.xyz
+            - name: APP_DOMAIN
+              value: gofastapi.xyz
