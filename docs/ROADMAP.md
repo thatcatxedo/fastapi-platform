@@ -113,27 +113,35 @@ Constraints (document, enforce later):
   - Delete user (cascades to apps, MongoDB user, database)
   - Admin can create users manually when signups disabled
 
-## Phase 1e — User Observability (near-term)
+## Phase 1e — User Observability (complete)
 
 **Goal:** Help users understand how their apps are performing.
 
-- [ ] App metrics (lightweight)
+- [x] App metrics (lightweight)
   - Request count (last 24h)
   - Error count (last 24h)
   - Avg response time
   - Display on Dashboard app cards
-- [ ] Recent errors panel
+- [x] Recent errors panel
   - Last N errors with timestamps
-  - Stack traces when available
-  - Link from Dashboard "Errors" badge
-- [ ] Health status badge
+  - Error type classification (client/server)
+  - API endpoint: `GET /api/apps/{id}/errors`
+- [x] Health status badge
   - Green/yellow/red based on recent health checks
-  - Tooltip with last check time
+  - Background job polls `/health` every 60s
+  - API endpoint: `GET /api/apps/{id}/health-status`
+- [x] Metrics API endpoints
+  - `GET /api/apps/{id}/metrics` — aggregated metrics
+  - `GET /api/apps/{id}/errors` — recent errors
+  - `GET /api/apps/{id}/health-status` — health summary
+- [x] TTL-indexed storage
+  - Observability data auto-expires after 24 hours
+  - Keeps database lean without manual cleanup
 
 Implementation notes:
-- Start with Traefik access log parsing or simple middleware injection
-- Store minimal metrics in MongoDB (TTL indexed)
-- Avoid heavy infrastructure (no Prometheus/Grafana for now)
+- Health checks use aiohttp to poll app `/health` endpoints
+- Traefik log parsing disabled (requires cross-namespace RBAC)
+- Metrics stored in MongoDB with TTL indexes
 
 ## Phase 1f — Drafts & Safety (complete)
 
@@ -152,6 +160,11 @@ Implementation notes:
   - `GET /api/apps/{app_id}/versions` returns history
   - `POST /api/apps/{app_id}/rollback/{index}` reverts to previous version
   - "History" button opens modal with preview and rollback
+- [x] Deployment restart on code change
+  - Fixed: ConfigMap updates now trigger pod restart
+  - Added `platform.gofastapi.xyz/code-hash` annotation to pod template
+  - When code changes, hash changes → K8s triggers rolling update
+  - Previously: ConfigMap updated but pod kept running old code in memory
 
 ---
 
