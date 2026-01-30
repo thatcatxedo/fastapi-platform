@@ -5,6 +5,7 @@ from kubernetes import client as k8s_client
 from kubernetes.client.rest import ApiException
 import os
 import logging
+import hashlib
 from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse, urlunparse
@@ -402,11 +403,15 @@ async def create_deployment(app_doc: dict, user: dict):
     """Create Deployment for user app"""
     if not apps_v1:
         raise Exception("Kubernetes client not available")
-    
+
     app_id = app_doc["app_id"]
     user_id = str(user["_id"])
     deployment_name = f"app-{app_id}"
-    
+
+    # Compute a hash of the code to use as a restart trigger
+    # When code changes, this annotation changes, forcing a pod rollout
+    code_hash = hashlib.sha256(app_doc["code"].encode()).hexdigest()[:16]
+
     # Build environment variables list with per-user MongoDB credentials
     mongo_uri = get_user_mongo_uri_secure(user_id, user)
     env_list = [
@@ -464,7 +469,11 @@ async def create_deployment(app_doc: dict, user: dict):
     # Pod template
     pod_template = k8s_client.V1PodTemplateSpec(
         metadata=k8s_client.V1ObjectMeta(
-            labels=get_app_labels(user_id, app_id)
+            labels=get_app_labels(user_id, app_id),
+            annotations={
+                # This annotation changes when code changes, forcing K8s to restart pods
+                "platform.gofastapi.xyz/code-hash": code_hash
+            }
         ),
         spec=k8s_client.V1PodSpec(
             containers=[container],
