@@ -158,14 +158,15 @@ def validate_code(
         return False, message, line_num
 
     # Check for forbidden patterns with better error messages
+    # Use \b word boundary to avoid false positives (e.g., urlopen matching open)
     forbidden_patterns_map = {
         r'__import__': "Direct use of __import__() is not allowed for security reasons.",
-        r'eval\s*\(': "eval() is not allowed for security reasons. Use proper code structure instead.",
-        r'exec\s*\(': "exec() is not allowed for security reasons. Use proper code structure instead.",
-        r'compile\s*\(': "compile() is not allowed for security reasons.",
-        r'open\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
-        r'file\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
-        r'subprocess': "subprocess is not allowed for security reasons.",
+        r'\beval\s*\(': "eval() is not allowed for security reasons. Use proper code structure instead.",
+        r'\bexec\s*\(': "exec() is not allowed for security reasons. Use proper code structure instead.",
+        r'\bcompile\s*\(': "compile() is not allowed for security reasons.",
+        r'\bopen\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
+        r'\bfile\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
+        r'\bsubprocess\b': "subprocess is not allowed for security reasons.",
         r'os\.system': "os.system() is not allowed for security reasons.",
         r'os\.popen': "os.popen() is not allowed for security reasons.",
         r'socket': "Network sockets are not allowed. Use FastAPI's HTTP handling instead.",
@@ -244,17 +245,18 @@ def validate_code_syntax_only(
         return False, message, line_num
 
     # Check for forbidden patterns
+    # Use \b word boundary to avoid false positives (e.g., urlopen matching open)
     forbidden_patterns_map = {
         r'__import__': "Direct use of __import__() is not allowed for security reasons.",
-        r'eval\s*\(': "eval() is not allowed for security reasons.",
-        r'exec\s*\(': "exec() is not allowed for security reasons.",
-        r'compile\s*\(': "compile() is not allowed for security reasons.",
-        r'open\s*\(': "File operations are not allowed.",
-        r'file\s*\(': "File operations are not allowed.",
-        r'subprocess': "subprocess is not allowed for security reasons.",
+        r'\beval\s*\(': "eval() is not allowed for security reasons.",
+        r'\bexec\s*\(': "exec() is not allowed for security reasons.",
+        r'\bcompile\s*\(': "compile() is not allowed for security reasons.",
+        r'\bopen\s*\(': "File operations are not allowed.",
+        r'\bfile\s*\(': "File operations are not allowed.",
+        r'\bsubprocess\b': "subprocess is not allowed for security reasons.",
         r'os\.system': "os.system() is not allowed for security reasons.",
         r'os\.popen': "os.popen() is not allowed for security reasons.",
-        r'socket': "Network sockets are not allowed.",
+        r'\bsocket\b': "Network sockets are not allowed.",
         r'urllib\.request': "urllib.request is not allowed.",
         r'urllib2': "urllib2 is not allowed.",
     }
