@@ -112,6 +112,11 @@ Constraints (document, enforce later):
   - List users with app counts
   - Delete user (cascades to apps, MongoDB user, database)
   - Admin can create users manually when signups disabled
+- [x] Multi-admin support
+  - Admins can promote/demote other users to co-admin
+  - `PATCH /api/admin/users/{user_id}/admin` endpoint
+  - Safety checks: can't demote yourself, can't remove last admin
+  - Role toggle button in admin dashboard user list
 
 ## Phase 1e — User Observability (complete)
 
@@ -165,6 +170,34 @@ Implementation notes:
   - Added `platform.gofastapi.xyz/code-hash` annotation to pod template
   - When code changes, hash changes → K8s triggers rolling update
   - Previously: ConfigMap updated but pod kept running old code in memory
+
+## Phase 1g — Codebase Quality (complete)
+
+**Goal:** Improve maintainability and reduce large file sizes.
+
+- [x] Backend reorganization
+  - Split `deployment.py` (904 lines) into `deployment/` package:
+    - `k8s_client.py` — K8s API client initialization
+    - `helpers.py` — Shared utilities (MongoDB URI builders, K8s helpers)
+    - `apps.py` — App deployment operations (ConfigMap, Deployment, Service, Ingress)
+    - `viewer.py` — MongoDB viewer deployment operations
+    - `__init__.py` — Re-exports for backwards compatibility
+  - Grouped background tasks into `background/` package:
+    - `cleanup.py` — Inactive app/viewer cleanup
+    - `health_checks.py` — App health polling
+  - Grouped migrations into `migrations/` package:
+    - `admin_role.py` — First user admin migration
+    - `mongo_users.py` — Per-user MongoDB auth migration
+    - `templates.py` — Template seeding migration
+- [x] Admin dashboard improvements
+  - Added MongoDB stats (user DBs, storage, collections, documents)
+  - Compact horizontal layout for stats
+  - Two-column layout: users table + activity sidebar
+
+Files unchanged (appropriately sized):
+- `routers/apps.py` (611 lines) — Cohesive, helpers are route-specific
+- `seed_templates.py` (789 lines) — Mostly template data/content
+- All other modules — Under 250 lines each
 
 ---
 
@@ -240,8 +273,9 @@ These are ideas that need real user feedback before committing:
 - **Custom Domains** — CNAME support. Enterprise feature, low priority.
 - **Platform-Managed Auth** — Central user store + per-app access. Complex,
   defer until clear need.
-- **Multi-Admin Support** — Multiple admin users, role hierarchy. Only needed
-  if platform grows beyond single-operator homelab use case.
+- **Multi-Admin Support** — (Implemented in Phase 1d) Admins can now
+  promote/demote users. Role hierarchy (viewer, editor, admin) could be
+  added if more granular permissions are needed.
 
 ---
 
