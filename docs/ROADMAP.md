@@ -75,7 +75,7 @@ Constraints (document, enforce later):
 - Mongo query limits / timeouts for runaway ops
 - Abuse guardrails (cryptomining or other misuse)
 
-## Phase 1c — Database UI & Security (in progress)
+## Phase 1c — Database UI & Security (complete)
 
 **Goal:** Give users visibility into their data and secure multi-tenancy.
 
@@ -86,13 +86,56 @@ Constraints (document, enforce later):
 - [x] mongo-viewer integration
   - Subdomain routing (`mongo-{user_id}.{APP_DOMAIN}`)
   - Basic auth with rotate credentials
-- [ ] Per-user MongoDB authentication (in progress)
+- [x] Per-user MongoDB authentication
   - Each user gets dedicated MongoDB credentials
   - Credentials created on signup
   - User apps can only access their own database
   - Prevents cross-user data access
 
-## Phase 1d — Drafts & Safety (near-term)
+## Phase 1d — Admin & Access Control (near-term)
+
+**Goal:** Secure the platform and enable administrative oversight.
+
+- [ ] Admin role
+  - First user to sign up becomes admin automatically
+  - `is_admin` flag in user document
+  - Admin-only API endpoints with role check middleware
+- [ ] Signup control
+  - Admin setting: allow public signups (on/off)
+  - When off, only admin can create new users
+  - Stored in platform settings collection
+- [ ] Admin dashboard (`/admin`)
+  - User list with app counts, last activity
+  - Platform stats: total users, apps, storage
+  - Recent activity feed (signups, deploys, errors)
+- [ ] User management
+  - View user details and their apps
+  - Delete user (cascades to apps, MongoDB user, data)
+  - Future: suspend user, reset password
+
+## Phase 1e — User Observability (near-term)
+
+**Goal:** Help users understand how their apps are performing.
+
+- [ ] App metrics (lightweight)
+  - Request count (last 24h)
+  - Error count (last 24h)
+  - Avg response time
+  - Display on Dashboard app cards
+- [ ] Recent errors panel
+  - Last N errors with timestamps
+  - Stack traces when available
+  - Link from Dashboard "Errors" badge
+- [ ] Health status badge
+  - Green/yellow/red based on recent health checks
+  - Tooltip with last check time
+
+Implementation notes:
+- Start with Traefik access log parsing or simple middleware injection
+- Store minimal metrics in MongoDB (TTL indexed)
+- Avoid heavy infrastructure (no Prometheus/Grafana for now)
+
+## Phase 1f — Drafts & Safety
 
 **Goal:** Enable iteration without deployment risk.
 
@@ -106,6 +149,8 @@ Constraints (document, enforce later):
   - UI shows "Up to date" vs "Changes not deployed"
 - [ ] Version history (last N deploys)
   - "Revert to last good deploy" action
+
+---
 
 ## Phase 2 — Multi-File Mode
 
@@ -163,13 +208,15 @@ Constraints (document, enforce later):
 
 These are ideas that need real user feedback before committing:
 
-- **Metrics & Observability** — RPM, error rates, request history. May be
-  overkill; logs + events might be enough.
+- **Advanced Admin Observability** — Prometheus/Grafana stack, alerting,
+  detailed resource tracking. Only if lightweight metrics prove insufficient.
 - **GridFS Templates** — File upload/storage patterns. Wait for user demand.
 - **FastHTML Templates** — HTML-first framework templates. Interesting but niche.
 - **Custom Domains** — CNAME support. Enterprise feature, low priority.
 - **Platform-Managed Auth** — Central user store + per-app access. Complex,
   defer until clear need.
+- **Multi-Admin Support** — Multiple admin users, role hierarchy. Only needed
+  if platform grows beyond single-operator homelab use case.
 
 ---
 

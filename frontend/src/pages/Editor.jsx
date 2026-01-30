@@ -47,7 +47,7 @@ function EditorPage({ user }) {
   const monacoRef = useRef(null)
   const decorationsRef = useRef([])
   const [templates, setTemplates] = useState([])
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
   const [selectedComplexity, setSelectedComplexity] = useState('all')
   const [loadingTemplates, setLoadingTemplates] = useState(false)
   const [envVars, setEnvVars] = useState([])  // [{key: '', value: ''}]
@@ -88,7 +88,7 @@ function EditorPage({ user }) {
     setName(template.name)
     setSuccess(`Template "${template.name}" loaded. Edit the code before deployment.`)
     setError('')
-    setSidebarOpen(false)
+    setTemplatesModalOpen(false)
   }
 
   const filteredTemplates = templates.filter(t => 
@@ -461,26 +461,18 @@ function EditorPage({ user }) {
         flexShrink: 0
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {!isEditing && (
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              style={{
-                padding: '0.5rem',
-                background: 'var(--bg-lighter)',
-                border: '1px solid var(--border)',
-                borderRadius: '0.5rem',
-                cursor: 'pointer',
-                fontSize: '1.2rem',
-                color: 'var(--text)'
-              }}
-              title="Toggle Templates"
-            >
-              {sidebarOpen ? 'Templates' : 'Show'}
-            </button>
-          )}
           <h1 style={{ margin: 0 }}>
             {isEditing ? 'Edit Application' : 'Create Application'}
           </h1>
+          {!isEditing && (
+            <button
+              onClick={() => setTemplatesModalOpen(true)}
+              className="btn btn-secondary"
+              style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+            >
+              Browse Templates
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button
@@ -614,116 +606,14 @@ function EditorPage({ user }) {
         )}
       </div>
 
-      {/* Main content area with sidebar */}
+      {/* Main content area */}
       <div style={{ 
-        display: 'flex', 
-        gap: '1rem', 
         flex: 1, 
         overflow: 'hidden',
-        minHeight: 0
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        {/* Templates Sidebar */}
-        {!isEditing && sidebarOpen && (
-          <div style={{
-            width: '300px',
-            background: 'var(--bg-light)',
-            border: '1px solid var(--border)',
-            borderRadius: '0.5rem',
-            padding: '1rem',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-            flexShrink: 0
-          }}>
-            <div style={{ marginBottom: '1rem' }}>
-              <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>Application Templates</h2>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {['all', 'simple', 'medium', 'complex'].map(comp => (
-                  <button
-                    key={comp}
-                    onClick={() => setSelectedComplexity(comp)}
-                    style={{
-                      padding: '0.25rem 0.5rem',
-                      fontSize: '0.75rem',
-                      background: selectedComplexity === comp ? 'var(--primary)' : 'var(--bg)',
-                      color: selectedComplexity === comp ? 'white' : 'var(--text)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '0.25rem',
-                      cursor: 'pointer',
-                      textTransform: 'capitalize'
-                    }}
-                  >
-                    {comp}
-                  </button>
-                ))}
-              </div>
-            </div>
-            
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {loadingTemplates ? (
-                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                  Loading templates...
-                </div>
-              ) : filteredTemplates.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                  No templates found
-                </div>
-              ) : (
-                filteredTemplates.map(template => (
-                  <div
-                    key={template.id}
-                    style={{
-                      background: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '0.5rem',
-                      padding: '0.75rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
-                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border)'}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
-                      <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '600' }}>{template.name}</h3>
-                      <span style={{
-                        fontSize: '0.7rem',
-                        padding: '0.15rem 0.4rem',
-                        background: template.complexity === 'simple' ? '#10b981' : template.complexity === 'medium' ? '#f59e0b' : '#ef4444',
-                        color: 'white',
-                        borderRadius: '0.25rem',
-                        textTransform: 'capitalize'
-                      }}>
-                        {template.complexity}
-                      </span>
-                    </div>
-                    <p style={{ 
-                      margin: '0 0 0.75rem 0', 
-                      fontSize: '0.75rem', 
-                      color: 'var(--text-muted)',
-                      lineHeight: '1.4'
-                    }}>
-                      {template.description}
-                    </p>
-                    <button
-                      onClick={() => handleUseTemplate(template)}
-                      className="btn btn-primary"
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        fontSize: '0.75rem' 
-                      }}
-                    >
-                      Load Template
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Main editor area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
           {/* App Name input - compact */}
           <div style={{
             marginBottom: '0.75rem',
@@ -956,6 +846,178 @@ function EditorPage({ user }) {
           </div>
         </div>
       </div>
+
+      {/* Templates Modal */}
+      {templatesModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}
+          onClick={() => setTemplatesModalOpen(false)}
+        >
+          <div
+            style={{
+              background: 'var(--bg)',
+              border: '1px solid var(--border)',
+              borderRadius: '0.75rem',
+              width: '100%',
+              maxWidth: '800px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '1.5rem',
+              borderBottom: '1px solid var(--border)'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Application Templates</h2>
+              <button
+                onClick={() => setTemplatesModalOpen(false)}
+                style={{
+                  padding: '0.5rem',
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  lineHeight: 1
+                }}
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{
+              padding: '1.5rem',
+              overflowY: 'auto',
+              flex: 1
+            }}>
+              {/* Complexity Filter */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {['all', 'simple', 'medium', 'complex'].map(comp => (
+                    <button
+                      key={comp}
+                      onClick={() => setSelectedComplexity(comp)}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.875rem',
+                        background: selectedComplexity === comp ? 'var(--primary)' : 'var(--bg-light)',
+                        color: selectedComplexity === comp ? 'white' : 'var(--text)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '0.5rem',
+                        cursor: 'pointer',
+                        textTransform: 'capitalize',
+                        fontWeight: selectedComplexity === comp ? '600' : '400'
+                      }}
+                    >
+                      {comp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Templates Grid */}
+              {loadingTemplates ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  Loading templates...
+                </div>
+              ) : filteredTemplates.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  No templates found
+                </div>
+              ) : (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                  gap: '1rem'
+                }}>
+                  {filteredTemplates.map(template => (
+                    <div
+                      key={template.id}
+                      style={{
+                        background: 'var(--bg-light)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '0.5rem',
+                        padding: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        transition: 'all 0.2s',
+                        cursor: 'pointer'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--primary)'
+                        e.currentTarget.style.transform = 'translateY(-2px)'
+                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border)'
+                        e.currentTarget.style.transform = 'translateY(0)'
+                        e.currentTarget.style.boxShadow = 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.75rem' }}>
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>{template.name}</h3>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          padding: '0.2rem 0.5rem',
+                          background: template.complexity === 'simple' ? '#10b981' : template.complexity === 'medium' ? '#f59e0b' : '#ef4444',
+                          color: 'white',
+                          borderRadius: '0.25rem',
+                          textTransform: 'capitalize',
+                          fontWeight: '500'
+                        }}>
+                          {template.complexity}
+                        </span>
+                      </div>
+                      <p style={{ 
+                        margin: '0 0 1rem 0', 
+                        fontSize: '0.875rem', 
+                        color: 'var(--text-muted)',
+                        lineHeight: '1.5',
+                        flex: 1
+                      }}>
+                        {template.description}
+                      </p>
+                      <button
+                        onClick={() => handleUseTemplate(template)}
+                        className="btn btn-primary"
+                        style={{ 
+                          width: '100%', 
+                          padding: '0.625rem', 
+                          fontSize: '0.875rem',
+                          fontWeight: '500'
+                        }}
+                      >
+                        Load Template
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
