@@ -617,7 +617,7 @@ async def api_list_notes():
 SLACK_BOT_TEMPLATE = {
     "name": "Hello World Slack Bot",
     "description": "A simple Slack bot that responds to mentions using the Slack Events API. Learn how to build Slack integrations with webhooks and event handling.",
-    "code": """from fastapi import FastAPI, Request, HTTPException, Header
+    "code": '''from fastapi import FastAPI, Request, HTTPException, Header
 from slack_sdk.signature import SignatureVerifier
 from slack_sdk.web import WebClient
 import os
@@ -699,7 +699,7 @@ async def slack_events(request: Request, x_slack_signature: str = Header(None), 
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-""",
+''',
     "complexity": "simple",
     "is_global": True,
     "user_id": None,
