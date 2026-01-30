@@ -1,0 +1,141 @@
+"""
+Code validation module for FastAPI Platform
+Validates user-submitted Python code for syntax and security
+"""
+import ast
+import re
+from typing import Optional
+
+ALLOWED_IMPORTS = {
+    'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math',
+    'random', 'string', 'collections', 'itertools', 'functools',
+    'operator', 're', 'uuid', 'hashlib', 'base64', 'urllib.parse',
+    'fasthtml', 'fastlite', 'os', 'sys', 'pathlib', 'time', 'enum',
+    'dataclasses', 'decimal', 'html', 'http', 'copy', 'textwrap',
+    'calendar', 'locale', 'secrets', 'statistics',
+    'pymongo', 'bson', 'jinja2',
+    'httpx', 'slack_sdk', 'google.auth', 'googleapiclient'
+}
+
+FORBIDDEN_PATTERNS = [
+    r'__import__',
+    r'eval\s*\(',
+    r'exec\s*\(',
+    r'compile\s*\(',
+    r'open\s*\(',
+    r'file\s*\(',
+    r'input\s*\(',
+    r'raw_input\s*\(',
+    r'subprocess',
+    r'os\.system',
+    r'os\.popen',
+    r'socket',
+    r'urllib\.request',
+    r'urllib2',
+]
+
+
+def validate_code(code: str) -> tuple[bool, Optional[str], Optional[int]]:
+    """Validate user code for syntax and security.
+    Returns (is_valid, error_message, line_number)
+    """
+    # Check for empty code
+    if not code or not code.strip():
+        return False, "Code cannot be empty. Please write some Python code.", None
+    
+    # Basic syntax check
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        # Provide more helpful syntax error messages
+        error_msg = e.msg
+        if "invalid syntax" in error_msg.lower():
+            if "expected" in error_msg.lower():
+                error_msg = f"Syntax error: {e.msg}. Check for missing colons, parentheses, or brackets."
+            else:
+                error_msg = f"Syntax error: {e.msg}. Check line {e.lineno} for typos or missing characters."
+        else:
+            error_msg = f"Syntax error: {e.msg}"
+        return False, error_msg, e.lineno
+
+    # Check that an app is created (FastAPI or FastHTML)
+    has_fastapi_app = False
+    has_fasthtml_app = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            if not isinstance(node.value, ast.Call):
+                continue
+            func = node.value.func
+            func_name = func.id if isinstance(func, ast.Name) else None
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == 'app':
+                    if func_name == 'FastAPI':
+                        has_fastapi_app = True
+                    if func_name in ('fast_app', 'FastHTML'):
+                        has_fasthtml_app = True
+                elif isinstance(target, ast.Tuple) and func_name in ('fast_app', 'FastHTML'):
+                    for elt in target.elts:
+                        if isinstance(elt, ast.Name) and elt.id == 'app':
+                            has_fasthtml_app = True
+
+    if not (has_fastapi_app or has_fasthtml_app):
+        return False, "Your code must create an app instance. Add: app = FastAPI() (or app, rt = fast_app() for FastHTML)", None
+
+    # Security checks - check imports
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                module_name = alias.name.split('.')[0]
+                if module_name not in ALLOWED_IMPORTS:
+                    # Provide helpful suggestions for common imports
+                    suggestions = []
+                    if 'requests' in module_name.lower():
+                        suggestions.append("Use urllib.parse for URL handling instead")
+                    elif 'pandas' in module_name.lower() or 'numpy' in module_name.lower():
+                        suggestions.append("Data processing libraries are not available. Use built-in Python types.")
+                    elif 'flask' in module_name.lower() or 'django' in module_name.lower():
+                        suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
+                    
+                    suggestion_text = f" {suggestions[0]}" if suggestions else ""
+                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                module_name = node.module.split('.')[0]
+                if module_name not in ALLOWED_IMPORTS:
+                    suggestions = []
+                    if 'requests' in module_name.lower():
+                        suggestions.append("Use urllib.parse for URL handling instead")
+                    elif 'pandas' in module_name.lower() or 'numpy' in module_name.lower():
+                        suggestions.append("Data processing libraries are not available. Use built-in Python types.")
+                    elif 'flask' in module_name.lower() or 'django' in module_name.lower():
+                        suggestions.append("This platform uses FastAPI. Import from 'fastapi' instead.")
+                    
+                    suggestion_text = f" {suggestions[0]}" if suggestions else ""
+                    return False, f"Import '{module_name}' is not allowed.{suggestion_text} Allowed imports: {', '.join(sorted(ALLOWED_IMPORTS))}", node.lineno
+
+    # Check for forbidden patterns with better error messages
+    forbidden_patterns_map = {
+        r'__import__': "Direct use of __import__() is not allowed for security reasons.",
+        r'eval\s*\(': "eval() is not allowed for security reasons. Use proper code structure instead.",
+        r'exec\s*\(': "exec() is not allowed for security reasons. Use proper code structure instead.",
+        r'compile\s*\(': "compile() is not allowed for security reasons.",
+        r'open\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
+        r'file\s*\(': "File operations are not allowed. Use environment variables or in-memory data instead.",
+        r'input\s*\(': "input() is not allowed. Use FastAPI request parameters instead.",
+        r'raw_input\s*\(': "raw_input() is not allowed. Use FastAPI request parameters instead.",
+        r'subprocess': "subprocess is not allowed for security reasons.",
+        r'os\.system': "os.system() is not allowed for security reasons.",
+        r'os\.popen': "os.popen() is not allowed for security reasons.",
+        r'socket': "Network sockets are not allowed. Use FastAPI's HTTP handling instead.",
+        r'urllib\.request': "urllib.request is not allowed. Use urllib.parse for URL parsing instead.",
+        r'urllib2': "urllib2 is not allowed. Use urllib.parse for URL parsing instead.",
+    }
+    
+    for pattern, friendly_msg in forbidden_patterns_map.items():
+        match = re.search(pattern, code, re.IGNORECASE)
+        if match:
+            # Find line number of the match
+            line_num = code[:match.start()].count('\n') + 1
+            return False, friendly_msg, line_num
+
+    return True, None, None

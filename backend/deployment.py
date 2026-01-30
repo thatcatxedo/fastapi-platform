@@ -28,10 +28,9 @@ except Exception as e:
     core_v1 = None
     custom_objects = None
 
-PLATFORM_NAMESPACE = os.getenv("PLATFORM_NAMESPACE", "fastapi-platform")
+from config import PLATFORM_NAMESPACE, APP_DOMAIN
+
 RUNNER_IMAGE = os.getenv("RUNNER_IMAGE", "ghcr.io/thatcatxedo/fastapi-platform-runner:latest")
-BASE_DOMAIN = os.getenv("BASE_DOMAIN", "platform.gofastapi.xyz")
-APP_DOMAIN = os.getenv("APP_DOMAIN", "gatorlunch.com")  # Apps at app-{id}.{APP_DOMAIN}
 MONGO_VIEWER_IMAGE = os.getenv("MONGO_VIEWER_IMAGE", "mongo-express:latest")
 MONGO_VIEWER_PORT = int(os.getenv("MONGO_VIEWER_PORT", "8081"))
 
@@ -41,7 +40,8 @@ def get_user_mongo_uri_legacy(user_id: str) -> str:
     This is insecure and only used for backwards compatibility during migration.
     Use get_user_mongo_uri_secure() for new deployments.
     """
-    base_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/fastapi_platform_db")
+    from config import MONGO_URI
+    base_uri = MONGO_URI if not MONGO_URI.endswith("/fastapi_platform_db") else MONGO_URI.replace("/fastapi_platform_db", "") + "/fastapi_platform_db"
     parsed = urlparse(base_uri)
     user_db_path = f"/user_{user_id}"
     return urlunparse((
@@ -80,7 +80,8 @@ def get_user_mongo_uri_secure(user_id: str, user: dict) -> str:
         username = get_mongo_username(user_id)
         db_name = f"user_{user_id}"
         
-        base_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/fastapi_platform_db")
+        from config import MONGO_URI
+        base_uri = MONGO_URI if not MONGO_URI.endswith("/fastapi_platform_db") else MONGO_URI.replace("/fastapi_platform_db", "") + "/fastapi_platform_db"
         parsed = urlparse(base_uri)
         
         # URL-encode username and password for safety

@@ -1,23 +1,16 @@
 """
 Background job to clean up inactive user apps
 """
-from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 import os
 import asyncio
 import logging
 from deployment import delete_app_deployment, delete_mongo_viewer_resources
+from database import client, apps_collection, users_collection, viewer_instances_collection
+from config import INACTIVITY_THRESHOLD_HOURS
 
 logger = logging.getLogger(__name__)
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-client = AsyncIOMotorClient(MONGO_URI)
-db = client.fastapi_platform_db
-apps_collection = db.apps
-users_collection = db.users
-viewer_instances_collection = db.viewer_instances
-
-INACTIVITY_THRESHOLD_HOURS = int(os.getenv("INACTIVITY_THRESHOLD_HOURS", "24"))
 MONGO_VIEWER_TTL_HOURS = int(os.getenv("MONGO_VIEWER_TTL_HOURS", "48"))
 
 async def cleanup_inactive_apps():
