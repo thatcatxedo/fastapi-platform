@@ -1,0 +1,29 @@
+name: "Hello World API"
+description: "A simple FastAPI app with basic routing, path parameters, and request bodies. Perfect for learning the fundamentals."
+complexity: simple
+tags:
+  - beginner
+  - routing
+  - basics
+mode: single
+code: |
+  from fastapi import FastAPI
+  from pydantic import BaseModel
+
+  app = FastAPI()
+
+  @app.get("/")
+  async def root():
+      return {"message": "Hello World"}
+
+  @app.get("/hello/{name}")
+  async def hello(name: str):
+      return {"message": f"Hello, {name}!"}
+
+  class Greeting(BaseModel):
+      name: str
+      message: str
+
+  @app.post("/greet")
+  async def greet(greeting: Greeting):
+      return {"greeting": f"{greeting.message}, {greeting.name}!"}

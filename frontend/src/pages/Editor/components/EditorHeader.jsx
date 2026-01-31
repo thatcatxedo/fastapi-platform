@@ -13,7 +13,8 @@ function EditorHeader({
   onCancel,
   onDelete,
   onBrowseTemplates,
-  onOpenHistory
+  onOpenHistory,
+  onSaveAsTemplate
 }) {
   const isDeploying = deploymentStatus && deploymentStatus.status === 'deploying'
 
@@ -56,6 +57,14 @@ function EditorHeader({
             Browse Templates
           </button>
         )}
+        <button
+          onClick={onSaveAsTemplate}
+          className="btn btn-secondary"
+          style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+          title="Save current code as a reusable template"
+        >
+          Save as Template
+        </button>
         {status && (
           <span style={{
             fontSize: '0.75rem',

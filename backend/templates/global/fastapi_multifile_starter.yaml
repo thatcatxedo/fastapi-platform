@@ -1,0 +1,101 @@
+name: "FastAPI Multi-File Starter"
+description: "An organized FastAPI app with routes, models, services, and helpers in separate files. Uses MongoDB for persistence."
+complexity: medium
+tags:
+  - multifile
+  - fastapi
+  - mongodb
+  - crud
+  - organized
+mode: multi
+framework: fastapi
+entrypoint: app.py
+files:
+  app.py: |
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from routes import router
+
+    app = FastAPI(title="My API")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.include_router(router)
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+  routes.py: |
+    from fastapi import APIRouter, HTTPException
+    from models import Item, ItemCreate
+    from services import get_items, get_item, create_item, delete_item
+
+    router = APIRouter(prefix="/api")
+
+    @router.get("/items")
+    def list_items():
+        return get_items()
+
+    @router.get("/items/{item_id}")
+    def read_item(item_id: str):
+        item = get_item(item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        return item
+
+    @router.post("/items")
+    def add_item(item: ItemCreate):
+        return create_item(item)
+
+    @router.delete("/items/{item_id}")
+    def remove_item(item_id: str):
+        return delete_item(item_id)
+
+  models.py: |
+    from pydantic import BaseModel
+    from typing import Optional
+
+    class ItemCreate(BaseModel):
+        name: str
+        description: Optional[str] = None
+
+    class Item(ItemCreate):
+        id: str
+
+  services.py: |
+    from pymongo import MongoClient
+    from bson import ObjectId
+    import os
+
+    db = MongoClient(os.environ["PLATFORM_MONGO_URI"]).get_default_database()
+
+    def get_items():
+        items = list(db.items.find())
+        return [{"id": str(item["_id"]), **{k: v for k, v in item.items() if k != "_id"}} for item in items]
+
+    def get_item(item_id: str):
+        item = db.items.find_one({"_id": ObjectId(item_id)})
+        if item:
+            return {"id": str(item["_id"]), **{k: v for k, v in item.items() if k != "_id"}}
+        return None
+
+    def create_item(item):
+        result = db.items.insert_one(item.model_dump())
+        return {"id": str(result.inserted_id), **item.model_dump()}
+
+    def delete_item(item_id: str):
+        db.items.delete_one({"_id": ObjectId(item_id)})
+        return {"success": True}
+
+  helpers.py: |
+    """Utility functions for the app."""
+
+    def format_id(obj_id) -> str:
+        """Convert ObjectId to string."""
+        return str(obj_id)

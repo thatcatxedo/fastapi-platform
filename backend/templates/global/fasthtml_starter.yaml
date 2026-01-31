@@ -1,0 +1,22 @@
+name: "FastHTML Starter"
+description: "A minimal FastHTML app showing server-rendered UI with FastTags. Great for HTML-first workflows."
+complexity: simple
+tags:
+  - html
+  - fasthtml
+  - htmx
+  - starter
+mode: single
+code: |
+  from fasthtml.common import *
+
+  # FastHTML app object and shortcut for routing
+  app, rt = fast_app()
+
+  @rt
+  def index():
+      return Titled(
+          "FastHTML Starter",
+          P("This is a server-rendered HTML app built with FastHTML."),
+          P("Edit this page and add routes to build your UI.")
+      )

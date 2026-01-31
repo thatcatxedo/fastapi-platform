@@ -13,6 +13,7 @@ import CodeEditor from './components/CodeEditor'
 import MultiFileEditor from './components/MultiFileEditor'
 import TemplatesModal from './components/TemplatesModal'
 import VersionHistoryModal from './components/VersionHistoryModal'
+import SaveAsTemplateModal from './components/SaveAsTemplateModal'
 
 // Styles
 import styles from './Editor.module.css'
@@ -67,8 +68,9 @@ function EditorPage({ user }) {
   } = useAppState(appId)
 
   // Templates
-  const { templates, loadingTemplates } = useTemplates(!appId)
+  const { templates, loadingTemplates, fetchTemplates, deleteTemplate } = useTemplates(!appId)
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
+  const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false)
   const [envVarsExpanded, setEnvVarsExpanded] = useState(envVars.length > 0)
 
   // Version history modal
@@ -130,6 +132,7 @@ function EditorPage({ user }) {
         onDelete={handleDelete}
         onBrowseTemplates={() => setTemplatesModalOpen(true)}
         onOpenHistory={() => setHistoryModalOpen(true)}
+        onSaveAsTemplate={() => setSaveTemplateModalOpen(true)}
       />
 
       <NotificationsPanel
@@ -244,6 +247,21 @@ function EditorPage({ user }) {
         templates={templates}
         loading={loadingTemplates}
         onSelectTemplate={handleUseTemplate}
+        onDeleteTemplate={deleteTemplate}
+        onRefresh={fetchTemplates}
+      />
+
+      <SaveAsTemplateModal
+        isOpen={saveTemplateModalOpen}
+        onClose={() => setSaveTemplateModalOpen(false)}
+        code={code}
+        files={files}
+        mode={mode}
+        framework={framework}
+        onSuccess={(template) => {
+          setSuccess(`Template "${template.name}" saved successfully!`)
+          fetchTemplates()
+        }}
       />
 
       {isEditing && (

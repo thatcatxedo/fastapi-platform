@@ -29,10 +29,72 @@ function useTemplates(shouldFetch = true) {
     }
   }
 
+  const createTemplate = async (templateData) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API_URL}/api/templates`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(templateData)
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.detail || 'Failed to create template')
+    }
+    // Refresh templates list
+    await fetchTemplates()
+    return data
+  }
+
+  const updateTemplate = async (templateId, templateData) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API_URL}/api/templates/${templateId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(templateData)
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.detail || 'Failed to update template')
+    }
+    // Refresh templates list
+    await fetchTemplates()
+    return data
+  }
+
+  const deleteTemplate = async (templateId) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API_URL}/api/templates/${templateId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Failed to delete template')
+    }
+    // Refresh templates list
+    await fetchTemplates()
+    return true
+  }
+
+  // Separate global and user templates
+  const globalTemplates = templates.filter(t => t.is_global)
+  const userTemplates = templates.filter(t => !t.is_global)
+
   return {
     templates,
+    globalTemplates,
+    userTemplates,
     loadingTemplates,
-    fetchTemplates
+    fetchTemplates,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate
   }
 }
 

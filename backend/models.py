@@ -147,6 +147,34 @@ class TemplateResponse(BaseModel):
     complexity: str
     is_global: bool
     created_at: str
+    tags: List[str] = []
+    user_id: Optional[str] = None
+
+
+class TemplateCreate(BaseModel):
+    """Create a new user template"""
+    name: str
+    description: str
+    # Single-file templates
+    code: Optional[str] = None
+    # Multi-file templates
+    mode: str = "single"
+    framework: Optional[str] = None
+    entrypoint: Optional[str] = "app.py"
+    files: Optional[Dict[str, str]] = None
+    # Metadata
+    complexity: str = "simple"
+    tags: List[str] = []
+
+
+class TemplateUpdate(BaseModel):
+    """Update an existing user template"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    code: Optional[str] = None
+    files: Optional[Dict[str, str]] = None
+    complexity: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class ViewerResponse(BaseModel):
