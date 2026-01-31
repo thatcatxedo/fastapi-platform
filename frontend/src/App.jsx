@@ -7,6 +7,9 @@ import Database from './pages/Database'
 import Editor from './pages/Editor/index'
 import AppView from './pages/AppView'
 import Admin from './pages/Admin'
+import Sidebar from './components/Sidebar'
+import { ToastProvider } from './components/Toast'
+import { AppsProvider } from './context/AppsContext'
 import './index.css'
 
 const API_URL = window.location.hostname === 'localhost' 
@@ -65,46 +68,41 @@ function App() {
 
   return (
     <BrowserRouter>
-      <div className="app">
-        <header className="app-header">
-          <div className="container">
-            <h1><a href="/">FastAPI Platform</a></h1>
-            <nav>
-              {user ? (
-                <>
-                  <a href="/dashboard">Dashboard</a>
-                  <a href="/database">Database</a>
-                  <a href="/editor">New App</a>
-                  {user?.is_admin && <a href="/admin">Admin</a>}
-                  <span style={{ color: 'var(--text-muted)' }}>{user.username}</span>
-                  <button className="btn btn-secondary" onClick={logout} style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
-                    Logout
-                  </button>
-                </>
-              ) : (
-                <>
-                  <a href="/login">Login</a>
-                  <a href="/signup">Signup</a>
-                </>
-              )}
-            </nav>
+      <ToastProvider>
+        {user ? (
+          // Authenticated: IDE layout with sidebar
+          <AppsProvider user={user}>
+            <div className="ide-layout">
+              <Sidebar user={user} onLogout={logout} />
+              <main className="ide-main">
+                <Routes>
+                  <Route path="/" element={<Navigate to="/editor" replace />} />
+                  <Route path="/editor" element={<Editor user={user} />} />
+                  <Route path="/editor/:appId" element={<Editor user={user} />} />
+                  <Route path="/dashboard" element={<Dashboard user={user} />} />
+                  <Route path="/database" element={<Database user={user} />} />
+                  <Route path="/app/:appId" element={<AppView user={user} />} />
+                  <Route path="/admin" element={user.is_admin ? <Admin user={user} /> : <Navigate to="/editor" replace />} />
+                  <Route path="/login" element={<Navigate to="/editor" replace />} />
+                  <Route path="/signup" element={<Navigate to="/editor" replace />} />
+                </Routes>
+              </main>
+            </div>
+          </AppsProvider>
+        ) : (
+          // Unauthenticated: Full-page auth screens
+          <div className="auth-page">
+            <div className="auth-container">
+              <Routes>
+                <Route path="/" element={<Navigate to="/login" replace />} />
+                <Route path="/login" element={<Login onLogin={setUser} />} />
+                <Route path="/signup" element={<Signup onSignup={setUser} />} />
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </div>
           </div>
-        </header>
-
-        <main className="app-main">
-          <Routes>
-            <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Navigate to="/login" />} />
-            <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login onLogin={setUser} />} />
-            <Route path="/signup" element={user ? <Navigate to="/dashboard" /> : <Signup onSignup={setUser} />} />
-            <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
-            <Route path="/database" element={user ? <Database user={user} /> : <Navigate to="/login" />} />
-            <Route path="/editor" element={user ? <Editor user={user} /> : <Navigate to="/login" />} />
-            <Route path="/editor/:appId" element={user ? <Editor user={user} /> : <Navigate to="/login" />} />
-            <Route path="/app/:appId" element={user ? <AppView user={user} /> : <Navigate to="/login" />} />
-            <Route path="/admin" element={user?.is_admin ? <Admin user={user} /> : <Navigate to="/dashboard" />} />
-          </Routes>
-        </main>
-      </div>
+        )}
+      </ToastProvider>
     </BrowserRouter>
   )
 }

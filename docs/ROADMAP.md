@@ -121,20 +121,20 @@ Constraints (document, enforce later):
   - Safety checks: can't demote yourself, can't remove last admin
   - Role toggle button in admin dashboard user list
 
-## Phase 1e — User Observability (complete)
+## Phase 1e — User Observability (partial)
 
 **Goal:** Help users understand how their apps are performing.
 
-- [x] App metrics (lightweight)
+- [x] App metrics (lightweight) - **backend implemented, UI removed**
   - Request count (last 24h)
   - Error count (last 24h)
   - Avg response time
-  - Display on Dashboard app cards
+  - ~~Display on Dashboard app cards~~ (removed - Traefik RBAC not configured)
 - [x] Recent errors panel
   - Last N errors with timestamps
   - Error type classification (client/server)
   - API endpoint: `GET /api/apps/{id}/errors`
-- [x] Health status badge
+- [x] Health status badge - **backend implemented, UI removed**
   - Green/yellow/red based on recent health checks
   - Background job polls `/health` every 60s
   - API endpoint: `GET /api/apps/{id}/health-status`
@@ -148,8 +148,9 @@ Constraints (document, enforce later):
 
 Implementation notes:
 - Health checks use aiohttp to poll app `/health` endpoints
-- Traefik log parsing disabled (requires cross-namespace RBAC)
-- Metrics stored in MongoDB with TTL indexes
+- Traefik log parsing requires cross-namespace RBAC (not configured)
+- Dashboard metrics column removed until RBAC is set up
+- Dashboard links simplified to icon buttons (↗ 📋 📄)
 
 ## Phase 1f — Drafts & Safety (complete)
 
@@ -332,6 +333,13 @@ These are ideas that need real user feedback before committing:
 - **Multi-Admin Support** — (Implemented in Phase 1d) Admins can now
   promote/demote users. Role hierarchy (viewer, editor, admin) could be
   added if more granular permissions are needed.
+- **Multiple Databases per User** — High priority. Currently each user gets one
+  database (`user_{user_id}`) with multiple collections. Want to allow users to
+  create multiple isolated databases for different projects. Would require:
+  - UI for database management (create, delete, select active)
+  - Per-app database selection in app settings
+  - Updated `PLATFORM_MONGO_URI` injection per app
+  - Storage quota tracking across all user databases
 
 ---
 

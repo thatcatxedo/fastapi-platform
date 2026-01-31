@@ -1,35 +1,37 @@
 # FastAPI Learning Platform
 
-A multi-tenant platform where users can write FastAPI code in a web editor and deploy it as isolated Kubernetes applications.
+A multi-tenant platform where users can write FastAPI/FastHTML code in a web editor and deploy it as isolated Kubernetes applications. Supports single-file and multi-file projects with per-user MongoDB databases.
 
 ## How It Works
 
 ### User Flow
 
 1. **Sign Up / Login**: Users authenticate via JWT tokens stored in localStorage
-2. **Write Code**: Users write FastAPI code in a Monaco Editor (VS Code editor in browser)
-3. **Deploy**: Code is validated, then deployed to Kubernetes as an isolated application
-4. **Access**: Each app gets a unique URL: `platform.gofastapi.xyz/user/{user_id}/app/{app_id}`
+2. **Write Code**: Users write FastAPI/FastHTML code in a Monaco Editor (VS Code editor in browser)
+3. **Choose Mode**: Single-file for quick prototypes, multi-file for structured apps
+4. **Deploy**: Code is validated, then deployed to Kubernetes as an isolated application
+5. **Access**: Each app gets a unique subdomain: `https://app-{app_id}.{domain}` (e.g., `app-abc123.gatorlunch.com`)
 
 ### Deployment Process
 
 When a user clicks "Deploy", the backend:
 
-1. **Validates Code**: 
+1. **Validates Code**:
    - Syntax check via Python AST parsing
-   - Security check: ensures `app = FastAPI()` exists
-   - Import whitelist: only allows safe imports (FastAPI, Pydantic, stdlib)
+   - Security check: ensures `app` instance exists (FastAPI or FastHTML)
+   - Import whitelist: only allows safe imports (configurable by admin)
+   - Multi-file: validates all files, enforces size limits (10 files, 100KB each, 500KB total)
 
 2. **Creates Kubernetes Resources** (in order):
-   - **ConfigMap**: Stores user code as `user_code.py`
+   - **ConfigMap**: Stores user code (single file or multiple files mounted at `/code`)
    - **Deployment**: Runs pre-built `fastapi-platform-runner` container
-     - Container mounts ConfigMap as `/app/user_code.py`
-     - Runner executes user code and starts uvicorn server
+     - Container mounts ConfigMap at `/code`
+     - `CODE_PATH` env var points to entrypoint (e.g., `/code/app.py`)
+     - Runner adds `/code` to `sys.path` for multi-file imports
    - **Service**: Exposes the pod internally on port 80
-   - **Middleware**: Strips path prefix `/user/{user_id}/app/{app_id}` 
-   - **IngressRoute**: Routes external traffic via Traefik
+   - **IngressRoute**: Routes subdomain traffic via Traefik (`app-{id}.{domain}`)
 
-3. **Status Polling**: Frontend polls `/api/apps/{app_id}/status` to show deployment progress
+3. **Status Polling**: Frontend polls `/api/apps/{app_id}/deploy-status` to show deployment progress
 
 ### Architecture
 
@@ -72,13 +74,15 @@ When a user clicks "Deploy", the backend:
 - Code validation and security checks
 
 **Runner** (`runner/`)
-- Pre-built Docker image with FastAPI + uvicorn
+- Pre-built Docker image with FastAPI, FastHTML, pymongo, jinja2, uvicorn
 - Entrypoint script (`entrypoint.py`) that:
-  1. Reads user code from mounted ConfigMap
-  2. Executes code in isolated namespace
-  3. Extracts `app = FastAPI()` instance
-  4. Adds `/health` endpoint if missing
-  5. Starts uvicorn server
+  1. Reads user code from `CODE_PATH` (mounted ConfigMap)
+  2. Adds `/code` to `sys.path` for multi-file imports
+  3. Executes code in isolated namespace
+  4. Extracts `app` instance (FastAPI or FastHTML)
+  5. Wraps app with `/health` endpoint for K8s probes
+  6. Patches Swagger UI for relative OpenAPI paths
+  7. Starts uvicorn server
 
 ### Security
 
@@ -90,29 +94,32 @@ When a user clicks "Deploy", the backend:
 
 ### Routing
 
-User apps are accessible at:
+User apps are accessible via subdomain routing:
 ```
-https://platform.gofastapi.xyz/user/{user_id}/app/{app_id}/*
+https://app-{app_id}.{APP_DOMAIN}
 ```
 
+Example: `https://app-abc123.gatorlunch.com`
+
 Traefik routing flow:
-1. Request hits Traefik IngressRoute
-2. Middleware strips `/user/{user_id}/app/{app_id}` prefix
-3. Request forwarded to Service → Pod
-4. User's FastAPI app handles the request
+1. Request hits Traefik IngressRoute matching `app-{id}.{domain}` host
+2. Request forwarded directly to Service → Pod (no path stripping needed)
+3. User's FastAPI/FastHTML app handles the request
 
 ### MongoDB Viewer
 
 Each user can launch a MongoDB viewer (mongo-express) for their per-user database:
 ```
-https://platform.gofastapi.xyz/user/{user_id}/mongo
+https://mongo-{user_id}.{APP_DOMAIN}
 ```
 
-- Access is protected by per-user basic auth credentials.
+Example: `https://mongo-abc123.gatorlunch.com`
+
+- Access is protected by per-user basic auth credentials
 - Credentials are only returned on creation or rotation via:
   - `POST /api/viewer`
   - `POST /api/viewer/rotate`
-- Viewer instances auto-expire after inactivity (`MONGO_VIEWER_TTL_HOURS`, default 48).
+- Viewer instances auto-expire after inactivity (`MONGO_VIEWER_TTL_HOURS`, default 48)
 
 ### Ephemeral Apps
 

@@ -15,18 +15,14 @@ entrypoint: app.py
 files:
   app.py: |
     from fasthtml.common import *
-    from starlette.middleware.sessions import SessionMiddleware
     from routes import setup_routes
-    import os
 
+    # FastHTML has built-in session support via the sess parameter
     app, rt = fast_app(
         hdrs=(
             Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"),
         )
     )
-
-    # Add session middleware for auth
-    app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "progress-bars-secret-key-change-me"))
 
     setup_routes(rt)
 
@@ -38,7 +34,6 @@ files:
     from fasthtml.common import *
     from services import (
         create_user, authenticate_user, get_user_by_id,
-        create_session, get_session, delete_session,
         get_user_bars, create_bar, get_bar, update_bar, delete_bar,
         increment_bar, decrement_bar, reset_bar, update_bar_value
     )
@@ -47,96 +42,80 @@ files:
         bar_card, create_bar_modal, edit_bar_modal, bar_grid
     )
 
-    def get_current_user(request):
-        """Get current user from session cookie."""
-        token = request.cookies.get("session_token")
-        if not token:
+    def get_current_user(sess):
+        """Get current user from session."""
+        user_id = sess.get("user_id")
+        if not user_id:
             return None
-        session = get_session(token)
-        if not session:
-            return None
-        return get_user_by_id(session["user_id"])
-
-    def require_auth(request):
-        """Redirect to login if not authenticated."""
-        user = get_current_user(request)
-        if not user:
-            return RedirectResponse("/login", status_code=303)
-        return user
+        return get_user_by_id(user_id)
 
     def setup_routes(rt):
         # Landing page
         @rt("/")
-        def home(request):
-            user = get_current_user(request)
+        def home(sess):
+            user = get_current_user(sess)
             if user:
                 return RedirectResponse("/dashboard", status_code=303)
             return page_layout(landing_page(), logged_in=False)
 
         # Auth routes
         @rt("/signup")
-        def signup_page(request):
-            user = get_current_user(request)
+        def signup_page(sess):
+            user = get_current_user(sess)
             if user:
                 return RedirectResponse("/dashboard", status_code=303)
             return page_layout(auth_form("signup"), logged_in=False)
 
         @rt("/signup", methods=["POST"])
-        def signup_submit(request, username: str, email: str, password: str):
+        def signup_submit(sess, username: str, email: str, password: str):
             error = create_user(username, email, password)
             if error:
                 return page_layout(auth_form("signup", error=error), logged_in=False)
             # Auto-login after signup
             user = authenticate_user(username, password)
             if user:
-                token = create_session(user["id"])
-                response = RedirectResponse("/dashboard", status_code=303)
-                response.set_cookie("session_token", token, httponly=True, max_age=86400*7)
-                return response
+                sess["user_id"] = user["id"]
+                sess["username"] = user["username"]
+                return RedirectResponse("/dashboard", status_code=303)
             return RedirectResponse("/login", status_code=303)
 
         @rt("/login")
-        def login_page(request):
-            user = get_current_user(request)
+        def login_page(sess):
+            user = get_current_user(sess)
             if user:
                 return RedirectResponse("/dashboard", status_code=303)
             return page_layout(auth_form("login"), logged_in=False)
 
         @rt("/login", methods=["POST"])
-        def login_submit(request, username: str, password: str):
+        def login_submit(sess, username: str, password: str):
             user = authenticate_user(username, password)
             if not user:
                 return page_layout(auth_form("login", error="Invalid username or password"), logged_in=False)
-            token = create_session(user["id"])
-            response = RedirectResponse("/dashboard", status_code=303)
-            response.set_cookie("session_token", token, httponly=True, max_age=86400*7)
-            return response
+            sess["user_id"] = user["id"]
+            sess["username"] = user["username"]
+            return RedirectResponse("/dashboard", status_code=303)
 
         @rt("/logout", methods=["POST"])
-        def logout(request):
-            token = request.cookies.get("session_token")
-            if token:
-                delete_session(token)
-            response = RedirectResponse("/", status_code=303)
-            response.delete_cookie("session_token")
-            return response
+        def logout(sess):
+            sess.clear()
+            return RedirectResponse("/", status_code=303)
 
         # Dashboard
         @rt("/dashboard")
-        def dashboard(request):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def dashboard(sess):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             bars = get_user_bars(user["id"])
             return page_layout(dashboard_page(user, bars), logged_in=True, username=user["username"])
 
         # Bar CRUD
         @rt("/bars", methods=["POST"])
-        def create_new_bar(request, name: str, bar_type: str, color: str = "#10b981",
+        def create_new_bar(sess, name: str, bar_type: str, color: str = "#10b981",
                           target_date: str = None, current_value: int = 0, target_value: int = None):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             create_bar(user["id"], name, bar_type, color, target_date, current_value, target_value)
             bars = get_user_bars(user["id"])
             return (
@@ -145,28 +124,28 @@ files:
             )
 
         @rt("/bars/new")
-        def new_bar_form(request):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def new_bar_form(sess):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             return create_bar_modal()
 
         @rt("/bars/{bar_id}/edit")
-        def edit_bar_form(request, bar_id: str):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def edit_bar_form(sess, bar_id: str):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             bar = get_bar(bar_id, user["id"])
             if not bar:
                 return ""
             return edit_bar_modal(bar)
 
         @rt("/bars/{bar_id}", methods=["PUT"])
-        def update_existing_bar(request, bar_id: str, name: str, color: str = "#10b981",
+        def update_existing_bar(sess, bar_id: str, name: str, color: str = "#10b981",
                                target_date: str = None, current_value: int = None, target_value: int = None):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             update_bar(bar_id, user["id"], name, color, target_date, current_value, target_value)
             bars = get_user_bars(user["id"])
             return (
@@ -175,49 +154,49 @@ files:
             )
 
         @rt("/bars/{bar_id}", methods=["DELETE"])
-        def delete_existing_bar(request, bar_id: str):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def delete_existing_bar(sess, bar_id: str):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             delete_bar(bar_id, user["id"])
             bars = get_user_bars(user["id"])
             return bar_grid(bars)
 
         @rt("/bars/{bar_id}/increment", methods=["POST"])
-        def increment_bar_value(request, bar_id: str):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def increment_bar_value(sess, bar_id: str):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             bar = increment_bar(bar_id, user["id"])
             if bar:
                 return bar_card(bar)
             return ""
 
         @rt("/bars/{bar_id}/decrement", methods=["POST"])
-        def decrement_bar_value(request, bar_id: str):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def decrement_bar_value(sess, bar_id: str):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             bar = decrement_bar(bar_id, user["id"])
             if bar:
                 return bar_card(bar)
             return ""
 
         @rt("/bars/{bar_id}/reset", methods=["POST"])
-        def reset_bar_streak(request, bar_id: str):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def reset_bar_streak(sess, bar_id: str):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             bar = reset_bar(bar_id, user["id"])
             if bar:
                 return bar_card(bar)
             return ""
 
         @rt("/bars/{bar_id}/update-value", methods=["POST"])
-        def set_bar_value(request, bar_id: str, value: int):
-            user = require_auth(request)
-            if isinstance(user, RedirectResponse):
-                return user
+        def set_bar_value(sess, bar_id: str, value: int):
+            user = get_current_user(sess)
+            if not user:
+                return RedirectResponse("/login", status_code=303)
             bar = update_bar_value(bar_id, user["id"], value)
             if bar:
                 return bar_card(bar)
@@ -233,19 +212,15 @@ files:
     from datetime import datetime, date, timedelta
     import hashlib
     import os
-    import uuid
 
     client = MongoClient(os.environ["PLATFORM_MONGO_URI"])
     db = client.get_default_database()
     users = db.progress_users
-    sessions = db.progress_sessions
     bars = db.progress_bars
 
     # Indexes
     users.create_index("username", unique=True)
     users.create_index("email", unique=True)
-    sessions.create_index("token", unique=True)
-    sessions.create_index("expires_at", expireAfterSeconds=0)
     bars.create_index("user_id")
 
     def hash_password(password: str) -> str:
@@ -297,29 +272,6 @@ files:
         except:
             pass
         return None
-
-    # Session operations
-    def create_session(user_id: str) -> str:
-        """Create session, return token."""
-        token = str(uuid.uuid4())
-        sessions.insert_one({
-            "user_id": user_id,
-            "token": token,
-            "created_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(days=7)
-        })
-        return token
-
-    def get_session(token: str):
-        """Get session by token."""
-        session = sessions.find_one({"token": token})
-        if session and session["expires_at"] > datetime.utcnow():
-            return {"user_id": session["user_id"], "token": session["token"]}
-        return None
-
-    def delete_session(token: str):
-        """Delete session."""
-        sessions.delete_one({"token": token})
 
     # Progress bar operations
     def get_user_bars(user_id: str):

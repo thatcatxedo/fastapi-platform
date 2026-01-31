@@ -7,15 +7,13 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# Your code here - create models, routes, and logic!
-# Example:
-# class Item(BaseModel):
-#     name: str
-#     price: float
-#
-# @app.get("/")
-# async def root():
-#     return {"message": "Hello World"}
+class Item(BaseModel):
+    name: str
+    price: float
+
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
 `
 
 // Default multi-file templates
@@ -340,11 +338,10 @@ function useAppState(appId) {
               setLastSavedCode(code)
             }
             setHasUnpublishedChanges(false)
+            setLoading(false)
 
             setSuccess('App deployed successfully!')
-            setTimeout(() => {
-              navigate('/dashboard')
-            }, 3000)
+            // No auto-redirect - let the user choose what to do next
             return true
           } else if (status.status === 'error') {
             setError(status.last_error || status.error_message || 'Deployment failed')
@@ -439,7 +436,7 @@ function useAppState(appId) {
   const handleDeploy = async () => {
     if (!name.trim()) {
       setError('App name is required')
-      return
+      return false
     }
 
     setError('')
@@ -448,12 +445,6 @@ function useAppState(appId) {
     setDeployStage('deploying')
     setValidationMessage('')
     setDeployDuration(null)
-
-    if (!window.confirm(`Deploy "${name.trim()}" now?`)) {
-      setLoading(false)
-      setDeployStage('draft')
-      return
-    }
 
     try {
       const token = localStorage.getItem('token')
@@ -514,11 +505,7 @@ function useAppState(appId) {
   }
 
   const handleDelete = async () => {
-    if (!appId) return
-
-    if (!window.confirm(`Are you sure you want to delete "${name.trim() || 'this app'}"? This action cannot be undone.`)) {
-      return
-    }
+    if (!appId) return false
 
     try {
       const token = localStorage.getItem('token')
@@ -533,10 +520,11 @@ function useAppState(appId) {
         throw new Error(errorMsg)
       }
 
-      navigate('/dashboard')
+      return true
     } catch (err) {
       setError(err.message)
       setSuccess('')
+      return false
     }
   }
 

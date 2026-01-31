@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 
 // Hooks
@@ -14,6 +14,10 @@ import MultiFileEditor from './components/MultiFileEditor'
 import TemplatesModal from './components/TemplatesModal'
 import VersionHistoryModal from './components/VersionHistoryModal'
 import SaveAsTemplateModal from './components/SaveAsTemplateModal'
+import WelcomeScreen from './components/WelcomeScreen'
+import ConfirmModal from '../../components/ConfirmModal'
+import { useToast } from '../../components/Toast'
+import { useApps } from '../../context/AppsContext'
 
 // Styles
 import styles from './Editor.module.css'
@@ -21,6 +25,8 @@ import styles from './Editor.module.css'
 function EditorPage({ user }) {
   const { appId } = useParams()
   const navigate = useNavigate()
+  const toast = useToast()
+  const { fetchApps } = useApps()
 
   // App state management
   const {
@@ -67,14 +73,59 @@ function EditorPage({ user }) {
     clearErrorHighlight
   } = useAppState(appId)
 
-  // Templates
-  const { templates, loadingTemplates, fetchTemplates, deleteTemplate } = useTemplates(!appId)
+  // Templates - always fetch for welcome screen template count
+  const { templates, loadingTemplates, fetchTemplates, deleteTemplate } = useTemplates(true)
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false)
   const [envVarsExpanded, setEnvVarsExpanded] = useState(envVars.length > 0)
 
+  // Welcome screen state - show for new apps until user makes a choice
+  const [showWelcome, setShowWelcome] = useState(!appId)
+
+  // Refresh apps list when deployment succeeds
+  useEffect(() => {
+    if (deploymentStatus?.status === 'running' && deploymentStatus?.deployment_ready) {
+      fetchApps()
+    }
+  }, [deploymentStatus, fetchApps])
+
   // Version history modal
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
+
+  // Confirmation modals
+  const [deployModalOpen, setDeployModalOpen] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  // Wrapped handlers with confirmation modals
+  const requestDeploy = () => {
+    if (!name.trim()) {
+      setError('App name is required')
+      return
+    }
+    setDeployModalOpen(true)
+  }
+
+  const confirmDeploy = () => {
+    setDeployModalOpen(false)
+    handleDeploy()
+  }
+
+  const requestDelete = () => {
+    setDeleteModalOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    setDeleting(true)
+    const deleteSuccess = await handleDelete()
+    setDeleting(false)
+    if (deleteSuccess) {
+      setDeleteModalOpen(false)
+      toast.success(`"${name}" deleted successfully`)
+      await fetchApps() // Refresh sidebar apps list
+      navigate('/editor') // Go to new app editor
+    }
+  }
 
   const handleUseTemplate = (template) => {
     // Handle multi-file templates
@@ -114,6 +165,45 @@ function EditorPage({ user }) {
     initMultiFileMode(newFramework)
   }
 
+  // Welcome screen handlers
+  const handleSelectStarter = (selectedMode, selectedFramework) => {
+    if (selectedMode === 'multi') {
+      initMultiFileMode(selectedFramework)
+    } else {
+      initSingleFileMode()
+    }
+    setShowWelcome(false)
+  }
+
+  const handleBrowseTemplatesFromWelcome = () => {
+    setTemplatesModalOpen(true)
+  }
+
+  // Show welcome screen for new apps
+  if (showWelcome && !appId) {
+    return (
+      <>
+        <WelcomeScreen
+          onSelectStarter={handleSelectStarter}
+          onBrowseTemplates={handleBrowseTemplatesFromWelcome}
+          templateCount={templates.length}
+        />
+        <TemplatesModal
+          isOpen={templatesModalOpen}
+          onClose={() => setTemplatesModalOpen(false)}
+          templates={templates}
+          loading={loadingTemplates}
+          onSelectTemplate={(template) => {
+            handleUseTemplate(template)
+            setShowWelcome(false)
+          }}
+          onDeleteTemplate={deleteTemplate}
+          onRefresh={fetchTemplates}
+        />
+      </>
+    )
+  }
+
   return (
     <div className={styles.container}>
       <EditorHeader
@@ -126,10 +216,10 @@ function EditorPage({ user }) {
         savingDraft={savingDraft}
         draftSaved={draftSaved}
         onValidate={handleValidate}
-        onDeploy={handleDeploy}
+        onDeploy={requestDeploy}
         onSaveDraft={handleSaveDraft}
-        onCancel={() => navigate('/dashboard')}
-        onDelete={handleDelete}
+        onCancel={() => navigate('/editor')}
+        onDelete={requestDelete}
         onBrowseTemplates={() => setTemplatesModalOpen(true)}
         onOpenHistory={() => setHistoryModalOpen(true)}
         onSaveAsTemplate={() => setSaveTemplateModalOpen(true)}
@@ -234,7 +324,7 @@ function EditorPage({ user }) {
             code={code}
             onChange={handleCodeChange}
             onMount={setEditorRefs}
-            onDeploy={handleDeploy}
+            onDeploy={requestDeploy}
             onValidate={handleValidate}
             onSaveDraft={handleSaveDraft}
           />
@@ -276,6 +366,27 @@ function EditorPage({ user }) {
           }}
         />
       )}
+
+      <ConfirmModal
+        isOpen={deployModalOpen}
+        title={isEditing ? 'Update Application' : 'Deploy Application'}
+        message={`Deploy "${name.trim()}" now? This will ${isEditing ? 'update your running application' : 'create a new deployed application'}.`}
+        confirmText={isEditing ? 'Update' : 'Deploy'}
+        confirmStyle="primary"
+        onConfirm={confirmDeploy}
+        onCancel={() => setDeployModalOpen(false)}
+      />
+
+      <ConfirmModal
+        isOpen={deleteModalOpen}
+        title="Delete Application"
+        message={`Are you sure you want to delete "${name.trim() || 'this app'}"? This action cannot be undone.`}
+        confirmText="Delete"
+        confirmStyle="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteModalOpen(false)}
+        loading={deleting}
+      />
     </div>
   )
 }

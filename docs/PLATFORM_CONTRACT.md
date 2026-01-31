@@ -27,7 +27,8 @@ This document defines what a Kubernetes cluster must provide in order to run
 
 - `PLATFORM_NAMESPACE` (default: `fastapi-platform`)
 - `RUNNER_IMAGE` (default: GHCR runner image)
-- `BASE_DOMAIN` (default: `platform.gofastapi.xyz`)
+- `BASE_DOMAIN` (default: `platform.gofastapi.xyz`) - Platform UI domain
+- `APP_DOMAIN` (default: `gatorlunch.com`) - User app subdomain base (apps at `app-{id}.{APP_DOMAIN}`)
 
 ## Required permissions (platform ServiceAccount)
 
