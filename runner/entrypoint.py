@@ -27,7 +27,7 @@ def load_user_code():
         code = f.read()
     
     # Basic validation
-    if 'app = FastAPI()' not in code and 'fast_app(' not in code and 'FastHTML(' not in code:
+    if 'app = FastAPI(' not in code and 'fast_app(' not in code and 'FastHTML(' not in code:
         print("Error: Code must define an app instance (FastAPI or FastHTML)", file=sys.stderr)
         sys.exit(1)
     
