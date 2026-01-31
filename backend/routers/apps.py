@@ -124,7 +124,9 @@ def build_app_detail_response(
         # Common fields
         env_vars=app.get("env_vars"),
         deployed_at=app.get("deployed_at").isoformat() if app.get("deployed_at") else None,
-        has_unpublished_changes=has_unpublished_changes
+        has_unpublished_changes=has_unpublished_changes,
+        # Database selection
+        database_id=app.get("database_id")
     )
 
 
@@ -222,6 +224,16 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
     mode = app_data.mode or "single"
     allowed_imports_override = await get_allowed_imports_override()
 
+    # Validate database_id if provided
+    database_id = app_data.database_id
+    if database_id:
+        databases = user.get("databases", [])
+        if not any(db["id"] == database_id for db in databases):
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_DATABASE", "Database not found")
+            )
+
     # Validate based on mode
     if mode == "multi":
         if not app_data.files:
@@ -280,6 +292,7 @@ async def create_app(app_data: AppCreate, user: dict = Depends(get_current_user)
         "name": app_data.name,
         "mode": mode,
         "env_vars": app_data.env_vars or {},
+        "database_id": database_id,  # May be None (uses user's default)
         "status": "deploying",
         "deploy_stage": "deploying",
         "last_error": None,
@@ -395,6 +408,18 @@ async def update_app(app_id: str, app_data: AppUpdate, user: dict = Depends(get_
     if app_data.env_vars is not None:
         update_data["env_vars"] = app_data.env_vars
         needs_redeploy = True
+
+    # Handle database_id change
+    if app_data.database_id is not None:
+        # Validate the database exists for this user
+        databases = user.get("databases", [])
+        if not any(db["id"] == app_data.database_id for db in databases):
+            raise HTTPException(
+                status_code=400,
+                detail=error_payload("INVALID_DATABASE", "Database not found")
+            )
+        update_data["database_id"] = app_data.database_id
+        needs_redeploy = True  # Changing database requires redeploy to update PLATFORM_MONGO_URI
 
     if needs_redeploy:
         update_data["status"] = "deploying"

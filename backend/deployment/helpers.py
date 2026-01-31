@@ -30,29 +30,71 @@ def get_user_mongo_uri_legacy(user_id: str) -> str:
     ))
 
 
-def get_user_mongo_uri_secure(user_id: str, user: dict) -> str:
+def get_user_mongo_uri_secure(user_id: str, user: dict, database_id: str = None) -> str:
     """
     Construct per-user MongoDB URI with user-specific credentials.
 
     Args:
         user_id: Platform user ID
-        user: User document containing mongo_password_encrypted
+        user: User document containing databases array
+        database_id: Specific database ID, or None for user's default
 
     Returns:
         MongoDB URI with per-user credentials, or legacy URI if credentials not available
     """
-    encrypted_password = user.get("mongo_password_encrypted")
-    if not encrypted_password:
-        # Fallback to legacy for users without MongoDB credentials
-        logger.warning(f"User {user_id} has no MongoDB credentials, using legacy URI")
+    from mongo_users import decrypt_password, get_mongo_username, get_mongo_db_name
+
+    # Determine which database to use
+    if database_id is None:
+        database_id = user.get("default_database_id", "default")
+
+    databases = user.get("databases", [])
+
+    # Find the database entry
+    db_entry = next((db for db in databases if db["id"] == database_id), None)
+
+    if not db_entry:
+        # Fallback: try legacy single-database format for backwards compatibility
+        encrypted_password = user.get("mongo_password_encrypted")
+        if encrypted_password:
+            logger.warning(f"Database {database_id} not found, using legacy credentials for user {user_id}")
+            try:
+                password = decrypt_password(encrypted_password)
+                username = get_mongo_username(user_id)  # Legacy: no database_id
+                db_name = f"user_{user_id}"  # Legacy: no database_id suffix
+
+                base_uri = MONGO_URI if not MONGO_URI.endswith("/fastapi_platform_db") else MONGO_URI.replace("/fastapi_platform_db", "") + "/fastapi_platform_db"
+                parsed = urlparse(base_uri)
+                hostname = parsed.hostname or "localhost"
+                port = parsed.port or 27017
+
+                encoded_username = quote_plus(username)
+                encoded_password = quote_plus(password)
+                netloc = f"{encoded_username}:{encoded_password}@{hostname}:{port}"
+
+                query_params = parse_qs(parsed.query)
+                query_params['authSource'] = ['admin']
+                query = urlencode(query_params, doseq=True)
+
+                return urlunparse((
+                    parsed.scheme, netloc, f"/{db_name}",
+                    parsed.params, query, parsed.fragment
+                ))
+            except Exception as e:
+                logger.error(f"Failed to decrypt legacy password for user {user_id}: {e}")
+
+        logger.warning(f"No credentials found for user {user_id}, using legacy URI")
         return get_user_mongo_uri_legacy(user_id)
 
+    # Multi-database: use database-specific credentials
     try:
-        from mongo_users import decrypt_password, get_mongo_username
+        encrypted_password = db_entry.get("mongo_password_encrypted")
+        if not encrypted_password:
+            raise ValueError("No encrypted password in database entry")
 
         password = decrypt_password(encrypted_password)
-        username = get_mongo_username(user_id)
-        db_name = f"user_{user_id}"
+        username = get_mongo_username(user_id, database_id)
+        db_name = get_mongo_db_name(user_id, database_id)
 
         base_uri = MONGO_URI if not MONGO_URI.endswith("/fastapi_platform_db") else MONGO_URI.replace("/fastapi_platform_db", "") + "/fastapi_platform_db"
         parsed = urlparse(base_uri)
@@ -69,9 +111,8 @@ def get_user_mongo_uri_secure(user_id: str, user: dict) -> str:
         netloc = f"{encoded_username}:{encoded_password}@{hostname}:{port}"
 
         # Set authSource=admin (user is created in admin db)
-        # Must replace any existing authSource since base URI may have different value
         query_params = parse_qs(parsed.query)
-        query_params['authSource'] = ['admin']  # Always use admin for per-user auth
+        query_params['authSource'] = ['admin']
         query = urlencode(query_params, doseq=True)
 
         return urlunparse((
@@ -83,8 +124,7 @@ def get_user_mongo_uri_secure(user_id: str, user: dict) -> str:
             parsed.fragment
         ))
     except Exception as e:
-        logger.error(f"Failed to build secure MongoDB URI for user {user_id}: {e}")
-        # Fallback to legacy if decryption fails
+        logger.error(f"Failed to build secure MongoDB URI for user {user_id} database {database_id}: {e}")
         return get_user_mongo_uri_legacy(user_id)
 
 

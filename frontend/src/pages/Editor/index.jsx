@@ -9,6 +9,7 @@ import useTemplates from './hooks/useTemplates'
 import EditorHeader from './components/EditorHeader'
 import NotificationsPanel from './components/NotificationsPanel'
 import EnvVarsPanel from './components/EnvVarsPanel'
+import DatabaseSelector from './components/DatabaseSelector'
 import CodeEditor from './components/CodeEditor'
 import MultiFileEditor from './components/MultiFileEditor'
 import TemplatesModal from './components/TemplatesModal'
@@ -45,6 +46,9 @@ function EditorPage({ user }) {
     setFiles,
     initMultiFileMode,
     initSingleFileMode,
+    // Database selection
+    databaseId,
+    setDatabaseId,
     // Draft/Version tracking
     hasUnpublishedChanges,
     hasLocalChanges,
@@ -302,6 +306,15 @@ function EditorPage({ user }) {
             </div>
           )}
         </div>
+
+        {/* Database selector - only for new apps */}
+        {!isEditing && (
+          <DatabaseSelector
+            value={databaseId}
+            onChange={setDatabaseId}
+            disabled={loading}
+          />
+        )}
 
         <EnvVarsPanel
           envVars={envVars}

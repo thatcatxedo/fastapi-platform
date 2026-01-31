@@ -30,7 +30,13 @@ def get_viewer_name(user_id: str) -> str:
     return f"mongo-viewer-{user_id}"
 
 
-async def create_mongo_viewer_deployment(user_id: str, user: dict, username: str, password: str):
+async def create_mongo_viewer_deployment(
+    user_id: str,
+    user: dict,
+    username: str,
+    password: str,
+    database_id: str = None
+):
     """Create Deployment for per-user MongoDB viewer"""
     if not apps_v1:
         raise Exception("Kubernetes client not available")
@@ -39,7 +45,7 @@ async def create_mongo_viewer_deployment(user_id: str, user: dict, username: str
 
     # Using subdomain routing - no base URL prefix needed
     # Use per-user MongoDB credentials for secure access
-    mongo_uri = get_user_mongo_uri_secure(user_id, user)
+    mongo_uri = get_user_mongo_uri_secure(user_id, user, database_id=database_id)
     env_list = [
         k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_URL", value=mongo_uri),
         k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_ENABLE_ADMIN", value="false"),
@@ -164,10 +170,16 @@ async def create_mongo_viewer_ingress_route(user_id: str):
     )
 
 
-async def create_mongo_viewer_resources(user_id: str, user: dict, username: str, password: str):
+async def create_mongo_viewer_resources(
+    user_id: str,
+    user: dict,
+    username: str,
+    password: str,
+    database_id: str = None
+):
     """Create all Kubernetes resources for a per-user MongoDB viewer"""
     try:
-        await create_mongo_viewer_deployment(user_id, user, username, password)
+        await create_mongo_viewer_deployment(user_id, user, username, password, database_id=database_id)
         await create_mongo_viewer_service(user_id)
         await create_mongo_viewer_ingress_route(user_id)
     except Exception as e:

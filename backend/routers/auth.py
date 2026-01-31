@@ -50,36 +50,53 @@ async def signup(user_data: UserSignup):
     user_count = await users_collection.count_documents({})
     is_first_user = user_count == 0
     
-    # Create user
+    # Create user with multi-database support
+    now = datetime.utcnow()
     user_doc = {
         "username": user_data.username,
         "email": user_data.email,
         "password_hash": hash_password(user_data.password),
-        "created_at": datetime.utcnow(),
-        "is_admin": is_first_user  # First user is admin
+        "created_at": now,
+        "is_admin": is_first_user,  # First user is admin
+        # Multi-database support
+        "databases": [],  # Will be populated after MongoDB user creation
+        "default_database_id": "default"
     }
     result = await users_collection.insert_one(user_doc)
-    
+
     # Initialize settings on first signup
     if is_first_user:
         await settings_collection.update_one(
             {"_id": "global"},
             {"$setOnInsert": {
                 "allow_signups": True,
-                "updated_at": datetime.utcnow()
+                "updated_at": now
             }},
             upsert=True
         )
-    
-    # Create per-user MongoDB credentials for data isolation
+
+    # Create per-user MongoDB credentials for default database
     try:
-        from mongo_users import create_mongo_user, encrypt_password
-        mongo_username, mongo_password = await create_mongo_user(client, str(result.inserted_id))
-        
-        # Store encrypted MongoDB password in user document
+        from mongo_users import create_mongo_user_for_database, encrypt_password
+
+        mongo_username, mongo_password = await create_mongo_user_for_database(
+            client, str(result.inserted_id), "default"
+        )
+
+        # Create default database entry
+        default_db_entry = {
+            "id": "default",
+            "name": "Default",
+            "mongo_password_encrypted": encrypt_password(mongo_password),
+            "created_at": now,
+            "is_default": True,
+            "description": "Default database"
+        }
+
+        # Store database entry in user document
         await users_collection.update_one(
             {"_id": result.inserted_id},
-            {"$set": {"mongo_password_encrypted": encrypt_password(mongo_password)}}
+            {"$set": {"databases": [default_db_entry]}}
         )
         logger.info(f"Created MongoDB user {mongo_username} for platform user {result.inserted_id}")
     except Exception as e:

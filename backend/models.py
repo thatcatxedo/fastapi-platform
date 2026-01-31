@@ -49,6 +49,8 @@ class AppCreate(BaseModel):
     files: Optional[Dict[str, str]] = None
     entrypoint: Optional[str] = "app.py"
     env_vars: Optional[Dict[str, str]] = None
+    # Database selection (multi-database support)
+    database_id: Optional[str] = None  # If None, uses user's default database
 
 
 class AppUpdate(BaseModel):
@@ -56,6 +58,7 @@ class AppUpdate(BaseModel):
     code: Optional[str] = None  # Single-file
     files: Optional[Dict[str, str]] = None  # Multi-file
     env_vars: Optional[Dict[str, str]] = None
+    database_id: Optional[str] = None  # Change database (requires redeploy)
 
 
 class DraftUpdate(BaseModel):
@@ -93,6 +96,8 @@ class AppDetailResponse(AppResponse):
     env_vars: Optional[Dict[str, str]] = None
     deployed_at: Optional[str] = None
     has_unpublished_changes: bool = False
+    # Database selection
+    database_id: Optional[str] = None  # Which database this app uses
 
 
 class VersionEntry(BaseModel):
@@ -184,6 +189,41 @@ class ViewerResponse(BaseModel):
     password_provided: bool = False
     ready: bool = False
     pod_status: Optional[str] = None
+
+
+# Multi-database models
+
+class DatabaseCreate(BaseModel):
+    """Create a new user database"""
+    name: str
+    description: Optional[str] = None
+
+
+class DatabaseUpdate(BaseModel):
+    """Update an existing database"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class DatabaseResponse(BaseModel):
+    """Response for a single database"""
+    id: str
+    name: str
+    description: Optional[str] = None
+    is_default: bool
+    mongo_database: str  # e.g., "user_xxx_default"
+    created_at: str
+    total_collections: int = 0
+    total_documents: int = 0
+    total_size_mb: float = 0
+
+
+class DatabaseListResponse(BaseModel):
+    """Response for listing all user databases"""
+    databases: List[DatabaseResponse]
+    total_size_mb: float
+    default_database_id: str
 
 
 class CollectionStats(BaseModel):

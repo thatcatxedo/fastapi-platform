@@ -496,6 +496,38 @@ With multiple databases, quotas become more important:
 
 ---
 
+## Cluster Foundation Requirements
+
+The multi-database feature requires the platform's MongoDB user to have specific roles:
+
+```javascript
+// In fastapi-platform-cluster-foundation/infrastructure/mongodb/statefulset.yaml
+db.createUser({
+    user: "platform",
+    pwd: "platformpass456",
+    roles: [
+        {role: "readWrite", db: "platform"},
+        {role: "readWrite", db: "fastapi_platform_db"},
+        {role: "readWriteAnyDatabase", db: "admin"},
+        {role: "userAdminAnyDatabase", db: "admin"}  // Required for multi-database
+    ]
+})
+```
+
+**Critical:** The `userAdminAnyDatabase` role is required for the platform to create per-user MongoDB users. Without this role, database creation will fail with "not authorized" errors.
+
+If you're upgrading an existing cluster, grant the role manually:
+```bash
+MONGO_PASSWORD=$(kubectl get secret -n mongodb mongodb-secret -o jsonpath='{.data.root-password}' | base64 -d)
+kubectl exec -n mongodb mongodb-0 -- mongosh -u root -p "$MONGO_PASSWORD" --authenticationDatabase admin --eval '
+db.getSiblingDB("platform").grantRolesToUser("platform", [
+  { role: "userAdminAnyDatabase", db: "admin" }
+])
+'
+```
+
+---
+
 ## Risks & Mitigations
 
 | Risk | Mitigation |

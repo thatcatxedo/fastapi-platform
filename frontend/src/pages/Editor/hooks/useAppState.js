@@ -214,6 +214,9 @@ function useAppState(appId) {
   const [files, setFiles] = useState(null)
   const [entrypoint, setEntrypoint] = useState('app.py')
 
+  // Database selection
+  const [databaseId, setDatabaseId] = useState(null)  // null means use default
+
   // Draft/Version tracking state
   const [deployedCode, setDeployedCode] = useState(null)
   const [deployedFiles, setDeployedFiles] = useState(null)
@@ -284,6 +287,9 @@ function useAppState(appId) {
         const envVarsList = Object.entries(app.env_vars).map(([key, value]) => ({ key, value }))
         setEnvVars(envVarsList)
       }
+
+      // Load database selection
+      setDatabaseId(app.database_id || null)
 
       // Handle multi-file vs single-file mode
       const appMode = app.mode || 'single'
@@ -471,11 +477,13 @@ function useAppState(appId) {
           body.mode = 'multi'
           body.framework = framework
           body.entrypoint = entrypoint
+          body.database_id = databaseId  // Include database selection
         }
       } else {
         body.code = code
         if (!isEditing) {
           body.mode = 'single'
+          body.database_id = databaseId  // Include database selection
         }
       }
 
@@ -669,6 +677,10 @@ function useAppState(appId) {
     files,
     setFiles,
     entrypoint,
+
+    // Database selection
+    databaseId,
+    setDatabaseId,
 
     // Draft/Version tracking
     deployedCode,
