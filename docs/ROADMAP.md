@@ -213,32 +213,37 @@ Small improvements that can be shipped quickly between major phases:
   - Display description on dashboard app cards
   - Editable in app settings or app page header
   - Helps users document what each app does, especially as app count grows
-- [ ] Save applications as templates
-  - Allow users to promote an app into the template library
-  - Capture code, metadata, and version at save time
+- [x] Save applications as templates
+  - "Save as Template" button in editor
+  - User templates stored separately from global templates
+  - Full CRUD: create, edit, delete own templates
+  - Templates modal with tabs: All / My Templates / Global
 
 ---
 
-## Phase 2 — Multi-File Mode (in progress)
+## Phase 2 — Multi-File Mode (complete)
 
 **Goal:** Support real-world app structure without losing simplicity.
 
-**Status:** Implementation plan created. See `docs/architecture-reviews/` for detailed implementation plan.
-
-- [ ] Project structure
+- [x] Project structure
   - Files: `app.py`, `routes.py`, `models.py`, `services.py`, `helpers.py` (FastAPI preset)
   - Files: `app.py`, `routes.py`, `models.py`, `services.py`, `components.py` (FastHTML preset)
-  - Tabbed file editor with fixed file set per framework preset
-- [ ] Build/run model
-  - Multi-file ConfigMap with all files mounted at `/app`
-  - Entrypoint via `CODE_PATH` env var (e.g., `/app/app.py`)
-  - Runner adds `/app` to `sys.path` for imports
-- [ ] Size limits for bundled projects (guardrail for ConfigMap/archives)
+  - Tabbed file editor with add/remove file support
+- [x] Build/run model
+  - Multi-file ConfigMap with all files mounted at `/code`
+  - Entrypoint via `CODE_PATH` env var (e.g., `/code/app.py`)
+  - Runner adds `/code` to `sys.path` for imports between files
+- [x] Size limits for bundled projects
   - Max 10 files, 100KB per file, 500KB total
-- [ ] Backward compatibility
+  - Validation enforced in backend
+- [x] Backward compatibility
   - Single-file mode remains default
   - New apps can choose single-file or multi-file mode
   - Framework selection: FastAPI (API-focused) or FastHTML (HTML/HTMX-focused)
+- [x] Template system refactor
+  - Templates stored as individual YAML files (`backend/templates/global/`)
+  - Template loader with Pydantic validation
+  - Multi-file template support (files dict in YAML)
 
 ## Phase 3 — Custom Dependencies
 
@@ -263,9 +268,36 @@ Small improvements that can be shipped quickly between major phases:
 
 **Goal:** Use AI to accelerate scaffolding and iteration.
 
-- [ ] Inline assistant panel
-- [ ] Scaffolding prompts ("Generate CRUD", "Add auth")
-- [ ] Safety model: suggest → preview → confirm → apply
+**Architecture:** n8n as integration hub with BYOK (Bring Your Own Key) model.
+
+- [ ] n8n deployment in cluster
+  - Self-hosted n8n alongside platform
+  - Webhook endpoints for AI workflows
+  - Credential management for user API keys
+- [ ] BYOK (Bring Your Own Key)
+  - Users provide their own LLM API keys
+  - Keys stored encrypted in user settings
+  - Passed to n8n workflows at runtime
+- [ ] Multi-provider support
+  - Claude (Anthropic)
+  - GPT-4 (OpenAI)
+  - Other providers via n8n integrations
+  - User selects preferred provider in settings
+- [ ] Core AI features
+  - Generate app from description
+  - Fix validation errors with AI
+  - Explain why code failed
+  - Inline assistant panel (chat)
+- [ ] Platform-aware prompts
+  - System prompt includes all constraints (allowed imports, forbidden patterns)
+  - MongoDB integration patterns
+  - Single-file vs multi-file mode awareness
+  - Template examples for context
+- [ ] Safety model
+  - Validate all AI-generated code before showing to user
+  - Diff view for suggested changes
+  - Accept/reject workflow
+  - Rate limiting per user
 
 ## Phase 6 — Monetization & Limits
 
