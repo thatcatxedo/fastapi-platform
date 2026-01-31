@@ -1,0 +1,1370 @@
+name: "Progress Bars"
+description: "Track life goals with beautiful progress bars. Create countdowns to future events, count-up streaks, manual counters, and goal trackers. Includes user signup/login with session-based authentication."
+complexity: complex
+tags:
+  - multifile
+  - fasthtml
+  - htmx
+  - mongodb
+  - auth
+  - dashboard
+  - fullstack
+mode: multi
+framework: fasthtml
+entrypoint: app.py
+files:
+  app.py: |
+    from fasthtml.common import *
+    from starlette.middleware.sessions import SessionMiddleware
+    from routes import setup_routes
+    import os
+
+    app, rt = fast_app(
+        hdrs=(
+            Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"),
+        )
+    )
+
+    # Add session middleware for auth
+    app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "progress-bars-secret-key-change-me"))
+
+    setup_routes(rt)
+
+    @rt("/health")
+    def health():
+        return {"status": "ok"}
+
+  routes.py: |
+    from fasthtml.common import *
+    from services import (
+        create_user, authenticate_user, get_user_by_id,
+        create_session, get_session, delete_session,
+        get_user_bars, create_bar, get_bar, update_bar, delete_bar,
+        increment_bar, decrement_bar, reset_bar, update_bar_value
+    )
+    from components import (
+        page_layout, landing_page, auth_form, dashboard_page,
+        bar_card, create_bar_modal, edit_bar_modal, bar_grid
+    )
+
+    def get_current_user(request):
+        """Get current user from session cookie."""
+        token = request.cookies.get("session_token")
+        if not token:
+            return None
+        session = get_session(token)
+        if not session:
+            return None
+        return get_user_by_id(session["user_id"])
+
+    def require_auth(request):
+        """Redirect to login if not authenticated."""
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse("/login", status_code=303)
+        return user
+
+    def setup_routes(rt):
+        # Landing page
+        @rt("/")
+        def home(request):
+            user = get_current_user(request)
+            if user:
+                return RedirectResponse("/dashboard", status_code=303)
+            return page_layout(landing_page(), logged_in=False)
+
+        # Auth routes
+        @rt("/signup")
+        def signup_page(request):
+            user = get_current_user(request)
+            if user:
+                return RedirectResponse("/dashboard", status_code=303)
+            return page_layout(auth_form("signup"), logged_in=False)
+
+        @rt("/signup", methods=["POST"])
+        def signup_submit(request, username: str, email: str, password: str):
+            error = create_user(username, email, password)
+            if error:
+                return page_layout(auth_form("signup", error=error), logged_in=False)
+            # Auto-login after signup
+            user = authenticate_user(username, password)
+            if user:
+                token = create_session(user["id"])
+                response = RedirectResponse("/dashboard", status_code=303)
+                response.set_cookie("session_token", token, httponly=True, max_age=86400*7)
+                return response
+            return RedirectResponse("/login", status_code=303)
+
+        @rt("/login")
+        def login_page(request):
+            user = get_current_user(request)
+            if user:
+                return RedirectResponse("/dashboard", status_code=303)
+            return page_layout(auth_form("login"), logged_in=False)
+
+        @rt("/login", methods=["POST"])
+        def login_submit(request, username: str, password: str):
+            user = authenticate_user(username, password)
+            if not user:
+                return page_layout(auth_form("login", error="Invalid username or password"), logged_in=False)
+            token = create_session(user["id"])
+            response = RedirectResponse("/dashboard", status_code=303)
+            response.set_cookie("session_token", token, httponly=True, max_age=86400*7)
+            return response
+
+        @rt("/logout", methods=["POST"])
+        def logout(request):
+            token = request.cookies.get("session_token")
+            if token:
+                delete_session(token)
+            response = RedirectResponse("/", status_code=303)
+            response.delete_cookie("session_token")
+            return response
+
+        # Dashboard
+        @rt("/dashboard")
+        def dashboard(request):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            bars = get_user_bars(user["id"])
+            return page_layout(dashboard_page(user, bars), logged_in=True, username=user["username"])
+
+        # Bar CRUD
+        @rt("/bars", methods=["POST"])
+        def create_new_bar(request, name: str, bar_type: str, color: str = "#10b981",
+                          target_date: str = None, current_value: int = 0, target_value: int = None):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            create_bar(user["id"], name, bar_type, color, target_date, current_value, target_value)
+            bars = get_user_bars(user["id"])
+            return (
+                bar_grid(bars),
+                Div(id="modal-container", hx_swap_oob="true")
+            )
+
+        @rt("/bars/new")
+        def new_bar_form(request):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            return create_bar_modal()
+
+        @rt("/bars/{bar_id}/edit")
+        def edit_bar_form(request, bar_id: str):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            bar = get_bar(bar_id, user["id"])
+            if not bar:
+                return ""
+            return edit_bar_modal(bar)
+
+        @rt("/bars/{bar_id}", methods=["PUT"])
+        def update_existing_bar(request, bar_id: str, name: str, color: str = "#10b981",
+                               target_date: str = None, current_value: int = None, target_value: int = None):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            update_bar(bar_id, user["id"], name, color, target_date, current_value, target_value)
+            bars = get_user_bars(user["id"])
+            return (
+                bar_grid(bars),
+                Div(id="modal-container", hx_swap_oob="true")
+            )
+
+        @rt("/bars/{bar_id}", methods=["DELETE"])
+        def delete_existing_bar(request, bar_id: str):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            delete_bar(bar_id, user["id"])
+            bars = get_user_bars(user["id"])
+            return bar_grid(bars)
+
+        @rt("/bars/{bar_id}/increment", methods=["POST"])
+        def increment_bar_value(request, bar_id: str):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            bar = increment_bar(bar_id, user["id"])
+            if bar:
+                return bar_card(bar)
+            return ""
+
+        @rt("/bars/{bar_id}/decrement", methods=["POST"])
+        def decrement_bar_value(request, bar_id: str):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            bar = decrement_bar(bar_id, user["id"])
+            if bar:
+                return bar_card(bar)
+            return ""
+
+        @rt("/bars/{bar_id}/reset", methods=["POST"])
+        def reset_bar_streak(request, bar_id: str):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            bar = reset_bar(bar_id, user["id"])
+            if bar:
+                return bar_card(bar)
+            return ""
+
+        @rt("/bars/{bar_id}/update-value", methods=["POST"])
+        def set_bar_value(request, bar_id: str, value: int):
+            user = require_auth(request)
+            if isinstance(user, RedirectResponse):
+                return user
+            bar = update_bar_value(bar_id, user["id"], value)
+            if bar:
+                return bar_card(bar)
+            return ""
+
+        @rt("/modal/close", methods=["POST"])
+        def close_modal():
+            return Div(id="modal-container")
+
+  services.py: |
+    from pymongo import MongoClient
+    from bson import ObjectId
+    from datetime import datetime, date, timedelta
+    import hashlib
+    import os
+    import uuid
+
+    client = MongoClient(os.environ["PLATFORM_MONGO_URI"])
+    db = client.get_default_database()
+    users = db.progress_users
+    sessions = db.progress_sessions
+    bars = db.progress_bars
+
+    # Indexes
+    users.create_index("username", unique=True)
+    users.create_index("email", unique=True)
+    sessions.create_index("token", unique=True)
+    sessions.create_index("expires_at", expireAfterSeconds=0)
+    bars.create_index("user_id")
+
+    def hash_password(password: str) -> str:
+        return hashlib.sha256(password.encode()).hexdigest()
+
+    # User operations
+    def create_user(username: str, email: str, password: str) -> str:
+        """Create user, return error message or None on success."""
+        if len(username) < 3:
+            return "Username must be at least 3 characters"
+        if len(password) < 6:
+            return "Password must be at least 6 characters"
+        if "@" not in email:
+            return "Invalid email address"
+        try:
+            users.insert_one({
+                "username": username.lower(),
+                "email": email.lower(),
+                "password_hash": hash_password(password),
+                "created_at": datetime.utcnow()
+            })
+            return None
+        except Exception as e:
+            if "username" in str(e):
+                return "Username already taken"
+            if "email" in str(e):
+                return "Email already registered"
+            return "Registration failed"
+
+    def authenticate_user(username: str, password: str):
+        """Authenticate user, return user dict or None."""
+        user = users.find_one({
+            "$or": [
+                {"username": username.lower()},
+                {"email": username.lower()}
+            ],
+            "password_hash": hash_password(password)
+        })
+        if user:
+            return {"id": str(user["_id"]), "username": user["username"], "email": user["email"]}
+        return None
+
+    def get_user_by_id(user_id: str):
+        """Get user by ID."""
+        try:
+            user = users.find_one({"_id": ObjectId(user_id)})
+            if user:
+                return {"id": str(user["_id"]), "username": user["username"], "email": user["email"]}
+        except:
+            pass
+        return None
+
+    # Session operations
+    def create_session(user_id: str) -> str:
+        """Create session, return token."""
+        token = str(uuid.uuid4())
+        sessions.insert_one({
+            "user_id": user_id,
+            "token": token,
+            "created_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(days=7)
+        })
+        return token
+
+    def get_session(token: str):
+        """Get session by token."""
+        session = sessions.find_one({"token": token})
+        if session and session["expires_at"] > datetime.utcnow():
+            return {"user_id": session["user_id"], "token": session["token"]}
+        return None
+
+    def delete_session(token: str):
+        """Delete session."""
+        sessions.delete_one({"token": token})
+
+    # Progress bar operations
+    def get_user_bars(user_id: str):
+        """Get all bars for user with computed values."""
+        cursor = bars.find({"user_id": user_id}).sort("created_at", -1)
+        result = []
+        today = date.today()
+        for b in cursor:
+            bar = {
+                "id": str(b["_id"]),
+                "name": b["name"],
+                "type": b["type"],
+                "color": b.get("color", "#10b981"),
+                "created_at": b["created_at"]
+            }
+            
+            if b["type"] == "countdown":
+                target = datetime.strptime(b["target_date"], "%Y-%m-%d").date()
+                days_remaining = (target - today).days
+                bar["days_remaining"] = max(0, days_remaining)
+                bar["target_date"] = b["target_date"]
+                bar["is_past"] = days_remaining < 0
+                # Progress: how much time has passed since creation
+                created_date = b["created_at"].date()
+                total_days = (target - created_date).days
+                if total_days > 0:
+                    elapsed = (today - created_date).days
+                    bar["progress"] = min(100, max(0, (elapsed / total_days) * 100))
+                else:
+                    bar["progress"] = 100 if days_remaining <= 0 else 0
+            
+            elif b["type"] == "countup":
+                start = datetime.strptime(b["start_date"], "%Y-%m-%d").date()
+                days_elapsed = (today - start).days
+                bar["days_elapsed"] = max(0, days_elapsed)
+                bar["start_date"] = b["start_date"]
+            
+            elif b["type"] == "counter":
+                bar["current_value"] = b.get("current_value", 0)
+                bar["target_value"] = b.get("target_value")
+                if bar["target_value"]:
+                    bar["progress"] = min(100, (bar["current_value"] / bar["target_value"]) * 100)
+            
+            elif b["type"] == "goal":
+                bar["current_value"] = b.get("current_value", 0)
+                bar["target_value"] = b.get("target_value", 100)
+                bar["progress"] = min(100, (bar["current_value"] / bar["target_value"]) * 100) if bar["target_value"] else 0
+            
+            result.append(bar)
+        return result
+
+    def create_bar(user_id: str, name: str, bar_type: str, color: str,
+                   target_date: str = None, current_value: int = 0, target_value: int = None):
+        """Create a new progress bar."""
+        doc = {
+            "user_id": user_id,
+            "name": name,
+            "type": bar_type,
+            "color": color,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+        
+        if bar_type == "countdown":
+            doc["target_date"] = target_date or (date.today() + timedelta(days=30)).isoformat()
+        elif bar_type == "countup":
+            doc["start_date"] = date.today().isoformat()
+        elif bar_type in ("counter", "goal"):
+            doc["current_value"] = current_value
+            if target_value:
+                doc["target_value"] = target_value
+        
+        bars.insert_one(doc)
+
+    def get_bar(bar_id: str, user_id: str):
+        """Get single bar by ID."""
+        try:
+            b = bars.find_one({"_id": ObjectId(bar_id), "user_id": user_id})
+            if b:
+                return {
+                    "id": str(b["_id"]),
+                    "name": b["name"],
+                    "type": b["type"],
+                    "color": b.get("color", "#10b981"),
+                    "target_date": b.get("target_date"),
+                    "start_date": b.get("start_date"),
+                    "current_value": b.get("current_value", 0),
+                    "target_value": b.get("target_value")
+                }
+        except:
+            pass
+        return None
+
+    def update_bar(bar_id: str, user_id: str, name: str, color: str,
+                   target_date: str = None, current_value: int = None, target_value: int = None):
+        """Update bar properties."""
+        update = {"name": name, "color": color, "updated_at": datetime.utcnow()}
+        if target_date:
+            update["target_date"] = target_date
+        if current_value is not None:
+            update["current_value"] = current_value
+        if target_value is not None:
+            update["target_value"] = target_value
+        bars.update_one({"_id": ObjectId(bar_id), "user_id": user_id}, {"$set": update})
+
+    def delete_bar(bar_id: str, user_id: str):
+        """Delete a bar."""
+        bars.delete_one({"_id": ObjectId(bar_id), "user_id": user_id})
+
+    def increment_bar(bar_id: str, user_id: str):
+        """Increment counter bar by 1."""
+        bars.update_one(
+            {"_id": ObjectId(bar_id), "user_id": user_id, "type": {"$in": ["counter", "goal"]}},
+            {"$inc": {"current_value": 1}, "$set": {"updated_at": datetime.utcnow()}}
+        )
+        return get_bar_computed(bar_id, user_id)
+
+    def decrement_bar(bar_id: str, user_id: str):
+        """Decrement counter bar by 1."""
+        bars.update_one(
+            {"_id": ObjectId(bar_id), "user_id": user_id, "type": {"$in": ["counter", "goal"]}, "current_value": {"$gt": 0}},
+            {"$inc": {"current_value": -1}, "$set": {"updated_at": datetime.utcnow()}}
+        )
+        return get_bar_computed(bar_id, user_id)
+
+    def reset_bar(bar_id: str, user_id: str):
+        """Reset countup bar to today."""
+        bars.update_one(
+            {"_id": ObjectId(bar_id), "user_id": user_id, "type": "countup"},
+            {"$set": {"start_date": date.today().isoformat(), "updated_at": datetime.utcnow()}}
+        )
+        return get_bar_computed(bar_id, user_id)
+
+    def update_bar_value(bar_id: str, user_id: str, value: int):
+        """Set specific value for counter/goal bar."""
+        bars.update_one(
+            {"_id": ObjectId(bar_id), "user_id": user_id, "type": {"$in": ["counter", "goal"]}},
+            {"$set": {"current_value": max(0, value), "updated_at": datetime.utcnow()}}
+        )
+        return get_bar_computed(bar_id, user_id)
+
+    def get_bar_computed(bar_id: str, user_id: str):
+        """Get bar with computed values for HTMX response."""
+        all_bars = get_user_bars(user_id)
+        for bar in all_bars:
+            if bar["id"] == bar_id:
+                return bar
+        return None
+
+  components.py: |
+    from fasthtml.common import *
+
+    COLORS = [
+        ("#10b981", "Green"),
+        ("#3b82f6", "Blue"),
+        ("#8b5cf6", "Purple"),
+        ("#f59e0b", "Orange"),
+        ("#ec4899", "Pink"),
+        ("#ef4444", "Red"),
+    ]
+
+    STYLES = Style("""
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            color: #e4e4e7;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #10b981, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .nav { display: flex; gap: 16px; align-items: center; }
+        .nav a, .nav button {
+            color: #a1a1aa;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+        .nav a:hover { color: #e4e4e7; }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .username {
+            color: #e4e4e7;
+            font-weight: 500;
+        }
+        .btn-logout {
+            background: none;
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #a1a1aa;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .btn-logout:hover {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+        
+        /* Landing page */
+        .landing {
+            text-align: center;
+            padding: 80px 20px;
+        }
+        .landing h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, #10b981, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .landing p {
+            font-size: 1.2rem;
+            color: #a1a1aa;
+            margin-bottom: 40px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .landing-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(90deg, #10b981, #059669);
+            color: white;
+        }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #e4e4e7;
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+        
+        /* Features */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+            margin-top: 60px;
+            padding: 0 20px;
+        }
+        .feature {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+        }
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 12px;
+        }
+        .feature h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .feature p {
+            font-size: 0.9rem;
+            color: #a1a1aa;
+        }
+        
+        /* Auth form */
+        .auth-container {
+            max-width: 400px;
+            margin: 60px auto;
+            padding: 0 20px;
+        }
+        .auth-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 32px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .auth-card h2 {
+            text-align: center;
+            margin-bottom: 24px;
+            font-size: 1.5rem;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #a1a1aa;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            background: rgba(0,0,0,0.3);
+            color: #e4e4e7;
+            font-family: inherit;
+            font-size: 1rem;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+        .error-msg {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            color: #fca5a5;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        .auth-footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.9rem;
+            color: #a1a1aa;
+        }
+        .auth-footer a {
+            color: #10b981;
+            text-decoration: none;
+        }
+        .auth-footer a:hover { text-decoration: underline; }
+        
+        /* Dashboard */
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .dashboard-header h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+        }
+        .btn-add {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(90deg, #10b981, #059669);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .btn-add:hover { opacity: 0.9; }
+        
+        /* Bar grid */
+        .bar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 60px 20px;
+            color: #71717a;
+        }
+        .empty-state p { margin-bottom: 20px; }
+        
+        /* Bar card */
+        .bar-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.2s;
+        }
+        .bar-card:hover {
+            background: rgba(255,255,255,0.08);
+            transform: translateY(-2px);
+        }
+        .bar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        .bar-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            word-break: break-word;
+        }
+        .bar-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .bar-actions button {
+            background: none;
+            border: none;
+            color: #71717a;
+            cursor: pointer;
+            padding: 4px;
+            font-size: 0.85rem;
+            transition: color 0.2s;
+        }
+        .bar-actions button:hover { color: #e4e4e7; }
+        .bar-actions .delete:hover { color: #ef4444; }
+        
+        /* Progress bar */
+        .progress-container {
+            margin-bottom: 12px;
+        }
+        .progress-bar {
+            height: 12px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+        .progress-glow {
+            box-shadow: 0 0 10px currentColor;
+        }
+        
+        /* Bar metrics */
+        .bar-metric {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .bar-label {
+            font-size: 0.85rem;
+            color: #a1a1aa;
+            margin-bottom: 12px;
+        }
+        .bar-sub {
+            font-size: 0.8rem;
+            color: #71717a;
+        }
+        
+        /* Counter buttons */
+        .counter-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .btn-counter {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.05);
+            color: #e4e4e7;
+            border-radius: 6px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-counter:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .btn-reset {
+            padding: 8px 12px;
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+        .btn-reset:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        .modal {
+            background: #1e1e2e;
+            border-radius: 16px;
+            padding: 28px;
+            width: 100%;
+            max-width: 450px;
+            border: 1px solid rgba(255,255,255,0.1);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal h3 {
+            margin-bottom: 24px;
+            font-size: 1.3rem;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .modal-actions .btn {
+            flex: 1;
+            padding: 12px;
+        }
+        .btn-cancel {
+            background: rgba(255,255,255,0.1);
+            color: #a1a1aa;
+        }
+        .btn-cancel:hover { background: rgba(255,255,255,0.15); }
+        
+        /* Color picker */
+        .color-options {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .color-option {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .color-option:hover { transform: scale(1.1); }
+        .color-option.selected { border-color: white; }
+        
+        /* Type selector */
+        .type-options {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .type-option {
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            background: transparent;
+            color: #e4e4e7;
+            font-family: inherit;
+        }
+        .type-option:hover { border-color: rgba(255,255,255,0.3); }
+        .type-option.selected {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .type-option .type-icon { font-size: 1.5rem; margin-bottom: 4px; }
+        .type-option .type-name { font-size: 0.85rem; }
+        
+        /* Conditional fields */
+        .conditional-field { margin-top: 16px; }
+        
+        @media (max-width: 600px) {
+            .landing h1 { font-size: 2rem; }
+            .landing-actions { flex-direction: column; }
+            .dashboard-header { flex-direction: column; gap: 16px; align-items: stretch; }
+            .bar-grid { grid-template-columns: 1fr; }
+            .type-options { grid-template-columns: 1fr; }
+        }
+    """)
+
+    def page_layout(*children, logged_in=False, username=None):
+        nav_items = []
+        if logged_in:
+            nav_items = [
+                Div(
+                    Span(f"@{username}", cls="username"),
+                    Form(
+                        Button("Logout", type="submit", cls="btn-logout"),
+                        action="/logout",
+                        method="post"
+                    ),
+                    cls="user-info"
+                )
+            ]
+        else:
+            nav_items = [
+                A("Login", href="/login"),
+                A("Sign Up", href="/signup", cls="btn btn-primary", style="padding: 8px 16px;")
+            ]
+        
+        return (
+            Title("Progress Bars"),
+            STYLES,
+            Div(
+                Div(
+                    Span("Progress Bars", cls="logo"),
+                    Div(*nav_items, cls="nav"),
+                    cls="header"
+                ),
+                *children,
+                Div(id="modal-container"),
+                cls="container"
+            )
+        )
+
+    def landing_page():
+        return Div(
+            H1("Track Your Progress"),
+            P("Create beautiful progress bars for life goals, countdowns, streaks, and more. Stay motivated with visual tracking."),
+            Div(
+                A("Get Started", href="/signup", cls="btn btn-primary"),
+                A("Login", href="/login", cls="btn btn-secondary"),
+                cls="landing-actions"
+            ),
+            Div(
+                Div(
+                    Div("⏳", cls="feature-icon"),
+                    H3("Countdowns"),
+                    P("Track days until important events like vacations, deadlines, or celebrations."),
+                    cls="feature"
+                ),
+                Div(
+                    Div("🔥", cls="feature-icon"),
+                    H3("Streaks"),
+                    P("Build habits by tracking consecutive days. Watch your streak grow!"),
+                    cls="feature"
+                ),
+                Div(
+                    Div("📊", cls="feature-icon"),
+                    H3("Counters"),
+                    P("Count anything with +/- buttons. Books read, workouts done, you name it."),
+                    cls="feature"
+                ),
+                Div(
+                    Div("🎯", cls="feature-icon"),
+                    H3("Goals"),
+                    P("Set numeric targets and track your progress toward achieving them."),
+                    cls="feature"
+                ),
+                cls="features"
+            ),
+            cls="landing"
+        )
+
+    def auth_form(mode, error=None):
+        is_signup = mode == "signup"
+        return Div(
+            Div(
+                H2("Create Account" if is_signup else "Welcome Back"),
+                Div(error, cls="error-msg") if error else None,
+                Form(
+                    Div(
+                        Label("Username", for_="username"),
+                        Input(name="username", id="username", placeholder="johndoe", required=True, autocomplete="username"),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Label("Email", for_="email"),
+                        Input(name="email", id="email", type="email", placeholder="john@example.com", required=True),
+                        cls="form-group"
+                    ) if is_signup else None,
+                    Div(
+                        Label("Password", for_="password"),
+                        Input(name="password", id="password", type="password", placeholder="••••••••", required=True, autocomplete="current-password"),
+                        cls="form-group"
+                    ),
+                    Button("Sign Up" if is_signup else "Login", type="submit", cls="btn btn-primary", style="width: 100%;"),
+                    action=f"/{mode}",
+                    method="post"
+                ),
+                Div(
+                    "Already have an account? " if is_signup else "Don't have an account? ",
+                    A("Login" if is_signup else "Sign Up", href="/login" if is_signup else "/signup"),
+                    cls="auth-footer"
+                ),
+                cls="auth-card"
+            ),
+            cls="auth-container"
+        )
+
+    def dashboard_page(user, bars):
+        return Div(
+            Div(
+                H1("My Progress"),
+                Button("+ Add Bar", cls="btn-add", hx_get="/bars/new", hx_target="#modal-container"),
+                cls="dashboard-header"
+            ),
+            bar_grid(bars)
+        )
+
+    def bar_grid(bars):
+        if not bars:
+            return Div(
+                Div(
+                    P("No progress bars yet. Create your first one!"),
+                    Button("+ Add Bar", cls="btn btn-primary", hx_get="/bars/new", hx_target="#modal-container"),
+                    cls="empty-state"
+                ),
+                id="bar-grid",
+                cls="bar-grid"
+            )
+        return Div(
+            *[bar_card(bar) for bar in bars],
+            id="bar-grid",
+            cls="bar-grid"
+        )
+
+    def bar_card(bar):
+        bar_type = bar["type"]
+        color = bar.get("color", "#10b981")
+        
+        content = []
+        
+        # Header with name and actions
+        content.append(
+            Div(
+                Span(bar["name"], cls="bar-name"),
+                Div(
+                    Button("✎", hx_get=f"/bars/{bar['id']}/edit", hx_target="#modal-container", title="Edit"),
+                    Button("×", cls="delete", hx_delete=f"/bars/{bar['id']}", hx_target="#bar-grid",
+                           hx_swap="outerHTML", hx_confirm="Delete this progress bar?", title="Delete"),
+                    cls="bar-actions"
+                ),
+                cls="bar-header"
+            )
+        )
+        
+        if bar_type == "countdown":
+            days = bar["days_remaining"]
+            progress = bar.get("progress", 0)
+            target_date = bar.get("target_date", "")
+            
+            # Format date nicely
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(target_date, "%Y-%m-%d")
+                formatted_date = dt.strftime("%b %d, %Y")
+            except:
+                formatted_date = target_date
+            
+            content.extend([
+                Div(
+                    Div(
+                        Div(style=f"width: {progress}%; background: {color};", cls="progress-fill progress-glow"),
+                        cls="progress-bar"
+                    ),
+                    cls="progress-container"
+                ),
+                Div(f"{days}", cls="bar-metric", style=f"color: {color};"),
+                Div("days remaining" if days != 1 else "day remaining", cls="bar-label"),
+                Div(f"Target: {formatted_date}", cls="bar-sub")
+            ])
+        
+        elif bar_type == "countup":
+            days = bar["days_elapsed"]
+            start_date = bar.get("start_date", "")
+            
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(start_date, "%Y-%m-%d")
+                formatted_date = dt.strftime("%b %d, %Y")
+            except:
+                formatted_date = start_date
+            
+            content.extend([
+                Div(f"🔥 {days}", cls="bar-metric", style=f"color: {color};"),
+                Div("day streak" if days == 1 else "days streak", cls="bar-label"),
+                Div(f"Started: {formatted_date}", cls="bar-sub"),
+                Button("Reset Streak", cls="btn-reset",
+                       hx_post=f"/bars/{bar['id']}/reset",
+                       hx_target=f"#bar-{bar['id']}",
+                       hx_swap="outerHTML",
+                       hx_confirm="Reset streak to 0?")
+            ])
+        
+        elif bar_type == "counter":
+            current = bar.get("current_value", 0)
+            target = bar.get("target_value")
+            
+            if target:
+                progress = bar.get("progress", 0)
+                content.extend([
+                    Div(
+                        Div(
+                            Div(style=f"width: {progress}%; background: {color};", cls="progress-fill progress-glow"),
+                            cls="progress-bar"
+                        ),
+                        cls="progress-container"
+                    ),
+                    Div(f"{current}/{target}", cls="bar-metric", style=f"color: {color};"),
+                    Div(f"{progress:.0f}% complete", cls="bar-label"),
+                ])
+            else:
+                content.extend([
+                    Div(str(current), cls="bar-metric", style=f"color: {color};"),
+                    Div("count", cls="bar-label"),
+                ])
+            
+            content.append(
+                Div(
+                    Button("−", cls="btn-counter", hx_post=f"/bars/{bar['id']}/decrement",
+                           hx_target=f"#bar-{bar['id']}", hx_swap="outerHTML"),
+                    Button("+", cls="btn-counter", hx_post=f"/bars/{bar['id']}/increment",
+                           hx_target=f"#bar-{bar['id']}", hx_swap="outerHTML"),
+                    cls="counter-actions"
+                )
+            )
+        
+        elif bar_type == "goal":
+            current = bar.get("current_value", 0)
+            target = bar.get("target_value", 100)
+            progress = bar.get("progress", 0)
+            
+            content.extend([
+                Div(
+                    Div(
+                        Div(style=f"width: {progress}%; background: {color};", cls="progress-fill progress-glow"),
+                        cls="progress-bar"
+                    ),
+                    cls="progress-container"
+                ),
+                Div(f"{current}/{target}", cls="bar-metric", style=f"color: {color};"),
+                Div(f"{progress:.0f}% complete", cls="bar-label"),
+                Div(
+                    Button("−", cls="btn-counter", hx_post=f"/bars/{bar['id']}/decrement",
+                           hx_target=f"#bar-{bar['id']}", hx_swap="outerHTML"),
+                    Button("+", cls="btn-counter", hx_post=f"/bars/{bar['id']}/increment",
+                           hx_target=f"#bar-{bar['id']}", hx_swap="outerHTML"),
+                    cls="counter-actions"
+                )
+            ])
+        
+        return Div(*content, id=f"bar-{bar['id']}", cls="bar-card")
+
+    def create_bar_modal():
+        return Div(
+            Div(
+                H3("Create Progress Bar"),
+                Form(
+                    Div(
+                        Label("Name", for_="name"),
+                        Input(name="name", id="name", placeholder="Days until vacation", required=True),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Label("Type"),
+                        Div(
+                            Button(Div("⏳", cls="type-icon"), Div("Countdown", cls="type-name"),
+                                   type="button", cls="type-option selected", data_type="countdown",
+                                   onclick="selectType(this, 'countdown')"),
+                            Button(Div("🔥", cls="type-icon"), Div("Streak", cls="type-name"),
+                                   type="button", cls="type-option", data_type="countup",
+                                   onclick="selectType(this, 'countup')"),
+                            Button(Div("📊", cls="type-icon"), Div("Counter", cls="type-name"),
+                                   type="button", cls="type-option", data_type="counter",
+                                   onclick="selectType(this, 'counter')"),
+                            Button(Div("🎯", cls="type-icon"), Div("Goal", cls="type-name"),
+                                   type="button", cls="type-option", data_type="goal",
+                                   onclick="selectType(this, 'goal')"),
+                            cls="type-options"
+                        ),
+                        Input(type="hidden", name="bar_type", id="bar_type", value="countdown"),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Label("Color"),
+                        Div(
+                            *[Div(style=f"background: {c[0]};", cls=f"color-option{'selected' if i==0 else ''}", 
+                                  data_color=c[0], onclick=f"selectColor(this, '{c[0]}')") 
+                              for i, c in enumerate(COLORS)],
+                            cls="color-options"
+                        ),
+                        Input(type="hidden", name="color", id="color", value="#10b981"),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Label("Target Date", for_="target_date"),
+                        Input(name="target_date", id="target_date", type="date", required=True),
+                        cls="form-group conditional-field",
+                        id="countdown-fields"
+                    ),
+                    Div(
+                        Label("Target Value (optional)", for_="target_value"),
+                        Input(name="target_value", id="target_value", type="number", placeholder="50", min="1"),
+                        cls="form-group conditional-field",
+                        id="counter-fields",
+                        style="display: none;"
+                    ),
+                    Div(
+                        Label("Target Value", for_="goal_target"),
+                        Input(name="target_value", id="goal_target", type="number", placeholder="100", min="1", required=True),
+                        cls="form-group conditional-field",
+                        id="goal-fields",
+                        style="display: none;"
+                    ),
+                    Div(
+                        Button("Cancel", type="button", cls="btn btn-cancel", hx_post="/modal/close", hx_target="#modal-container"),
+                        Button("Create", type="submit", cls="btn btn-primary"),
+                        cls="modal-actions"
+                    ),
+                    hx_post="/bars",
+                    hx_target="#bar-grid",
+                    hx_swap="outerHTML"
+                ),
+                Script("""
+                    function selectType(el, type) {
+                        document.querySelectorAll('.type-option').forEach(o => o.classList.remove('selected'));
+                        el.classList.add('selected');
+                        document.getElementById('bar_type').value = type;
+                        
+                        // Show/hide conditional fields
+                        document.getElementById('countdown-fields').style.display = type === 'countdown' ? 'block' : 'none';
+                        document.getElementById('counter-fields').style.display = type === 'counter' ? 'block' : 'none';
+                        document.getElementById('goal-fields').style.display = type === 'goal' ? 'block' : 'none';
+                        
+                        // Update required attributes
+                        document.getElementById('target_date').required = type === 'countdown';
+                        document.getElementById('goal_target').required = type === 'goal';
+                    }
+                    function selectColor(el, color) {
+                        document.querySelectorAll('.color-option').forEach(o => o.classList.remove('selected'));
+                        el.classList.add('selected');
+                        document.getElementById('color').value = color;
+                    }
+                """),
+                cls="modal"
+            ),
+            cls="modal-overlay",
+            onclick="if(event.target === this) htmx.ajax('POST', '/modal/close', {target: '#modal-container'})"
+        )
+
+    def edit_bar_modal(bar):
+        bar_type = bar["type"]
+        return Div(
+            Div(
+                H3("Edit Progress Bar"),
+                Form(
+                    Div(
+                        Label("Name", for_="edit_name"),
+                        Input(name="name", id="edit_name", value=bar["name"], required=True),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Label("Color"),
+                        Div(
+                            *[Div(style=f"background: {c[0]};", 
+                                  cls=f"color-option{'selected' if bar.get('color', '#10b981') == c[0] else ''}", 
+                                  data_color=c[0], onclick=f"selectEditColor(this, '{c[0]}')") 
+                              for c in COLORS],
+                            cls="color-options"
+                        ),
+                        Input(type="hidden", name="color", id="edit_color", value=bar.get("color", "#10b981")),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Label("Target Date", for_="edit_target_date"),
+                        Input(name="target_date", id="edit_target_date", type="date", value=bar.get("target_date", "")),
+                        cls="form-group"
+                    ) if bar_type == "countdown" else None,
+                    Div(
+                        Label("Current Value", for_="edit_current"),
+                        Input(name="current_value", id="edit_current", type="number", value=str(bar.get("current_value", 0))),
+                        cls="form-group"
+                    ) if bar_type in ("counter", "goal") else None,
+                    Div(
+                        Label("Target Value", for_="edit_target"),
+                        Input(name="target_value", id="edit_target", type="number", value=str(bar.get("target_value", "") or "")),
+                        cls="form-group"
+                    ) if bar_type in ("counter", "goal") else None,
+                    Div(
+                        Button("Cancel", type="button", cls="btn btn-cancel", hx_post="/modal/close", hx_target="#modal-container"),
+                        Button("Save", type="submit", cls="btn btn-primary"),
+                        cls="modal-actions"
+                    ),
+                    hx_put=f"/bars/{bar['id']}",
+                    hx_target="#bar-grid",
+                    hx_swap="outerHTML"
+                ),
+                Script("""
+                    function selectEditColor(el, color) {
+                        document.querySelectorAll('.color-option').forEach(o => o.classList.remove('selected'));
+                        el.classList.add('selected');
+                        document.getElementById('edit_color').value = color;
+                    }
+                """),
+                cls="modal"
+            ),
+            cls="modal-overlay",
+            onclick="if(event.target === this) htmx.ajax('POST', '/modal/close', {target: '#modal-container'})"
+        )
+
+  models.py: |
+    """Data models and validation helpers for Progress Bars app."""
+    from dataclasses import dataclass
+    from typing import Optional
+    from datetime import datetime
+
+    BAR_TYPES = ["countdown", "countup", "counter", "goal"]
+
+    @dataclass
+    class User:
+        id: str
+        username: str
+        email: str
+        created_at: Optional[datetime] = None
+
+    @dataclass
+    class ProgressBar:
+        id: str
+        user_id: str
+        name: str
+        type: str  # countdown, countup, counter, goal
+        color: str
+        created_at: datetime
+        target_date: Optional[str] = None  # For countdown
+        start_date: Optional[str] = None   # For countup
+        current_value: Optional[int] = None  # For counter/goal
+        target_value: Optional[int] = None   # For counter/goal
+
+    def validate_bar_type(bar_type: str) -> bool:
+        return bar_type in BAR_TYPES

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-tenant platform where users write FastAPI code in a web editor and deploy it as isolated Kubernetes applications. Each user app runs as a separate pod with code mounted via ConfigMap.
+Multi-tenant platform where users write FastAPI/FastHTML code in a web editor and deploy it as isolated Kubernetes applications. Each user app runs as a separate pod with code mounted via ConfigMap. Supports single-file and multi-file projects.
 
 **Live at**: `platform.gofastapi.xyz` (prod) | `platform.gatorlunch.com` (homelab)
 
@@ -56,23 +56,48 @@ docker build -t fastapi-platform-runner:latest .
 - **frontend/**: React + Monaco Editor for code editing, deployed via nginx
 - **runner/**: Pre-built container that executes user code from ConfigMap
 
-### Key Backend Files
-- `main.py` - API endpoints, code validation (AST-based), auth
-- `deployment.py` - Creates K8s resources: ConfigMap, Deployment, Service, Traefik Middleware/IngressRoute
-- `cleanup.py` - Deletes inactive apps after 24 hours
-- `seed_templates.py` - Populates MongoDB with starter templates on startup
+### Key Backend Structure
+```
+backend/
+├── main.py              # FastAPI app setup, lifespan events
+├── routers/             # API route handlers
+│   ├── apps.py          # App CRUD, deploy, validate
+│   ├── auth.py          # Login, signup, user management
+│   ├── templates.py     # Template CRUD (global + user)
+│   ├── admin.py         # Admin endpoints
+│   └── metrics.py       # App metrics/health endpoints
+├── deployment/          # K8s resource creation
+│   ├── apps.py          # App deployments (ConfigMap, Deployment, Service, Ingress)
+│   ├── viewer.py        # MongoDB viewer deployments
+│   └── helpers.py       # Shared utilities
+├── background/          # Background tasks
+│   ├── cleanup.py       # Inactive app cleanup
+│   └── health_checks.py # App health polling
+├── templates/           # Template system
+│   ├── loader.py        # YAML template loading with Pydantic validation
+│   └── global/          # 8 built-in templates as individual YAML files
+├── migrations/          # Startup migrations
+└── seed_templates.py    # Loads templates from YAML files on startup
+```
 
 ### Deployment Flow
 When user deploys code:
 1. Backend validates code (AST parsing, import whitelist, security checks)
-2. Creates ConfigMap with user code
-3. Creates Deployment using runner image (mounts ConfigMap at `/app/user_code.py`)
+2. Creates ConfigMap with user code (single file or multiple files)
+3. Creates Deployment using runner image (mounts ConfigMap at `/code`)
 4. Creates Service (port 80 → 8000)
-5. Creates Traefik Middleware (strips path prefix) + IngressRoute
-6. App accessible at `platform.gofastapi.xyz/user/{user_id}/app/{app_id}`
+5. Creates Traefik IngressRoute with subdomain routing
+6. App accessible at `https://app-{app_id}.{APP_DOMAIN}` (e.g., `app-abc123.gatorlunch.com`)
 
 ### Runner Execution
-`runner/entrypoint.py` reads `/app/user_code.py`, executes in isolated namespace, extracts `app = FastAPI()` instance, adds `/health` endpoint if missing, starts uvicorn.
+`runner/entrypoint.py`:
+1. Reads code from `CODE_PATH` env var (default `/code/main.py`)
+2. Adds `/code` to `sys.path` for multi-file imports
+3. Executes code in isolated namespace
+4. Extracts `app = FastAPI()` or `app = FastHTML()` instance
+5. Wraps with `/health` endpoint for K8s probes
+6. Patches Swagger UI for relative OpenAPI paths
+7. Starts uvicorn server
 
 ## Cluster Requirements
 
@@ -87,7 +112,8 @@ See `docs/PLATFORM_CONTRACT.md` for full details:
 - `SECRET_KEY` - JWT signing key
 - `PLATFORM_NAMESPACE` - Target namespace (default: `fastapi-platform`)
 - `RUNNER_IMAGE` - Runner container image
-- `BASE_DOMAIN` - Platform domain (default: `platform.gofastapi.xyz`)
+- `BASE_DOMAIN` - Platform UI domain (default: `platform.gofastapi.xyz`)
+- `APP_DOMAIN` - User app subdomain base (default: `gatorlunch.com`, apps at `app-{id}.{APP_DOMAIN}`)
 - `INACTIVITY_THRESHOLD_HOURS` - App cleanup threshold (default: 24)
 
 ## CI/CD
@@ -112,7 +138,111 @@ kubectl logs -n fastapi-platform deployment/backend
 
 ## Code Validation Rules
 
-User code is validated in `backend/main.py`:
-- Must contain `app = FastAPI()`
-- Allowed imports: fastapi, pydantic, typing, datetime, json, math, random, uuid, re, collections, itertools, functools, enum, dataclasses, decimal, hashlib, base64, urllib.parse, html, http
-- Blocked patterns: `__import__`, `eval`, `exec`, `open`, `socket`, `subprocess`, `os.system`
+User code is validated in `backend/routers/apps.py`:
+- Must define an `app` instance (FastAPI or FastHTML)
+- Allowed imports configurable by admin (defaults include: fastapi, pydantic, typing, datetime, json, math, random, uuid, re, collections, itertools, functools, enum, dataclasses, decimal, hashlib, base64, urllib.parse, html, http, pymongo, jinja2, os, fasthtml, python_multipart)
+- Blocked patterns: `__import__`, `eval`, `exec`, `compile`, `open`, `socket`, `subprocess`, `os.system`, `os.popen`, `os.spawn`
+
+### Multi-file Mode
+- Max 10 files per app
+- Max 100KB per file, 500KB total
+- Entrypoint must be `app.py`
+- All files validated for imports and blocked patterns
+
+## Templates
+
+Templates are stored as individual YAML files in `backend/templates/global/`:
+- Loaded on startup via `seed_templates.py`
+- Validated with Pydantic before insertion
+- Support single-file (`code` field) and multi-file (`files` dict) formats
+- Users can save their own templates via "Save as Template" in editor
+
+### Direct MongoDB Template Management (for Claude Code)
+
+Templates can be managed directly via MongoDB, bypassing the YAML → commit → CI → restart cycle. This enables instant template creation and modification.
+
+**List templates:**
+```bash
+kubectl exec -n fastapi-platform deployment/backend -- python3 -c "
+from pymongo import MongoClient
+import os
+client = MongoClient(os.environ['MONGO_URI'])
+db = client.get_default_database()
+for t in db.templates.find({}, {'name':1,'mode':1,'framework':1,'is_global':1}).sort('name',1):
+    scope = 'G' if t.get('is_global') else 'U'
+    print(f'[{scope}] {t.get(\"mode\",\"single\"):5} {(t.get(\"framework\") or \"-\"):8} {t[\"name\"]}')
+"
+```
+
+**Get template details:**
+```bash
+kubectl exec -n fastapi-platform deployment/backend -- python3 -c "
+import json
+from pymongo import MongoClient
+import os
+client = MongoClient(os.environ['MONGO_URI'])
+db = client.get_default_database()
+t = db.templates.find_one({'name': 'TEMPLATE_NAME'})
+t['_id'] = str(t['_id'])
+print(json.dumps(t, indent=2, default=str))
+"
+```
+
+**Update a file in a multi-file template:**
+```bash
+kubectl exec -n fastapi-platform deployment/backend -- python3 -c "
+from pymongo import MongoClient
+import os
+client = MongoClient(os.environ['MONGO_URI'])
+db = client.get_default_database()
+db.templates.update_one(
+    {'name': 'TEMPLATE_NAME'},
+    {'\$set': {'files.FILENAME.py': '''NEW_CODE_HERE'''}}
+)
+print('Updated')
+"
+```
+
+**Create a new template:**
+```bash
+kubectl exec -n fastapi-platform deployment/backend -- python3 -c "
+from pymongo import MongoClient
+from datetime import datetime
+import os
+client = MongoClient(os.environ['MONGO_URI'])
+db = client.get_default_database()
+db.templates.insert_one({
+    'name': 'My Template',
+    'description': 'Description here',
+    'mode': 'multi',  # or 'single'
+    'framework': 'fasthtml',  # or 'fastapi' or None
+    'entrypoint': 'app.py',
+    'files': {
+        'app.py': '''from fasthtml.common import *
+app, rt = fast_app()
+@rt(\"/\")
+def home(): return H1(\"Hello\")
+''',
+    },
+    'is_global': True,
+    'complexity': 'simple',
+    'tags': ['example'],
+    'created_at': datetime.utcnow()
+})
+print('Created')
+"
+```
+
+**Template schema:**
+- `name` (str): Unique template name
+- `description` (str): Template description
+- `mode` (str): "single" or "multi"
+- `framework` (str|null): "fastapi", "fasthtml", or null
+- `code` (str|null): Code for single-file templates
+- `files` (dict|null): {filename: code} for multi-file templates
+- `entrypoint` (str): Entry file for multi-file (default: "app.py")
+- `is_global` (bool): True for system templates, False for user templates
+- `complexity` (str): "simple", "medium", or "complex"
+- `tags` (list): List of tag strings
+- `created_at` (datetime): Creation timestamp
+- `user_id` (str|null): Owner for user templates

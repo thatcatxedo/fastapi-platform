@@ -1,0 +1,547 @@
+name: "Enhanced Kanban (Drag & Drop)"
+description: "A modern Kanban board with full drag-and-drop support between columns. Built with SortableJS and FastHTML for a smooth, interactive experience. Includes OOB updates and a sleek dark theme."
+complexity: complex
+tags:
+  - multifile
+  - fasthtml
+  - htmx
+  - sortablejs
+  - drag-and-drop
+  - mongodb
+mode: multi
+framework: fasthtml
+entrypoint: app.py
+files:
+  app.py: |
+    from fasthtml.common import *
+    from routes import setup_routes
+
+    # Include SortableJS and custom initialization script
+    # We use a script that initializes SortableJS on all elements with the 'sortable-column' class
+    # and handles moving items between columns via a group.
+    sortable_init = Script("""
+        function initSortable() {
+            document.querySelectorAll('.sortable-column').forEach(el => {
+                if (el.sortable) el.sortable.destroy();
+                el.sortable = new Sortable(el, {
+                    group: 'kanban',
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    dragClass: 'sortable-drag',
+                    onEnd: (evt) => {
+                        if (evt.from !== evt.to) {
+                            const taskId = evt.item.getAttribute('data-id');
+                            const newStatus = evt.to.getAttribute('data-status');
+                            // Trigger the move via HTMX
+                            htmx.ajax('POST', `/tasks/${taskId}/move`, {
+                                values: { status: newStatus },
+                                target: '#kanban-board',
+                                swap: 'outerHTML'
+                            });
+                        }
+                    }
+                });
+            });
+        }
+        document.addEventListener('DOMContentLoaded', initSortable);
+        // Re-initialize after HTMX swaps
+        document.addEventListener('htmx:afterSwap', (e) => {
+            if (e.detail.target.id === 'kanban-board' || e.detail.target.classList.contains('sortable-column')) {
+                initSortable();
+            }
+        });
+    """)
+
+    app, rt = fast_app(
+        hdrs=(
+            SortableJS(),
+            sortable_init,
+            Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"),
+        )
+    )
+    setup_routes(rt)
+
+    @rt("/health")
+    def health():
+        return {"status": "ok"}
+
+  routes.py: |
+    from fasthtml.common import *
+    from services import (
+        get_tasks_by_status, create_task, update_task_status,
+        update_task, delete_task, get_task
+    )
+    from components import (
+        page_layout, kanban_board, task_card, add_task_form,
+        edit_task_modal, empty_column
+    )
+
+    def setup_routes(rt):
+        @rt("/")
+        def home():
+            todo = get_tasks_by_status("todo")
+            in_progress = get_tasks_by_status("in_progress")
+            done = get_tasks_by_status("done")
+            return page_layout(
+                kanban_board(todo, in_progress, done),
+                add_task_form()
+            )
+
+        @rt("/tasks", methods=["POST"])
+        def create(title: str, description: str = ""):
+            create_task(title, description)
+            # Re-render the whole board to ensure all columns are up to date
+            todo = get_tasks_by_status("todo")
+            in_progress = get_tasks_by_status("in_progress")
+            done = get_tasks_by_status("done")
+            return kanban_board(todo, in_progress, done)
+
+        @rt("/tasks/{task_id}/move", methods=["POST"])
+        def move(task_id: str, status: str):
+            update_task_status(task_id, status)
+            
+            # Re-render the whole board for simplicity and to ensure sync
+            todo = get_tasks_by_status("todo")
+            in_progress = get_tasks_by_status("in_progress")
+            done = get_tasks_by_status("done")
+            return kanban_board(todo, in_progress, done)
+
+        @rt("/tasks/{task_id}/edit")
+        def edit_form(task_id: str):
+            task = get_task(task_id)
+            if not task: return ""
+            return edit_task_modal(task)
+
+        @rt("/tasks/{task_id}", methods=["PUT"])
+        def update(task_id: str, title: str, description: str = ""):
+            update_task(task_id, title, description)
+            # Re-render board to show updates
+            todo = get_tasks_by_status("todo")
+            in_progress = get_tasks_by_status("in_progress")
+            done = get_tasks_by_status("done")
+            return (
+                kanban_board(todo, in_progress, done),
+                Div(id="modal-container", hx_swap_oob="true")
+            )
+
+        @rt("/tasks/{task_id}", methods=["DELETE"])
+        def delete(task_id: str):
+            delete_task(task_id)
+            todo = get_tasks_by_status("todo")
+            in_progress = get_tasks_by_status("in_progress")
+            done = get_tasks_by_status("done")
+            return kanban_board(todo, in_progress, done)
+
+        @rt("/modal/close", methods=["POST"])
+        def close_modal():
+            return Div(id="modal-container")
+
+  services.py: |
+    from pymongo import MongoClient
+    from bson import ObjectId
+    from datetime import datetime
+    import os
+
+    # Connect to MongoDB using the platform-provided URI
+    client = MongoClient(os.environ.get("PLATFORM_MONGO_URI", "mongodb://localhost:27017"))
+    db = client.get_default_database()
+    tasks = db.kanban_tasks
+
+    tasks.create_index("status")
+
+    def get_tasks_by_status(status: str):
+        cursor = tasks.find({"status": status}).sort("created_at", -1)
+        return [
+            {
+                "id": str(t["_id"]),
+                "title": t["title"],
+                "description": t.get("description", ""),
+                "status": t["status"],
+                "created_at": t["created_at"],
+                "updated_at": t.get("updated_at")
+            }
+            for t in cursor
+        ]
+
+    def get_task(task_id: str):
+        try:
+            t = tasks.find_one({"_id": ObjectId(task_id)})
+            if t:
+                return {
+                    "id": str(t["_id"]),
+                    "title": t["title"],
+                    "description": t.get("description", ""),
+                    "status": t["status"],
+                    "created_at": t["created_at"]
+                }
+        except: return None
+        return None
+
+    def create_task(title: str, description: str = ""):
+        tasks.insert_one({
+            "title": title,
+            "description": description,
+            "status": "todo",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
+
+    def update_task_status(task_id: str, status: str):
+        if status not in ["todo", "in_progress", "done"]: return
+        tasks.update_one(
+            {"_id": ObjectId(task_id)},
+            {"$set": {"status": status, "updated_at": datetime.utcnow()}}
+        )
+
+    def update_task(task_id: str, title: str, description: str = ""):
+        tasks.update_one(
+            {"_id": ObjectId(task_id)},
+            {"$set": {
+                "title": title,
+                "description": description,
+                "updated_at": datetime.utcnow()
+            }}
+        )
+
+    def delete_task(task_id: str):
+        tasks.delete_one({"_id": ObjectId(task_id)})
+
+  components.py: |
+    from fasthtml.common import *
+
+    STYLES = Style("""
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #0f172a;
+            min-height: 100vh;
+            color: #f1f5f9;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 40px 20px; }
+        header { margin-bottom: 40px; text-align: center; }
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #60a5fa, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .subtitle { color: #94a3b8; font-size: 1.1rem; }
+        
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 40px;
+            align-items: start;
+        }
+        .column {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            min-height: 500px;
+        }
+        .column-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #334155;
+        }
+        .column-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.875rem;
+            letter-spacing: 0.05em;
+        }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot-todo { background: #60a5fa; box-shadow: 0 0 8px #60a5fa; }
+        .dot-in-progress { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+        .dot-done { background: #34d399; box-shadow: 0 0 8px #34d399; }
+        
+        .count {
+            background: #334155;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+        
+        /* Drag and Drop area */
+        .sortable-column {
+            flex: 1;
+            min-height: 100px;
+        }
+        
+        .task-card {
+            background: #334155;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid #475569;
+            cursor: grab;
+            transition: transform 0.1s, box-shadow 0.1s, border-color 0.2s;
+            position: relative;
+        }
+        .task-card:active { cursor: grabbing; }
+        .task-card:hover { border-color: #6366f1; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        
+        .sortable-ghost { opacity: 0.4; border: 2px dashed #6366f1; background: #1e293b; }
+        .sortable-drag { opacity: 0; }
+        
+        .task-title { font-weight: 600; margin-bottom: 8px; font-size: 1rem; color: #f8fafc; }
+        .task-desc { font-size: 0.875rem; color: #94a3b8; margin-bottom: 16px; line-height: 1.5; }
+        
+        .task-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+        
+        .actions { display: flex; gap: 8px; }
+        .action-btn {
+            background: none;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .action-btn:hover { background: #475569; color: #f8fafc; }
+        .btn-delete:hover { color: #f87171; }
+        
+        .add-section {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 600px;
+            margin: 0 auto;
+            border: 1px solid #334155;
+        }
+        .add-section h2 { margin-bottom: 20px; font-size: 1.25rem; }
+        
+        .form-control { margin-bottom: 20px; }
+        .form-control label { display: block; margin-bottom: 8px; font-size: 0.875rem; color: #94a3b8; }
+        .form-control input, .form-control textarea {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px;
+            color: #f1f5f9;
+            font-family: inherit;
+        }
+        .form-control input:focus, .form-control textarea:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+        
+        .btn-primary {
+            background: #6366f1;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s;
+        }
+        .btn-primary:hover { background: #4f46e5; }
+        
+        .empty-msg {
+            padding: 40px 20px;
+            text-align: center;
+            color: #475569;
+            font-style: italic;
+            font-size: 0.875rem;
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: #1e293b;
+            padding: 32px;
+            border-radius: 20px;
+            width: 100%;
+            max-width: 500px;
+            border: 1px solid #475569;
+        }
+        .modal-header { margin-bottom: 24px; }
+        .modal-footer { display: flex; gap: 12px; margin-top: 24px; }
+        .btn-secondary {
+            background: #334155;
+            color: #f1f5f9;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            flex: 1;
+        }
+        
+        @media (max-width: 1024px) {
+            .board { grid-template-columns: 1fr; }
+            .column { min-height: auto; }
+        }
+    """)
+
+    def page_layout(*children):
+        return (
+            Title("Pro Kanban | FastHTML"),
+            STYLES,
+            Div(
+                Header(
+                    H1("Pro Kanban"),
+                    P("Drag and drop tasks between stages", cls="subtitle")
+                ),
+                *children,
+                Div(id="modal-container"),
+                cls="container"
+            )
+        )
+
+    def kanban_board(todo, in_progress, done):
+        return Div(
+            column("To Do", "todo", todo, "dot-todo"),
+            column("In Progress", "in_progress", in_progress, "dot-in-progress"),
+            column("Done", "done", done, "dot-done"),
+            id="kanban-board",
+            cls="board"
+        )
+
+    def column(title, status, tasks, dot_cls):
+        return Div(
+            Div(
+                Div(Div(cls=f"dot {dot_cls}"), H2(title, cls="column-title"), cls="column-title"),
+                Span(str(len(tasks)), cls="count"),
+                cls="column-header"
+            ),
+            # The 'sortable-column' class and 'data-status' are used by the SortableJS script
+            Div(
+                *[task_card(t) for t in tasks] if tasks else [empty_column()],
+                cls="sortable-column",
+                id=f"col-{status}",
+                data_status=status
+            ),
+            cls=f"column col-{status}"
+        )
+
+    def empty_column():
+        return Div("No tasks here", cls="empty-msg")
+
+    def task_card(task):
+        return Div(
+            Div(task["title"], cls="task-title"),
+            Div(task["description"], cls="task-desc") if task.get("description") else None,
+            Div(
+                Span(task["created_at"].strftime("%b %d")),
+                Div(
+                    # Edit button
+                    Button(
+                        "✎", 
+                        cls="action-btn",
+                        hx_get=f"/tasks/{task['id']}/edit",
+                        hx_target="#modal-container"
+                    ),
+                    # Delete button
+                    Button(
+                        "✕", 
+                        cls="action-btn btn-delete",
+                        hx_delete=f"/tasks/{task['id']}",
+                        hx_target="#kanban-board",
+                        hx_confirm="Are you sure?"
+                    ),
+                    cls="actions"
+                ),
+                cls="task-footer"
+            ),
+            cls="task-card",
+            data_id=task["id"] # Used by SortableJS to identify the task
+        )
+
+    def add_task_form():
+        return Div(
+            H2("Add New Task"),
+            Form(
+                Div(
+                    Label("Task Title", _for="title"),
+                    Input(name="title", id="title", placeholder="What needs to be done?", required=True),
+                    cls="form-control"
+                ),
+                Div(
+                    Label("Description", _for="desc"),
+                    Textarea(name="description", id="desc", placeholder="Add more details...", rows=3),
+                    cls="form-control"
+                ),
+                Button("Create Task", type="submit", cls="btn-primary"),
+                hx_post="/tasks",
+                hx_target="#kanban-board",
+                hx_on__after_request="this.reset()"
+            ),
+            cls="add-section"
+        )
+
+    def edit_task_modal(task):
+        return Div(
+            Div(
+                Div(H2("Edit Task"), cls="modal-header"),
+                Form(
+                    Div(
+                        Label("Title", _for="edit-title"),
+                        Input(name="title", id="edit-title", value=task["title"], required=True),
+                        cls="form-control"
+                    ),
+                    Div(
+                        Label("Description", _for="edit-desc"),
+                        Textarea(name="description", id="edit-desc", rows=4)(task.get("description", "")),
+                        cls="form-control"
+                    ),
+                    Div(
+                        Button("Cancel", type="button", cls="btn-secondary",
+                               hx_post="/modal/close", hx_target="#modal-container"),
+                        Button("Save Changes", type="submit", cls="btn-primary", style="flex: 2"),
+                        cls="modal-footer"
+                    ),
+                    hx_put=f"/tasks/{task['id']}",
+                    hx_target="#kanban-board"
+                ),
+                cls="modal"
+            ),
+            cls="modal-overlay"
+        )
+
+  models.py: |
+    from dataclasses import dataclass
+    from typing import Optional
+    from datetime import datetime
+
+    @dataclass
+    class Task:
+        id: str
+        title: str
+        status: str
+        created_at: datetime
+        description: Optional[str] = None
+        updated_at: Optional[datetime] = None
