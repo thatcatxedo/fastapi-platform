@@ -1,0 +1,560 @@
+name: "Kanban Board"
+description: "A full-featured personal Kanban board with drag-style task management. Move tasks between To Do, In Progress, and Done columns. Includes task descriptions, timestamps, and a polished dark theme UI."
+complexity: medium
+tags:
+  - multifile
+  - fasthtml
+  - htmx
+  - mongodb
+  - productivity
+  - fullstack
+mode: multi
+framework: fasthtml
+entrypoint: app.py
+files:
+  app.py: |
+    from fasthtml.common import *
+    from routes import setup_routes
+
+    app, rt = fast_app(
+        hdrs=(
+            Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"),
+        )
+    )
+    setup_routes(rt)
+
+    @rt("/health")
+    def health():
+        return {"status": "ok"}
+
+  routes.py: |
+    from fasthtml.common import *
+    from services import (
+        get_tasks_by_status, create_task, update_task_status,
+        update_task, delete_task, get_task
+    )
+    from components import (
+        page_layout, kanban_board, task_card, add_task_form,
+        edit_task_modal, empty_column
+    )
+
+    def setup_routes(rt):
+        @rt("/")
+        def home():
+            todo = get_tasks_by_status("todo")
+            in_progress = get_tasks_by_status("in_progress")
+            done = get_tasks_by_status("done")
+            return page_layout(
+                kanban_board(todo, in_progress, done),
+                add_task_form()
+            )
+
+        @rt("/tasks", methods=["POST"])
+        def create(title: str, description: str = ""):
+            create_task(title, description)
+            todo = get_tasks_by_status("todo")
+            return Div(
+                *[task_card(t) for t in todo] if todo else [empty_column("todo")],
+                id="todo-tasks"
+            )
+
+        @rt("/tasks/{task_id}/move", methods=["POST"])
+        def move(task_id: str, status: str):
+            old_task = get_task(task_id)
+            old_status = old_task["status"] if old_task else "todo"
+            update_task_status(task_id, status)
+
+            # Return updated columns for both old and new status
+            columns = {}
+            for s in set([old_status, status]):
+                tasks = get_tasks_by_status(s)
+                columns[s] = Div(
+                    *[task_card(t) for t in tasks] if tasks else [empty_column(s)],
+                    id=f"{s.replace('_', '-')}-tasks",
+                    hx_swap_oob="true" if s != status else None
+                )
+
+            # Primary response for the target column
+            target_tasks = get_tasks_by_status(status)
+            response = [Div(
+                *[task_card(t) for t in target_tasks] if target_tasks else [empty_column(status)],
+                id=f"{status.replace('_', '-')}-tasks"
+            )]
+
+            # Add OOB swap for source column if different
+            if old_status != status:
+                source_tasks = get_tasks_by_status(old_status)
+                response.append(Div(
+                    *[task_card(t) for t in source_tasks] if source_tasks else [empty_column(old_status)],
+                    id=f"{old_status.replace('_', '-')}-tasks",
+                    hx_swap_oob="true"
+                ))
+
+            return tuple(response)
+
+        @rt("/tasks/{task_id}/edit")
+        def edit_form(task_id: str):
+            task = get_task(task_id)
+            if not task:
+                return ""
+            return edit_task_modal(task)
+
+        @rt("/tasks/{task_id}", methods=["PUT"])
+        def update(task_id: str, title: str, description: str = ""):
+            task = get_task(task_id)
+            status = task["status"] if task else "todo"
+            update_task(task_id, title, description)
+            tasks = get_tasks_by_status(status)
+            return (
+                Div(
+                    *[task_card(t) for t in tasks] if tasks else [empty_column(status)],
+                    id=f"{status.replace('_', '-')}-tasks"
+                ),
+                Div(id="modal-container", hx_swap_oob="true")
+            )
+
+        @rt("/tasks/{task_id}", methods=["DELETE"])
+        def delete(task_id: str):
+            task = get_task(task_id)
+            status = task["status"] if task else "todo"
+            delete_task(task_id)
+            tasks = get_tasks_by_status(status)
+            return Div(
+                *[task_card(t) for t in tasks] if tasks else [empty_column(status)],
+                id=f"{status.replace('_', '-')}-tasks"
+            )
+
+        @rt("/modal/close", methods=["POST"])
+        def close_modal():
+            return Div(id="modal-container")
+
+  services.py: |
+    from pymongo import MongoClient
+    from bson import ObjectId
+    from datetime import datetime
+    import os
+
+    client = MongoClient(os.environ["PLATFORM_MONGO_URI"])
+    db = client.get_default_database()
+    tasks = db.kanban_tasks
+
+    # Ensure index for efficient status queries
+    tasks.create_index("status")
+
+    def get_tasks_by_status(status: str):
+        cursor = tasks.find({"status": status}).sort("created_at", -1)
+        return [
+            {
+                "id": str(t["_id"]),
+                "title": t["title"],
+                "description": t.get("description", ""),
+                "status": t["status"],
+                "created_at": t["created_at"],
+                "updated_at": t.get("updated_at")
+            }
+            for t in cursor
+        ]
+
+    def get_task(task_id: str):
+        try:
+            t = tasks.find_one({"_id": ObjectId(task_id)})
+            if t:
+                return {
+                    "id": str(t["_id"]),
+                    "title": t["title"],
+                    "description": t.get("description", ""),
+                    "status": t["status"],
+                    "created_at": t["created_at"]
+                }
+        except:
+            pass
+        return None
+
+    def create_task(title: str, description: str = ""):
+        tasks.insert_one({
+            "title": title,
+            "description": description,
+            "status": "todo",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
+
+    def update_task_status(task_id: str, status: str):
+        valid = ["todo", "in_progress", "done"]
+        if status not in valid:
+            return
+        tasks.update_one(
+            {"_id": ObjectId(task_id)},
+            {"$set": {"status": status, "updated_at": datetime.utcnow()}}
+        )
+
+    def update_task(task_id: str, title: str, description: str = ""):
+        tasks.update_one(
+            {"_id": ObjectId(task_id)},
+            {"$set": {
+                "title": title,
+                "description": description,
+                "updated_at": datetime.utcnow()
+            }}
+        )
+
+    def delete_task(task_id: str):
+        tasks.delete_one({"_id": ObjectId(task_id)})
+
+  components.py: |
+    from fasthtml.common import *
+
+    STYLES = Style("""
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e4e4e7;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        h1 {
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 30px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .column {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 16px;
+            min-height: 400px;
+        }
+        .column-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+        }
+        .column-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .count {
+            background: rgba(255,255,255,0.1);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+        }
+        .todo .column-header { color: #60a5fa; }
+        .in-progress .column-header { color: #fbbf24; }
+        .done .column-header { color: #34d399; }
+        .task-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.2s;
+        }
+        .task-card:hover {
+            background: rgba(255,255,255,0.12);
+            transform: translateY(-2px);
+        }
+        .task-title {
+            font-weight: 500;
+            margin-bottom: 6px;
+            word-break: break-word;
+        }
+        .task-desc {
+            font-size: 0.85rem;
+            color: #a1a1aa;
+            margin-bottom: 10px;
+            word-break: break-word;
+        }
+        .task-meta {
+            font-size: 0.7rem;
+            color: #71717a;
+            margin-bottom: 10px;
+        }
+        .task-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .btn-move {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+        }
+        .btn-move:hover { background: rgba(99, 102, 241, 0.4); }
+        .btn-edit {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+        .btn-edit:hover { background: rgba(251, 191, 36, 0.4); }
+        .btn-delete {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+        .btn-delete:hover { background: rgba(239, 68, 68, 0.4); }
+        .add-form {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .add-form h3 {
+            margin-bottom: 16px;
+            font-weight: 500;
+        }
+        .form-group { margin-bottom: 14px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+            color: #a1a1aa;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            background: rgba(0,0,0,0.2);
+            color: #e4e4e7;
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            color: white;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        .btn-submit:hover { opacity: 0.9; }
+        .empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: #71717a;
+            font-size: 0.85rem;
+        }
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: #1e1e2e;
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 450px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .modal h3 { margin-bottom: 20px; }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .modal-actions .btn { flex: 1; padding: 10px; }
+        .btn-cancel {
+            background: rgba(255,255,255,0.1);
+            color: #a1a1aa;
+        }
+        @media (max-width: 900px) {
+            .board { grid-template-columns: 1fr; }
+            .column { min-height: 200px; }
+        }
+    """)
+
+    def page_layout(*children):
+        return (
+            Title("Kanban Board"),
+            STYLES,
+            Div(
+                H1("Kanban Board"),
+                *children,
+                Div(id="modal-container"),
+                cls="container"
+            )
+        )
+
+    def kanban_board(todo, in_progress, done):
+        return Div(
+            column("To Do", "todo", todo),
+            column("In Progress", "in-progress", in_progress, status_key="in_progress"),
+            column("Done", "done", done),
+            cls="board"
+        )
+
+    def column(title, css_class, tasks, status_key=None):
+        if status_key is None:
+            status_key = css_class.replace("-", "_")
+        return Div(
+            Div(
+                H2(title),
+                Span(str(len(tasks)), cls="count"),
+                cls="column-header"
+            ),
+            Div(
+                *[task_card(t) for t in tasks] if tasks else [empty_column(status_key)],
+                id=f"{css_class}-tasks"
+            ),
+            cls=f"column {css_class}"
+        )
+
+    def empty_column(status):
+        messages = {
+            "todo": "No tasks yet. Add one below!",
+            "in_progress": "Move tasks here when you start working",
+            "done": "Completed tasks will appear here"
+        }
+        return Div(messages.get(status, "No tasks"), cls="empty")
+
+    def task_card(task):
+        task_id = task["id"]
+        status = task["status"]
+        created = task["created_at"].strftime("%b %d, %H:%M")
+
+        move_buttons = []
+        if status != "todo":
+            move_buttons.append(
+                Button("← To Do", cls="btn btn-move",
+                    hx_post=f"/tasks/{task_id}/move?status=todo",
+                    hx_target=f"#{status.replace('_', '-')}-tasks",
+                    hx_swap="outerHTML")
+            )
+        if status != "in_progress":
+            move_buttons.append(
+                Button("In Progress" if status == "todo" else "← In Progress",
+                    cls="btn btn-move",
+                    hx_post=f"/tasks/{task_id}/move?status=in_progress",
+                    hx_target=f"#{status.replace('_', '-')}-tasks",
+                    hx_swap="outerHTML")
+            )
+        if status != "done":
+            move_buttons.append(
+                Button("Done →", cls="btn btn-move",
+                    hx_post=f"/tasks/{task_id}/move?status=done",
+                    hx_target=f"#{status.replace('_', '-')}-tasks",
+                    hx_swap="outerHTML")
+            )
+
+        return Div(
+            Div(task["title"], cls="task-title"),
+            Div(task["description"], cls="task-desc") if task.get("description") else None,
+            Div(f"Created: {created}", cls="task-meta"),
+            Div(
+                *move_buttons,
+                Button("Edit", cls="btn btn-edit",
+                    hx_get=f"/tasks/{task_id}/edit",
+                    hx_target="#modal-container"),
+                Button("Delete", cls="btn btn-delete",
+                    hx_delete=f"/tasks/{task_id}",
+                    hx_target=f"#{status.replace('_', '-')}-tasks",
+                    hx_swap="outerHTML",
+                    hx_confirm="Delete this task?"),
+                cls="task-actions"
+            ),
+            cls="task-card"
+        )
+
+    def add_task_form():
+        return Div(
+            H3("Add New Task"),
+            Form(
+                Div(
+                    Label("Title", for_="title"),
+                    Input(name="title", id="title", placeholder="What needs to be done?", required=True),
+                    cls="form-group"
+                ),
+                Div(
+                    Label("Description (optional)", for_="description"),
+                    Textarea(name="description", id="description",
+                        placeholder="Add details...", rows=2),
+                    cls="form-group"
+                ),
+                Button("Add Task", type="submit", cls="btn btn-submit"),
+                hx_post="/tasks",
+                hx_target="#todo-tasks",
+                hx_swap="outerHTML",
+                hx_on__after_request="this.reset()"
+            ),
+            cls="add-form"
+        )
+
+    def edit_task_modal(task):
+        return Div(
+            Div(
+                H3("Edit Task"),
+                Form(
+                    Div(
+                        Label("Title", for_="edit-title"),
+                        Input(name="title", id="edit-title", value=task["title"], required=True),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Label("Description", for_="edit-description"),
+                        Textarea(name="description", id="edit-description", rows=3)(
+                            task.get("description", "")
+                        ),
+                        cls="form-group"
+                    ),
+                    Div(
+                        Button("Cancel", type="button", cls="btn btn-cancel",
+                            hx_post="/modal/close", hx_target="#modal-container"),
+                        Button("Save Changes", type="submit", cls="btn btn-submit"),
+                        cls="modal-actions"
+                    ),
+                    hx_put=f"/tasks/{task['id']}",
+                    hx_target=f"#{task['status'].replace('_', '-')}-tasks",
+                    hx_swap="outerHTML"
+                ),
+                cls="modal"
+            ),
+            cls="modal-overlay",
+            hx_on__click="if(event.target === this) htmx.ajax('POST', '/modal/close', {target: '#modal-container'})"
+        )
+
+  models.py: |
+    """Data models for the Kanban board."""
+    from dataclasses import dataclass
+    from typing import Optional
+    from datetime import datetime
+
+    @dataclass
+    class Task:
+        id: str
+        title: str
+        status: str  # "todo", "in_progress", "done"
+        created_at: datetime
+        description: Optional[str] = None
+        updated_at: Optional[datetime] = None

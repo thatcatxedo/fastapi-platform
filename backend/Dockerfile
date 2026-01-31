@@ -12,6 +12,7 @@ COPY routers/ ./routers/
 COPY deployment/ ./deployment/
 COPY background/ ./background/
 COPY migrations/ ./migrations/
+COPY templates/ ./templates/
 
 EXPOSE 8000
 
