@@ -133,6 +133,8 @@ async def create_database(
         )
 
     # Create database entry
+    # Auto-set as default if this is the user's first database
+    is_first_database = len(databases) == 0
     now = datetime.utcnow()
     new_db = {
         "id": database_id,
@@ -140,20 +142,24 @@ async def create_database(
         "description": data.description,
         "mongo_password_encrypted": encrypt_password(mongo_password),
         "created_at": now,
-        "is_default": False
+        "is_default": is_first_database
     }
 
-    # Add to user's databases
+    # Add to user's databases (and set as default if first)
+    update_ops = {"$push": {"databases": new_db}}
+    if is_first_database:
+        update_ops["$set"] = {"default_database_id": database_id}
+
     await users_collection.update_one(
         {"_id": user["_id"]},
-        {"$push": {"databases": new_db}}
+        update_ops
     )
 
     return DatabaseResponse(
         id=database_id,
         name=data.name,
         description=data.description,
-        is_default=False,
+        is_default=is_first_database,
         mongo_database=get_mongo_db_name(user_id, database_id),
         created_at=format_datetime(now),
         total_collections=0,
