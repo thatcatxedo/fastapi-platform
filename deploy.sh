@@ -112,8 +112,8 @@ log_info "Getting GHCR authentication token..."
 
 # Check if current token has read:packages scope
 TOKEN_SCOPES=$(gh auth status 2>&1 | grep "Token scopes" || echo "")
-if ! echo "$TOKEN_SCOPES" | grep -q "read:packages"; then
-    log_warn "GitHub token missing read:packages scope"
+if ! echo "$TOKEN_SCOPES" | grep -qE "(read|write):packages"; then
+    log_warn "GitHub token missing read:packages or write:packages scope"
     log_info "Requesting additional scope (you may be prompted to authenticate)..."
     gh auth refresh -s read:packages
 fi
