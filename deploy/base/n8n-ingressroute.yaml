@@ -1,0 +1,14 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: n8n-local
+  namespace: fastapi-platform
+spec:
+  entryPoints:
+    - web  # HTTP only, local access
+  routes:
+    - match: Host(`n8n.localhost`)
+      kind: Rule
+      services:
+        - name: n8n
+          port: 5678

@@ -24,6 +24,10 @@ app_metrics_collection = db.app_metrics
 app_errors_collection = db.app_errors
 app_health_checks_collection = db.app_health_checks
 
+# Chat collections
+conversations_collection = db.conversations
+messages_collection = db.messages
+
 
 async def setup_ttl_indexes():
     """

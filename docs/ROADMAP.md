@@ -265,16 +265,54 @@ Small improvements that can be shipped quickly between major phases:
   - Add `python-jose` to runner image
 - [ ] Platform auth helper module (optional)
 
-## Phase 5 — LLM Assistant
+## Phase 5 — LLM Assistant (in progress)
 
 **Goal:** Use AI to accelerate scaffolding and iteration.
 
-**Architecture:** n8n as integration hub with BYOK (Bring Your Own Key) model.
+**Architecture:** n8n as integration hub with tool-use for platform operations.
 
-- [ ] n8n deployment in cluster
-  - Self-hosted n8n alongside platform
-  - Webhook endpoints for AI workflows
-  - Credential management for user API keys
+### Completed
+
+- [x] n8n deployment in cluster
+  - Self-hosted n8n alongside platform in `fastapi-platform` namespace
+  - Kubernetes manifests: `deploy/base/n8n-*.yaml`
+  - No PVC (ephemeral data) - workflows sync from git on startup
+  - IngressRoute at `n8n.gatorlunch.com` (requires local cluster access)
+- [x] Backend chat infrastructure
+  - `backend/chat/` module with tools, service, models
+  - `backend/routers/chat.py` - SSE streaming endpoints
+  - `POST /api/chat/conversations` - Create conversation
+  - `GET /api/chat/conversations` - List conversations
+  - `POST /api/chat/conversations/{id}/messages` - Send message (SSE stream)
+  - MongoDB collections: `conversations`, `messages`
+- [x] Chat tools for Claude
+  - `create_app` - Create and deploy apps (single-file and multi-file)
+  - `update_app` - Update app code and redeploy
+  - `get_app` - Get app details including code
+  - `get_app_logs` - Fetch pod logs for debugging
+  - `list_apps` - List user's apps
+  - `delete_app` - Delete an app
+  - `list_databases` - List user's MongoDB databases
+- [x] n8n workflow management
+  - `scripts/n8n-helper.sh` - CLI for workflow operations
+  - Workflow JSON stored in `n8n-workflows/chat-workflow.json`
+  - Auto-sync via helper script (uses n8n REST API)
+
+### In Progress
+
+- [x] n8n webhook workflow
+  - Chat workflow calls Anthropic API with messages + tools
+  - Returns structured response for backend to parse
+  - Accessible at `http://n8n.localhost` (local only)
+  - Env var access enabled via `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`
+- [x] Frontend chat UI
+  - Chat page with conversation sidebar (`/chat`, `/chat/:id`)
+  - Message list with SSE streaming
+  - Tool execution status display
+  - Files: `frontend/src/pages/Chat/`, `frontend/src/hooks/useChat.js`
+
+### TODO
+
 - [ ] BYOK (Bring Your Own Key)
   - Users provide their own LLM API keys
   - Keys stored encrypted in user settings
@@ -284,11 +322,6 @@ Small improvements that can be shipped quickly between major phases:
   - GPT-4 (OpenAI)
   - Other providers via n8n integrations
   - User selects preferred provider in settings
-- [ ] Core AI features
-  - Generate app from description
-  - Fix validation errors with AI
-  - Explain why code failed
-  - Inline assistant panel (chat)
 - [ ] Platform-aware prompts
   - System prompt includes all constraints (allowed imports, forbidden patterns)
   - MongoDB integration patterns
@@ -299,6 +332,19 @@ Small improvements that can be shipped quickly between major phases:
   - Diff view for suggested changes
   - Accept/reject workflow
   - Rate limiting per user
+
+### Known Issues
+
+- ~~n8n uses emptyDir (no persistence)~~ **Fixed**: Now uses PVC for persistence
+- n8n requires one-time UI setup after fresh deploy (create owner, generate API key)
+  - Data persists across restarts with PVC
+  - License auto-activates via `N8N_LICENSE_ACTIVATION_KEY` env var
+- n8n accessible at `http://n8n.localhost` (requires `/etc/hosts` entry)
+
+### Future Improvements
+
+- **Move n8n to cluster-foundation** — n8n is infrastructure, not app-specific.
+  Would allow sharing across multiple applications and simplify platform deploy.
 
 ## Phase 6 — Monetization & Limits
 

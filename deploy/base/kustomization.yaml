@@ -9,3 +9,9 @@ resources:
   - frontend-deployment.yaml
   - frontend-service.yaml
   - ingressroutes.yaml
+  - n8n-pvc.yaml
+  - n8n-startup-configmap.yaml
+  - n8n-workflow-configmap.yaml
+  - n8n-deployment.yaml
+  - n8n-service.yaml
+  - n8n-ingressroute.yaml

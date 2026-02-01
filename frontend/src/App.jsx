@@ -7,6 +7,7 @@ import Database from './pages/Database'
 import Editor from './pages/Editor/index'
 import AppView from './pages/AppView'
 import Admin from './pages/Admin'
+import Chat from './pages/Chat/index'
 import Sidebar from './components/Sidebar'
 import { ToastProvider } from './components/Toast'
 import { AppsProvider } from './context/AppsContext'
@@ -81,6 +82,8 @@ function App() {
                   <Route path="/editor/:appId" element={<Editor user={user} />} />
                   <Route path="/dashboard" element={<Dashboard user={user} />} />
                   <Route path="/database" element={<Database user={user} />} />
+                  <Route path="/chat" element={<Chat user={user} />} />
+                  <Route path="/chat/:conversationId" element={<Chat user={user} />} />
                   <Route path="/app/:appId" element={<AppView user={user} />} />
                   <Route path="/admin" element={user.is_admin ? <Admin user={user} /> : <Navigate to="/editor" replace />} />
                   <Route path="/login" element={<Navigate to="/editor" replace />} />

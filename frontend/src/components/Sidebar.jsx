@@ -62,15 +62,22 @@ function Sidebar({ user, onLogout }) {
       {/* Navigation Links */}
       <div className="sidebar-section sidebar-nav">
         <div className="sidebar-section-title">Navigation</div>
-        <NavLink 
-          to="/dashboard" 
+        <NavLink
+          to="/dashboard"
           className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
         >
           <span className="sidebar-nav-icon">📊</span>
           Dashboard
         </NavLink>
-        <NavLink 
-          to="/database" 
+        <NavLink
+          to="/chat"
+          className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
+        >
+          <span className="sidebar-nav-icon">💬</span>
+          AI Chat
+        </NavLink>
+        <NavLink
+          to="/database"
           className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
         >
           <span className="sidebar-nav-icon">🗄️</span>
