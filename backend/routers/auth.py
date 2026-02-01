@@ -77,11 +77,18 @@ async def signup(user_data: UserSignup):
 
     # Create per-user MongoDB credentials for default database
     try:
-        from mongo_users import create_mongo_user_for_database, encrypt_password
+        from mongo_users import (
+            create_mongo_user_for_database, create_viewer_user, encrypt_password
+        )
+
+        user_id = str(result.inserted_id)
 
         mongo_username, mongo_password = await create_mongo_user_for_database(
-            client, str(result.inserted_id), "default"
+            client, user_id, "default"
         )
+
+        # Create viewer user with access to all databases (just default for now)
+        viewer_password = await create_viewer_user(client, user_id, ["default"])
 
         # Create default database entry
         default_db_entry = {
@@ -93,12 +100,15 @@ async def signup(user_data: UserSignup):
             "description": "Default database"
         }
 
-        # Store database entry in user document
+        # Store database entry and viewer password in user document
         await users_collection.update_one(
             {"_id": result.inserted_id},
-            {"$set": {"databases": [default_db_entry]}}
+            {"$set": {
+                "databases": [default_db_entry],
+                "viewer_password_encrypted": encrypt_password(viewer_password)
+            }}
         )
-        logger.info(f"Created MongoDB user {mongo_username} for platform user {result.inserted_id}")
+        logger.info(f"Created MongoDB user {mongo_username} and viewer for platform user {user_id}")
     except Exception as e:
         # Log error but don't fail signup - user can still use platform without MongoDB access
         logger.error(f"Failed to create MongoDB user for {result.inserted_id}: {e}")

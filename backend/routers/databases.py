@@ -15,6 +15,7 @@ from database import users_collection, apps_collection, client
 from mongo_users import (
     create_mongo_user_for_database,
     delete_mongo_user_for_database,
+    update_viewer_user_roles,
     encrypt_password,
     decrypt_password,
     get_mongo_db_name,
@@ -154,6 +155,13 @@ async def create_database(
         {"_id": user["_id"]},
         update_ops
     )
+
+    # Update viewer user to include new database
+    try:
+        all_db_ids = [db["id"] for db in databases] + [database_id]
+        await update_viewer_user_roles(client, user_id, all_db_ids)
+    except Exception as e:
+        logger.warning(f"Failed to update viewer user roles: {e}")
 
     return DatabaseResponse(
         id=database_id,
@@ -305,12 +313,64 @@ async def delete_database(database_id: str, user: dict = Depends(get_current_use
         {"$pull": {"databases": {"id": database_id}}}
     )
 
+    # Update viewer user to remove deleted database
+    try:
+        remaining_db_ids = [db["id"] for db in databases if db["id"] != database_id]
+        await update_viewer_user_roles(client, user_id, remaining_db_ids)
+    except Exception as e:
+        logger.warning(f"Failed to update viewer user roles: {e}")
+
     return {"success": True, "message": "Database deleted"}
 
 
+@router.post("/viewer", response_model=ViewerResponse)
+async def launch_viewer_all_databases(user: dict = Depends(get_current_user)):
+    """Launch MongoDB viewer with access to all user's databases."""
+    user_id = str(user["_id"])
+    databases = user.get("databases", [])
+
+    if not databases:
+        raise HTTPException(
+            status_code=400,
+            detail=error_payload("NO_DATABASES", "No databases found for this user")
+        )
+
+    # Generate viewer credentials (basic auth for mongo-express)
+    viewer_username = "admin"
+    viewer_password = generate_mongo_password()[:12]
+
+    try:
+        from deployment.viewer import create_mongo_viewer_resources, get_mongo_viewer_status
+
+        # Create/update viewer resources with all-database access
+        await create_mongo_viewer_resources(
+            user_id, user, viewer_username, viewer_password,
+            use_viewer_user=True  # Use viewer user instead of database-specific user
+        )
+
+        # Get status
+        status = await get_mongo_viewer_status(user_id)
+        viewer_url = f"http://mongo-{user_id}.{APP_DOMAIN}"
+
+        return ViewerResponse(
+            url=viewer_url,
+            username=viewer_username,
+            password=viewer_password,
+            password_provided=True,
+            ready=status.get("ready", False) if status else False,
+            pod_status=status.get("pod_status") if status else None
+        )
+    except Exception as e:
+        logger.error(f"Failed to launch viewer: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=error_payload("VIEWER_LAUNCH_FAILED", str(e))
+        )
+
+
 @router.post("/{database_id}/viewer", response_model=ViewerResponse)
-async def launch_viewer(database_id: str, user: dict = Depends(get_current_user)):
-    """Launch MongoDB viewer for a specific database."""
+async def launch_viewer_single_database(database_id: str, user: dict = Depends(get_current_user)):
+    """Launch MongoDB viewer for a specific database (deprecated - use /viewer instead)."""
     user_id = str(user["_id"])
     databases = user.get("databases", [])
 
@@ -325,10 +385,10 @@ async def launch_viewer(database_id: str, user: dict = Depends(get_current_user)
     try:
         from deployment.viewer import create_mongo_viewer_resources, get_mongo_viewer_status
 
-        # Create/update viewer resources with this database
+        # Create/update viewer resources - use all-database access for better UX
         await create_mongo_viewer_resources(
             user_id, user, viewer_username, viewer_password,
-            database_id=database_id
+            use_viewer_user=True  # Use viewer user for all-database access
         )
 
         # Get status

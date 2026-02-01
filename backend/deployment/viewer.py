@@ -10,6 +10,7 @@ from typing import Optional
 from config import PLATFORM_NAMESPACE, APP_DOMAIN
 from .k8s_client import apps_v1, core_v1, custom_objects
 from .helpers import get_user_mongo_uri_secure, create_or_update_resource, create_or_update_custom_object
+from mongo_users import build_viewer_mongo_uri, decrypt_password
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +36,46 @@ async def create_mongo_viewer_deployment(
     user: dict,
     username: str,
     password: str,
-    database_id: str = None
+    database_id: str = None,
+    use_viewer_user: bool = False
 ):
-    """Create Deployment for per-user MongoDB viewer"""
+    """Create Deployment for per-user MongoDB viewer
+
+    Args:
+        user_id: Platform user ID
+        user: User document
+        username: Basic auth username for web UI
+        password: Basic auth password for web UI
+        database_id: Specific database to connect to (deprecated)
+        use_viewer_user: If True, use viewer user with access to all databases
+    """
     if not apps_v1:
         raise Exception("Kubernetes client not available")
 
     deployment_name = get_viewer_name(user_id)
 
-    # Using subdomain routing - no base URL prefix needed
-    # Use per-user MongoDB credentials for secure access
-    mongo_uri = get_user_mongo_uri_secure(user_id, user, database_id=database_id)
+    # Determine MongoDB connection
+    if use_viewer_user:
+        # Use viewer user with access to all databases
+        viewer_password_encrypted = user.get("viewer_password_encrypted")
+        if not viewer_password_encrypted:
+            raise Exception("Viewer user not configured for this user")
+        viewer_mongo_password = decrypt_password(viewer_password_encrypted)
+        # Get default database ID (first database the user has)
+        databases = user.get("databases", [])
+        default_db_id = databases[0]["id"] if databases else "default"
+        mongo_uri = build_viewer_mongo_uri(user_id, viewer_mongo_password, default_db_id)
+        # Disable admin mode - admin mode requires access to list ALL databases
+        # User can still browse their database and manually navigate to others via URL
+        enable_admin = "false"
+    else:
+        # Use database-specific credentials (legacy)
+        mongo_uri = get_user_mongo_uri_secure(user_id, user, database_id=database_id)
+        enable_admin = "false"
+
     env_list = [
         k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_URL", value=mongo_uri),
-        k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_ENABLE_ADMIN", value="false"),
+        k8s_client.V1EnvVar(name="ME_CONFIG_MONGODB_ENABLE_ADMIN", value=enable_admin),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_USERNAME", value=username),
         k8s_client.V1EnvVar(name="ME_CONFIG_BASICAUTH_PASSWORD", value=password),
     ]
@@ -175,11 +202,25 @@ async def create_mongo_viewer_resources(
     user: dict,
     username: str,
     password: str,
-    database_id: str = None
+    database_id: str = None,
+    use_viewer_user: bool = False
 ):
-    """Create all Kubernetes resources for a per-user MongoDB viewer"""
+    """Create all Kubernetes resources for a per-user MongoDB viewer
+
+    Args:
+        user_id: Platform user ID
+        user: User document
+        username: Basic auth username for web UI
+        password: Basic auth password for web UI
+        database_id: Specific database to connect to (deprecated)
+        use_viewer_user: If True, use viewer user with access to all databases
+    """
     try:
-        await create_mongo_viewer_deployment(user_id, user, username, password, database_id=database_id)
+        await create_mongo_viewer_deployment(
+            user_id, user, username, password,
+            database_id=database_id,
+            use_viewer_user=use_viewer_user
+        )
         await create_mongo_viewer_service(user_id)
         await create_mongo_viewer_ingress_route(user_id)
     except Exception as e:

@@ -302,6 +302,172 @@ def build_user_mongo_uri(user_id: str, password: str, database_id: str = None) -
     ))
 
 
+# =============================================================================
+# Viewer User Management
+# =============================================================================
+
+def get_viewer_username(user_id: str) -> str:
+    """Get MongoDB username for a platform user's viewer."""
+    return f"viewer_{user_id}"
+
+
+async def create_viewer_user(
+    client: AsyncIOMotorClient,
+    user_id: str,
+    database_ids: list
+) -> str:
+    """
+    Create a viewer MongoDB user with access to all user's databases.
+
+    Args:
+        client: MongoDB client with admin privileges
+        user_id: Platform user ID
+        database_ids: List of database IDs to grant access to
+
+    Returns:
+        Generated password for the viewer user
+    """
+    username = get_viewer_username(user_id)
+    password = generate_mongo_password()
+
+    # readWrite on each user database
+    roles = [
+        {"role": "readWrite", "db": get_mongo_db_name(user_id, db_id)}
+        for db_id in database_ids
+    ]
+    # Additional roles for mongo-express admin mode:
+    # - clusterMonitor: allows serverStatus command
+    # - read on admin: allows listCollections on admin database
+    roles.append({"role": "clusterMonitor", "db": "admin"})
+    roles.append({"role": "read", "db": "admin"})
+
+    admin_db = client.admin
+
+    try:
+        users_info = await admin_db.command("usersInfo", username)
+        if users_info.get("users"):
+            logger.info(f"Viewer user {username} already exists, updating")
+            await admin_db.command("updateUser", username, pwd=password, roles=roles)
+        else:
+            await admin_db.command("createUser", username, pwd=password, roles=roles)
+            logger.info(f"Created viewer user {username} with access to {len(roles)} databases")
+    except Exception as e:
+        logger.error(f"Failed to create viewer user {username}: {e}")
+        raise
+
+    return password
+
+
+async def update_viewer_user_roles(
+    client: AsyncIOMotorClient,
+    user_id: str,
+    database_ids: list
+) -> None:
+    """
+    Update viewer user's roles when databases are added/removed.
+
+    Args:
+        client: MongoDB client with admin privileges
+        user_id: Platform user ID
+        database_ids: Current list of database IDs to grant access to
+    """
+    username = get_viewer_username(user_id)
+
+    # readWrite on each user database
+    roles = [
+        {"role": "readWrite", "db": get_mongo_db_name(user_id, db_id)}
+        for db_id in database_ids
+    ]
+    # Additional roles for mongo-express admin mode:
+    # - clusterMonitor: allows serverStatus command
+    # - read on admin: allows listCollections on admin database
+    roles.append({"role": "clusterMonitor", "db": "admin"})
+    roles.append({"role": "read", "db": "admin"})
+
+    admin_db = client.admin
+
+    try:
+        users_info = await admin_db.command("usersInfo", username)
+        if users_info.get("users"):
+            await admin_db.command("updateUser", username, roles=roles)
+            logger.info(f"Updated viewer user {username} roles to {len(roles)} databases")
+        else:
+            logger.warning(f"Viewer user {username} does not exist, cannot update roles")
+    except Exception as e:
+        logger.error(f"Failed to update viewer user {username} roles: {e}")
+        raise
+
+
+async def delete_viewer_user(client: AsyncIOMotorClient, user_id: str) -> bool:
+    """
+    Delete a viewer MongoDB user.
+
+    Args:
+        client: MongoDB client with admin privileges
+        user_id: Platform user ID
+
+    Returns:
+        True if user was deleted, False if user didn't exist
+    """
+    username = get_viewer_username(user_id)
+    admin_db = client.admin
+
+    try:
+        users_info = await admin_db.command("usersInfo", username)
+        if not users_info.get("users"):
+            logger.info(f"Viewer user {username} does not exist, nothing to delete")
+            return False
+
+        await admin_db.command("dropUser", username)
+        logger.info(f"Deleted viewer user {username}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to delete viewer user {username}: {e}")
+        raise
+
+
+def build_viewer_mongo_uri(user_id: str, password: str, default_database_id: str = "default") -> str:
+    """
+    Build a MongoDB connection string for the viewer user.
+
+    Args:
+        user_id: Platform user ID
+        password: Viewer user's MongoDB password (decrypted)
+        default_database_id: Database ID to connect to initially (user can navigate to others)
+
+    Returns:
+        MongoDB URI with a default database that the user has access to
+    """
+    base_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/fastapi_platform_db")
+    parsed = urlparse(base_uri)
+
+    username = get_viewer_username(user_id)
+
+    # URL-encode username and password for safety
+    encoded_username = quote_plus(username)
+    encoded_password = quote_plus(password)
+
+    # Determine host:port
+    hostname = parsed.hostname or "localhost"
+    port = parsed.port or 27017
+
+    # Build new URI with viewer credentials
+    netloc = f"{encoded_username}:{encoded_password}@{hostname}:{port}"
+
+    # Use a database the user has access to as the default
+    default_db_name = get_mongo_db_name(user_id, default_database_id)
+
+    # authSource=admin required since user is created in admin db
+    return urlunparse((
+        parsed.scheme,
+        netloc,
+        f"/{default_db_name}",  # Connect to user's database
+        "",
+        "authSource=admin",
+        ""
+    ))
+
+
 async def get_user_mongo_uri_from_db(
     client: AsyncIOMotorClient,
     user_id: str,

@@ -40,6 +40,17 @@ async def lifespan(app: FastAPI):
         startup_logger.error(f"Warning: MongoDB user migration failed: {e}")
         import traceback
         startup_logger.error(traceback.format_exc())
+
+    # Startup: migrate viewer users for all-database access
+    try:
+        from migrations.viewer_users import migrate_viewer_users
+        startup_logger.info("Starting viewer user migration...")
+        stats = await migrate_viewer_users(client)
+        startup_logger.info(f"Viewer user migration completed: {stats['created_viewer']} new, {stats['already_has_viewer']} existing, {stats['failed']} failed")
+    except Exception as e:
+        startup_logger.error(f"Warning: Viewer user migration failed: {e}")
+        import traceback
+        startup_logger.error(traceback.format_exc())
     
     # Startup: Set first user as admin if no admin exists
     try:
