@@ -1,3 +1,5 @@
+import DropdownMenu from '../../../components/DropdownMenu'
+
 function EditorHeader({
   isEditing,
   loading,
@@ -21,83 +23,70 @@ function EditorHeader({
   // Determine status indicator
   const getStatusIndicator = () => {
     if (!isEditing) return null
-    
+
     if (draftSaved) {
-      return { text: 'Saved', color: 'var(--success)' }
+      return { text: 'Saved', type: 'saved' }
     }
     if (hasLocalChanges) {
-      return { text: 'Unsaved changes', color: 'var(--warning, #f59e0b)' }
+      return { text: 'Unsaved changes', type: 'unsaved' }
     }
     if (hasUnpublishedChanges) {
-      return { text: 'Changes not deployed', color: 'var(--warning, #f59e0b)' }
+      return { text: 'Changes not deployed', type: 'unsaved' }
     }
-    return { text: 'Up to date', color: 'var(--success)' }
+    return { text: 'Up to date', type: 'saved' }
   }
 
   const status = getStatusIndicator()
 
+  // Build dropdown menu items
+  const dropdownItems = [
+    {
+      label: isEditing ? 'Load Template' : 'Browse Templates',
+      onClick: onBrowseTemplates
+    },
+    {
+      label: 'Save as Template',
+      onClick: onSaveAsTemplate
+    },
+    {
+      label: 'Version History',
+      onClick: onOpenHistory,
+      show: isEditing
+    },
+    {
+      type: 'separator',
+      show: isEditing
+    },
+    {
+      label: 'Delete App',
+      onClick: onDelete,
+      danger: true,
+      show: isEditing,
+      disabled: loading || validating
+    }
+  ]
+
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '1rem',
-      flexShrink: 0
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <h1 style={{ margin: 0 }}>
-          {isEditing ? 'Edit Application' : 'Create Application'}
-        </h1>
-        {!isEditing && (
-          <button
-            onClick={onBrowseTemplates}
-            className="btn btn-secondary"
-            style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
-          >
-            Browse Templates
-          </button>
-        )}
-        <button
-          onClick={onSaveAsTemplate}
-          className="btn btn-secondary"
-          style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
-          title="Save current code as a reusable template"
-        >
-          Save as Template
-        </button>
+    <div className="editor-header">
+      <div className="editor-header-left">
+        <h1>{isEditing ? 'Edit Application' : 'Create Application'}</h1>
         {status && (
-          <span style={{
-            fontSize: '0.75rem',
-            color: status.color,
-            padding: '0.25rem 0.5rem',
-            borderRadius: '0.25rem',
-            background: 'var(--bg-secondary, rgba(0,0,0,0.1))'
-          }}>
+          <div className={`editor-status editor-status-${status.type}`}>
+            <span className="editor-status-dot" />
             {status.text}
-          </span>
+          </div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+      <div className="editor-header-right">
         {isEditing && (
-          <>
-            <button
-              className="btn btn-secondary"
-              onClick={onSaveDraft}
-              disabled={savingDraft || loading || !hasLocalChanges}
-              style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
-              title="Save draft (Ctrl+S)"
-            >
-              {savingDraft ? 'Saving...' : 'Save Draft'}
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={onOpenHistory}
-              style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
-              title="View version history"
-            >
-              History
-            </button>
-          </>
+          <button
+            className="btn btn-secondary"
+            onClick={onSaveDraft}
+            disabled={savingDraft || loading || !hasLocalChanges}
+            title="Save draft (Ctrl+S)"
+          >
+            {savingDraft ? 'Saving...' : 'Save Draft'}
+          </button>
         )}
         <button
           className="btn btn-secondary"
@@ -110,7 +99,6 @@ function EditorHeader({
           className="btn btn-primary"
           onClick={onDeploy}
           disabled={loading || validating || isDeploying}
-          style={{ position: 'relative' }}
         >
           {loading || isDeploying ? (
             <>
@@ -118,25 +106,19 @@ function EditorHeader({
               {isEditing ? 'Updating...' : 'Deploying...'}
             </>
           ) : (
-            isEditing ? 'Update Application' : 'Deploy Application'
+            isEditing ? 'Update' : 'Deploy'
           )}
         </button>
+        <DropdownMenu
+          trigger={<>More <span style={{ fontSize: '0.7rem' }}>▼</span></>}
+          items={dropdownItems}
+        />
         <button
           className="btn btn-secondary"
           onClick={onCancel}
         >
-          Cancel
+          ← Back
         </button>
-        {isEditing && (
-          <button
-            className="btn btn-danger"
-            onClick={onDelete}
-            disabled={loading || validating}
-            style={{ padding: '0.5rem 1rem' }}
-          >
-            Delete App
-          </button>
-        )}
       </div>
     </div>
   )

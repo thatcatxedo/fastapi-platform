@@ -850,3 +850,144 @@ body {
   width: 100%;
   max-width: 400px;
 }
+
+/* Dropdown Menu */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  min-width: 180px;
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  animation: dropdown-fade-in 0.15s ease-out;
+}
+
+@keyframes dropdown-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--bg-lighter);
+}
+
+.dropdown-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dropdown-item:first-child {
+  border-radius: 0.375rem 0.375rem 0 0;
+}
+
+.dropdown-item:last-child {
+  border-radius: 0 0 0.375rem 0.375rem;
+}
+
+.dropdown-item-danger {
+  color: var(--error);
+}
+
+.dropdown-item-danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0.25rem 0;
+}
+
+/* Editor Header */
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+}
+
+.editor-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.editor-header-left h1 {
+  margin: 0;
+}
+
+.editor-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.editor-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+}
+
+.editor-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.editor-status-saved .editor-status-dot {
+  background: var(--success);
+}
+
+.editor-status-saved {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.editor-status-unsaved .editor-status-dot {
+  background: var(--warning);
+}
+
+.editor-status-unsaved {
+  color: var(--warning);
+  border-color: var(--warning);
+}
