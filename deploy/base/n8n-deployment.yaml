@@ -66,6 +66,19 @@ spec:
                   name: n8n-secrets
                   key: OPENAI_API_KEY
                   optional: true
+            # Chat model configuration (defaults to Haiku if not set)
+            - name: CHAT_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: CHAT_MODEL
+                  optional: true
+            - name: CHAT_MAX_TOKENS
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: CHAT_MAX_TOKENS
+                  optional: true
             # License key for enterprise features
             - name: N8N_LICENSE_ACTIVATION_KEY
               valueFrom:

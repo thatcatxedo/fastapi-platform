@@ -98,6 +98,70 @@
   overflow: hidden;
 }
 
+/* App context bar */
+.contextBar {
+  padding: 0.5rem 1rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--bg-light);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.appSelector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.appSelectorLabel {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.appSelectorSelect {
+  background: var(--bg-light);
+  border: 1px solid var(--bg-lighter);
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  min-width: 200px;
+  font-size: 0.9rem;
+}
+
+.appSelectorSelect:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.appSelectorClear {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.appSelectorClear:hover {
+  color: var(--text);
+  background: var(--bg-light);
+}
+
+.appSelectorLink {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 1rem;
+  padding: 0.25rem;
+}
+
+.appSelectorLink:hover {
+  color: var(--primary-light);
+}
+
 /* Message list */
 .messageList {
   flex: 1;
@@ -108,13 +172,7 @@
   gap: 1rem;
 }
 
-/* Message bubble */
-.message {
-  max-width: 80%;
-  padding: 1rem;
-  border-radius: 12px;
-  line-height: 1.5;
-}
+/* Message bubble - base styles are in SMOOTH MESSAGE ANIMATIONS section */
 
 .message.user {
   align-self: flex-end;
@@ -316,4 +374,255 @@
   justify-content: center;
   padding: 2rem;
   color: var(--text-muted);
+}
+
+/* ============================================
+   THINKING INDICATOR
+   ============================================ */
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+  align-self: flex-start;
+  max-width: 200px;
+  animation: slideIn 0.2s ease-out;
+}
+
+.thinkingDots {
+  display: flex;
+  gap: 4px;
+}
+
+.thinkingDots span {
+  width: 8px;
+  height: 8px;
+  background: var(--primary);
+  border-radius: 50%;
+  animation: bounce 1.4s ease-in-out infinite;
+}
+
+.thinkingDots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinkingDots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.thinkingText {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* ============================================
+   SMOOTH MESSAGE ANIMATIONS
+   ============================================ */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message {
+  max-width: 80%;
+  padding: 1rem;
+  border-radius: 12px;
+  line-height: 1.5;
+  animation: slideIn 0.2s ease-out;
+}
+
+/* ============================================
+   IMPROVED TOOL STATUS
+   ============================================ */
+.toolStatus {
+  background: linear-gradient(135deg, var(--bg) 0%, var(--bg-light) 100%);
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.5rem 0;
+  align-self: flex-start;
+  max-width: 80%;
+  animation: slideIn 0.2s ease-out;
+}
+
+.toolStatusHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.toolStatusIcon {
+  font-size: 1.1rem;
+}
+
+.toolStatusIcon.spinning {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+.toolStatusResult {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.toolStatusResult.success {
+  border-left: 3px solid var(--success);
+}
+
+.toolStatusResult.error {
+  border-left: 3px solid var(--error);
+}
+
+.toolStatusResult a {
+  color: var(--primary);
+  text-decoration: none;
+  margin-left: 0.5rem;
+}
+
+.toolStatusResult a:hover {
+  text-decoration: underline;
+}
+
+/* ============================================
+   SEND BUTTON STATES
+   ============================================ */
+.sendButton {
+  height: 48px;
+  padding: 0 1.5rem;
+  min-width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.15s ease;
+}
+
+.sendButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sendButton.sending {
+  background: var(--primary-dark, #4338ca);
+}
+
+.sendButtonSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ============================================
+   CONNECTION STATUS BAR
+   ============================================ */
+.statusBar {
+  padding: 0.35rem 1rem;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--bg-light);
+  background: var(--bg);
+  min-height: 28px;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.statusConnecting .statusDot {
+  background: var(--warning, #f59e0b);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.statusStreaming .statusDot {
+  background: var(--success);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.statusError .statusDot {
+  background: var(--error);
+}
+
+.statusIdle .statusDot {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.9);
+  }
+}
+
+.statusText {
+  color: var(--text-muted);
+}
+
+/* ============================================
+   SCROLL TO BOTTOM BUTTON
+   ============================================ */
+.scrollToBottom {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  animation: slideIn 0.2s ease-out;
+  z-index: 10;
+}
+
+.scrollToBottom:hover {
+  background: var(--primary-light, #6366f1);
+}
+
+/* Make message list container relative for scroll button */
+.messageListContainer {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }

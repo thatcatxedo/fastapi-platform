@@ -183,6 +183,13 @@ function EditorPage({ user }) {
     setTemplatesModalOpen(true)
   }
 
+  // Navigate to chat with this app selected
+  const handleChatAboutApp = () => {
+    if (appId) {
+      navigate(`/chat?app=${appId}`)
+    }
+  }
+
   // Show welcome screen for new apps
   if (showWelcome && !appId) {
     return (
@@ -227,6 +234,7 @@ function EditorPage({ user }) {
         onBrowseTemplates={() => setTemplatesModalOpen(true)}
         onOpenHistory={() => setHistoryModalOpen(true)}
         onSaveAsTemplate={() => setSaveTemplateModalOpen(true)}
+        onChatAboutApp={handleChatAboutApp}
       />
 
       <NotificationsPanel

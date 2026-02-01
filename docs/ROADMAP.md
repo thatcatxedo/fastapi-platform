@@ -322,16 +322,78 @@ Small improvements that can be shipped quickly between major phases:
   - GPT-4 (OpenAI)
   - Other providers via n8n integrations
   - User selects preferred provider in settings
-- [ ] Platform-aware prompts
+- [x] Platform-aware prompts
   - System prompt includes all constraints (allowed imports, forbidden patterns)
   - MongoDB integration patterns
   - Single-file vs multi-file mode awareness
-  - Template examples for context
+  - No uvicorn imports, platform handles server startup
 - [ ] Safety model
   - Validate all AI-generated code before showing to user
   - Diff view for suggested changes
   - Accept/reject workflow
   - Rate limiting per user
+
+### Phase 5a — Claude Agent Enhancements (in progress)
+
+**Goal:** Make Claude more effective at helping users by giving it better tools and context.
+
+**User Stories Addressed:**
+| Story | Current Gap | Solution |
+|-------|-------------|----------|
+| "Create an app like the todo template" | Claude can't see templates | `list_templates`, `get_template_code` tools |
+| "My app is broken, fix it" | Manual log reading | `diagnose_app` tool with auto-analysis |
+| "Add a /users endpoint" | Can't verify it works | `test_endpoint` tool |
+| "Will this code work?" | Must deploy to find out | `validate_code_only` tool |
+
+**Tools Added:**
+
+- [x] `list_templates` — List available app templates with descriptions
+  ```json
+  {"framework": "fastapi"}  // optional filter
+  ```
+  Returns: template names, descriptions, frameworks, complexity
+
+- [x] `get_template_code` — Fetch full template code as reference
+  ```json
+  {"template_name": "Todo API"}
+  ```
+  Returns: complete template code (single-file or multi-file)
+
+- [x] `validate_code_only` — Pre-check code without deploying
+  ```json
+  {"code": "...", "mode": "single"}
+  ```
+  Returns: validation result with errors if any
+
+- [x] `test_endpoint` — Make HTTP request to deployed app
+  ```json
+  {"app_id": "abc123", "method": "GET", "path": "/todos"}
+  ```
+  Returns: status code, response body, latency
+
+- [x] `diagnose_app` — Analyze app health and suggest fixes
+  ```json
+  {"app_id": "abc123"}
+  ```
+  Returns: pod status, restart count, recent errors, suggested fixes
+
+**Agentic Loop (implemented)**
+
+Claude can now autonomously iterate using multiple tool calls:
+```
+User: "Create a working todo API"
+Claude: create_app → test_endpoint(GET /todos) → 200 OK ✓
+Claude: test_endpoint(POST /todos) → 500 Error
+Claude: get_app_logs → "KeyError: 'title'"
+Claude: update_app(fixed) → test_endpoint → 201 Created ✓
+Claude: "Done! Your API is working at https://..."
+```
+
+Implementation:
+- Backend loops calling Claude until `stop_reason != "tool_use"`
+- After tool execution, builds continuation messages with `tool_result` blocks
+- Safety limit of 10 iterations to prevent runaway loops
+- System prompt instructs Claude on agentic workflows
 
 ### Known Issues
 

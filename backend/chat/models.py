@@ -1,19 +1,29 @@
 """
 Pydantic models for chat feature
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Any, Dict
 from datetime import datetime
+
+from config import CHAT_MAX_MESSAGE_LENGTH
 
 
 class ConversationCreate(BaseModel):
     """Request model for creating a conversation"""
-    title: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=200)
 
 
 class MessageCreate(BaseModel):
     """Request model for sending a message"""
-    content: str
+    content: str = Field(..., min_length=1, max_length=CHAT_MAX_MESSAGE_LENGTH)
+    app_id: Optional[str] = Field(None, max_length=50)
+
+    @field_validator('content')
+    @classmethod
+    def content_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Message content cannot be empty')
+        return v.strip()
 
 
 class ToolCall(BaseModel):

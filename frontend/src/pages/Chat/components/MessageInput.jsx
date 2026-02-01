@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import styles from '../Chat.module.css'
 
-export function MessageInput({ onSend, disabled }) {
+export function MessageInput({ onSend, disabled, isSending, isStreaming }) {
   const [value, setValue] = useState('')
 
   const handleSubmit = (e) => {
@@ -20,6 +20,22 @@ export function MessageInput({ onSend, disabled }) {
     }
   }
 
+  // Determine button state
+  const getButtonContent = () => {
+    if (isSending) {
+      return (
+        <>
+          <span className={styles.sendButtonSpinner}></span>
+          Sending
+        </>
+      )
+    }
+    if (isStreaming) {
+      return 'Responding...'
+    }
+    return 'Send'
+  }
+
   return (
     <form className={styles.inputArea} onSubmit={handleSubmit}>
       <textarea
@@ -32,10 +48,10 @@ export function MessageInput({ onSend, disabled }) {
       />
       <button
         type="submit"
-        className="btn btn-primary"
+        className={`btn btn-primary ${styles.sendButton} ${isSending ? styles.sending : ''}`}
         disabled={disabled || !value.trim()}
       >
-        {disabled ? 'Sending...' : 'Send'}
+        {getButtonContent()}
       </button>
     </form>
   )

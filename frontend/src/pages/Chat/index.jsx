@@ -1,14 +1,19 @@
-import { useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useCallback, useState } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useChat } from '../../hooks/useChat'
+import { useApps } from '../../context/AppsContext'
 import { ConversationList } from './components/ConversationList'
 import { MessageList } from './components/MessageList'
 import { MessageInput } from './components/MessageInput'
+import { AppSelector } from './components/AppSelector'
 import styles from './Chat.module.css'
 
 export default function Chat({ user }) {
   const { conversationId } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { apps } = useApps()
+  const [selectedAppId, setSelectedAppId] = useState(null)
 
   const {
     conversations,
@@ -18,6 +23,10 @@ export default function Chat({ user }) {
     toolStatus,
     error,
     loading,
+    // UX feedback states
+    isSending,
+    isThinking,
+    connectionStatus,
     loadConversations,
     loadConversation,
     createConversation,
@@ -37,6 +46,14 @@ export default function Chat({ user }) {
       loadConversation(conversationId)
     }
   }, [conversationId, loadConversation])
+
+  // Read app from URL params (from editor "Chat about this app" button)
+  useEffect(() => {
+    const appFromUrl = searchParams.get('app')
+    if (appFromUrl && apps.find(a => a.app_id === appFromUrl)) {
+      setSelectedAppId(appFromUrl)
+    }
+  }, [searchParams, apps])
 
   // Create new conversation
   const handleNewConversation = useCallback(async () => {
@@ -62,12 +79,28 @@ export default function Chat({ user }) {
     }
   }, [deleteConversation, conversationId, navigate])
 
-  // Send message
+  // Send message with app context
   const handleSendMessage = useCallback((content) => {
     if (conversationId) {
-      sendMessage(conversationId, content)
+      sendMessage(conversationId, content, selectedAppId)
     }
-  }, [conversationId, sendMessage])
+  }, [conversationId, sendMessage, selectedAppId])
+
+  // Get status bar content
+  const getStatusBarContent = () => {
+    if (connectionStatus === 'connecting') {
+      return { className: styles.statusConnecting, text: 'Connecting...' }
+    }
+    if (connectionStatus === 'streaming') {
+      return { className: styles.statusStreaming, text: 'Claude is responding' }
+    }
+    if (connectionStatus === 'error') {
+      return { className: styles.statusError, text: 'Connection error' }
+    }
+    return { className: styles.statusIdle, text: 'Ready' }
+  }
+
+  const statusInfo = getStatusBarContent()
 
   return (
     <div className={styles.chatLayout}>
@@ -81,6 +114,23 @@ export default function Chat({ user }) {
       />
 
       <div className={styles.chatMain}>
+        {/* App context bar */}
+        <div className={styles.contextBar}>
+          <AppSelector
+            apps={apps}
+            selected={selectedAppId}
+            onSelect={setSelectedAppId}
+          />
+        </div>
+
+        {/* Connection status bar */}
+        {conversationId && (
+          <div className={`${styles.statusBar} ${statusInfo.className}`}>
+            <span className={styles.statusDot}></span>
+            <span className={styles.statusText}>{statusInfo.text}</span>
+          </div>
+        )}
+
         {error && (
           <div className={styles.errorMessage}>
             {error}
@@ -100,10 +150,13 @@ export default function Chat({ user }) {
               isStreaming={isStreaming}
               streamingContent={streamingContent}
               toolStatus={toolStatus}
+              isThinking={isThinking}
             />
             <MessageInput
               onSend={handleSendMessage}
               disabled={isStreaming}
+              isSending={isSending}
+              isStreaming={isStreaming}
             />
           </>
         ) : (

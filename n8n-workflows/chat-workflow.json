@@ -38,7 +38,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4096, system: $json.body.system_prompt || 'You are a helpful assistant.', messages: $json.body.messages || [], tools: ($json.body.tools && $json.body.tools.length > 0) ? $json.body.tools : undefined }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: $env.CHAT_MODEL || 'claude-3-5-haiku-20241022', max_tokens: parseInt($env.CHAT_MAX_TOKENS || '4096'), system: $json.body.system_prompt || 'You are a helpful assistant.', messages: $json.body.messages || [], tools: ($json.body.tools && $json.body.tools.length > 0) ? $json.body.tools : undefined }) }}",
         "options": {
           "timeout": 120000
         }

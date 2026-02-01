@@ -13,6 +13,11 @@ export function useChat() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
+  // UX feedback states
+  const [isSending, setIsSending] = useState(false)      // Message being sent to server
+  const [isThinking, setIsThinking] = useState(false)    // Waiting for first token
+  const [connectionStatus, setConnectionStatus] = useState('idle') // idle, connecting, streaming, error
+
   const getAuthHeaders = () => ({
     'Authorization': `Bearer ${localStorage.getItem('token')}`,
     'Content-Type': 'application/json'
@@ -99,8 +104,11 @@ export function useChat() {
   }, [])
 
   // Send a message and handle SSE streaming response
-  const sendMessage = useCallback(async (conversationId, content) => {
+  const sendMessage = useCallback(async (conversationId, content, appId = null) => {
     setError(null)
+    setIsSending(true)
+    setIsThinking(true)
+    setConnectionStatus('connecting')
     setIsStreaming(true)
     setStreamingContent('')
     setToolStatus(null)
@@ -118,8 +126,11 @@ export function useChat() {
       const response = await fetch(`${API_URL}/api/chat/conversations/${conversationId}/messages`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ content, app_id: appId })
       })
+
+      // Message sent successfully
+      setIsSending(false)
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -131,6 +142,7 @@ export function useChat() {
       const decoder = new TextDecoder()
       let assistantContent = ''
       let toolCalls = []
+      let receivedFirstEvent = false  // Track locally to avoid stale closure
 
       while (true) {
         const { done, value } = await reader.read()
@@ -150,11 +162,23 @@ export function useChat() {
 
             switch (event.type) {
               case 'text':
+                // First event received - no longer thinking
+                if (!receivedFirstEvent) {
+                  receivedFirstEvent = true
+                  setIsThinking(false)
+                  setConnectionStatus('streaming')
+                }
                 assistantContent += event.content || ''
                 setStreamingContent(assistantContent)
                 break
 
               case 'tool_start':
+                // Tool start also means we're no longer waiting
+                if (!receivedFirstEvent) {
+                  receivedFirstEvent = true
+                  setIsThinking(false)
+                  setConnectionStatus('streaming')
+                }
                 setToolStatus({
                   tool: event.tool,
                   tool_input: event.tool_input,
@@ -187,9 +211,11 @@ export function useChat() {
                 setMessages(prev => [...prev, assistantMessage])
                 setStreamingContent('')
                 setToolStatus(null)
+                setConnectionStatus('idle')
                 break
 
               case 'error':
+                setConnectionStatus('error')
                 throw new Error(event.error || 'Unknown error')
             }
           } catch (parseErr) {
@@ -202,10 +228,13 @@ export function useChat() {
       }
     } catch (err) {
       setError(err.message)
+      setConnectionStatus('error')
       // Remove the optimistic user message on error
       setMessages(prev => prev.filter(m => m.id !== userMessage.id))
     } finally {
       setIsStreaming(false)
+      setIsSending(false)
+      setIsThinking(false)
       setStreamingContent('')
     }
   }, [])
@@ -222,6 +251,10 @@ export function useChat() {
     toolStatus,
     error,
     loading,
+    // UX feedback states
+    isSending,
+    isThinking,
+    connectionStatus,
     // Actions
     loadConversations,
     loadConversation,

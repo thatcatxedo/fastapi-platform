@@ -7,13 +7,16 @@ from typing import Any, Dict, List, Optional
 import secrets
 import string
 from datetime import datetime
+import httpx
+import re
 
-from database import apps_collection, users_collection
+from database import apps_collection, users_collection, templates_collection
 from deployment import (
     create_app_deployment,
     delete_app_deployment,
     update_app_deployment,
-    get_pod_logs
+    get_pod_logs,
+    get_deployment_status
 )
 from validation import validate_code, validate_multifile
 from config import APP_DOMAIN
@@ -57,7 +60,7 @@ TOOLS = [
     },
     {
         "name": "update_app",
-        "description": "Update an existing app's code and redeploy it.",
+        "description": "Update an existing app's code, settings, or database connection and redeploy it.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -77,6 +80,10 @@ TOOLS = [
                 "name": {
                     "type": "string",
                     "description": "Optional new name for the app"
+                },
+                "database_id": {
+                    "type": "string",
+                    "description": "Database ID to connect (use 'default' for user's default database, or specific ID from list_databases)"
                 }
             },
             "required": ["app_id"]
@@ -146,6 +153,100 @@ TOOLS = [
             "properties": {},
             "required": []
         }
+    },
+    {
+        "name": "list_templates",
+        "description": "List available app templates that can be used as reference or starting points.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "framework": {
+                    "type": "string",
+                    "enum": ["fastapi", "fasthtml", "all"],
+                    "description": "Filter by framework (default: all)"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_template_code",
+        "description": "Get the full code of a template to use as reference when creating apps.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template_name": {
+                    "type": "string",
+                    "description": "Name of the template to retrieve"
+                }
+            },
+            "required": ["template_name"]
+        }
+    },
+    {
+        "name": "validate_code_only",
+        "description": "Check if code would pass validation WITHOUT deploying. Use this to verify code before creating or updating apps.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Python code to validate (for single-file mode)"
+                },
+                "files": {
+                    "type": "object",
+                    "description": "Files to validate (for multi-file mode): {filename: code}",
+                    "additionalProperties": {"type": "string"}
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "test_endpoint",
+        "description": "Make an HTTP request to a deployed app to verify it works. Use after deploying to test endpoints.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "string",
+                    "description": "The app_id to test"
+                },
+                "method": {
+                    "type": "string",
+                    "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                    "description": "HTTP method (default: GET)"
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Endpoint path (e.g., '/todos', '/health')"
+                },
+                "body": {
+                    "type": "object",
+                    "description": "Request body for POST/PUT/PATCH requests"
+                },
+                "headers": {
+                    "type": "object",
+                    "description": "Additional headers to send",
+                    "additionalProperties": {"type": "string"}
+                }
+            },
+            "required": ["app_id", "path"]
+        }
+    },
+    {
+        "name": "diagnose_app",
+        "description": "Analyze app health, check pod status, recent errors, and get suggested fixes. Use when an app is failing or behaving unexpectedly.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "string",
+                    "description": "The app_id to diagnose"
+                }
+            },
+            "required": ["app_id"]
+        }
     }
 ]
 
@@ -177,6 +278,16 @@ async def execute_tool(name: str, input_data: Dict[str, Any], user: dict) -> Dic
             return await _delete_app(input_data, user)
         elif name == "list_databases":
             return await _list_databases(user)
+        elif name == "list_templates":
+            return await _list_templates(input_data)
+        elif name == "get_template_code":
+            return await _get_template_code(input_data)
+        elif name == "validate_code_only":
+            return await _validate_code_only(input_data)
+        elif name == "test_endpoint":
+            return await _test_endpoint(input_data, user)
+        elif name == "diagnose_app":
+            return await _diagnose_app(input_data, user)
         else:
             return {"error": f"Unknown tool: {name}"}
     except Exception as e:
@@ -287,11 +398,12 @@ async def _create_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
 
 
 async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
-    """Update an existing app's code and redeploy."""
+    """Update an existing app's code, settings, or database connection and redeploy."""
     app_id = input_data.get("app_id")
     code = input_data.get("code")
     files = input_data.get("files")
     new_name = input_data.get("name")
+    database_id = input_data.get("database_id")
 
     if not app_id:
         return {"error": "app_id is required"}
@@ -306,6 +418,15 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
 
     if new_name:
         update_data["name"] = new_name
+
+    # Handle database_id update
+    if database_id is not None:
+        # Validate database_id if provided
+        if database_id:
+            databases = user.get("databases", [])
+            if not any(db["id"] == database_id for db in databases):
+                return {"error": f"Database '{database_id}' not found. Use list_databases to see available databases."}
+        update_data["database_id"] = database_id if database_id else None
 
     # Handle code/files update based on mode
     if mode == "multi":
@@ -324,7 +445,7 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
             update_data["code"] = code
 
     if not update_data:
-        return {"error": "No updates provided (need code, files, or name)"}
+        return {"error": "No updates provided (need code, files, name, or database_id)"}
 
     # Update and redeploy
     update_data["status"] = "deploying"
@@ -496,3 +617,272 @@ async def _list_databases(user: dict) -> Dict[str, Any]:
         ],
         "count": len(databases)
     }
+
+
+async def _list_templates(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """List available app templates."""
+    framework_filter = input_data.get("framework", "all")
+
+    query = {"is_global": True}
+    if framework_filter and framework_filter != "all":
+        query["framework"] = framework_filter
+
+    templates = []
+    async for template in templates_collection.find(query).sort("name", 1):
+        templates.append({
+            "name": template["name"],
+            "description": template.get("description", ""),
+            "framework": template.get("framework"),
+            "mode": template.get("mode", "single"),
+            "complexity": template.get("complexity", "simple"),
+            "tags": template.get("tags", [])
+        })
+
+    return {
+        "templates": templates,
+        "count": len(templates),
+        "tip": "Use get_template_code to fetch the full code of a template as reference"
+    }
+
+
+async def _get_template_code(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Get the full code of a template."""
+    template_name = input_data.get("template_name")
+    if not template_name:
+        return {"error": "template_name is required"}
+
+    # Search case-insensitive
+    template = await templates_collection.find_one({
+        "name": {"$regex": f"^{re.escape(template_name)}$", "$options": "i"},
+        "is_global": True
+    })
+
+    if not template:
+        # Try partial match
+        template = await templates_collection.find_one({
+            "name": {"$regex": re.escape(template_name), "$options": "i"},
+            "is_global": True
+        })
+
+    if not template:
+        return {"error": f"Template '{template_name}' not found. Use list_templates to see available templates."}
+
+    result = {
+        "name": template["name"],
+        "description": template.get("description", ""),
+        "framework": template.get("framework"),
+        "mode": template.get("mode", "single")
+    }
+
+    if template.get("mode") == "multi":
+        result["files"] = template.get("files", {})
+        result["entrypoint"] = template.get("entrypoint", "app.py")
+    else:
+        result["code"] = template.get("code", "")
+
+    return result
+
+
+async def _validate_code_only(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate code without deploying."""
+    code = input_data.get("code")
+    files = input_data.get("files")
+
+    if files:
+        # Multi-file validation
+        is_valid, error_msg, error_line, error_file = validate_multifile(files, "app.py")
+        if is_valid:
+            return {
+                "valid": True,
+                "message": "Code passes all validation checks",
+                "mode": "multi",
+                "file_count": len(files)
+            }
+        else:
+            return {
+                "valid": False,
+                "error": error_msg,
+                "line": error_line,
+                "file": error_file,
+                "mode": "multi"
+            }
+    elif code:
+        # Single-file validation
+        is_valid, error_msg, error_line = validate_code(code)
+        if is_valid:
+            return {
+                "valid": True,
+                "message": "Code passes all validation checks",
+                "mode": "single"
+            }
+        else:
+            return {
+                "valid": False,
+                "error": error_msg,
+                "line": error_line,
+                "mode": "single"
+            }
+    else:
+        return {"error": "Either 'code' or 'files' is required"}
+
+
+async def _test_endpoint(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
+    """Test an endpoint on a deployed app."""
+    app_id = input_data.get("app_id")
+    method = input_data.get("method", "GET").upper()
+    path = input_data.get("path", "/")
+    body = input_data.get("body")
+    headers = input_data.get("headers", {})
+
+    if not app_id:
+        return {"error": "app_id is required"}
+
+    # Verify user owns the app
+    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not app:
+        return {"error": f"App '{app_id}' not found"}
+
+    if app.get("status") != "running":
+        return {
+            "error": f"App is not running (status: {app.get('status')}). Deploy it first or check diagnose_app for issues."
+        }
+
+    # Build URL
+    base_url = app.get("deployment_url", f"https://app-{app_id}.{APP_DOMAIN}")
+    if not path.startswith("/"):
+        path = "/" + path
+    url = f"{base_url}{path}"
+
+    # Make the request
+    try:
+        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+            start_time = datetime.utcnow()
+
+            request_kwargs = {
+                "method": method,
+                "url": url,
+                "headers": {"Accept": "application/json", **headers}
+            }
+            if body and method in ("POST", "PUT", "PATCH"):
+                request_kwargs["json"] = body
+
+            response = await client.request(**request_kwargs)
+
+            latency_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+
+            # Try to parse JSON response
+            try:
+                response_body = response.json()
+            except Exception:
+                response_body = response.text[:1000]  # Truncate long text
+
+            return {
+                "success": 200 <= response.status_code < 400,
+                "status_code": response.status_code,
+                "url": url,
+                "method": method,
+                "response": response_body,
+                "latency_ms": round(latency_ms, 2),
+                "headers": dict(response.headers)
+            }
+
+    except httpx.TimeoutException:
+        return {"error": f"Request to {url} timed out (30s)"}
+    except httpx.RequestError as e:
+        return {"error": f"Request failed: {str(e)}"}
+
+
+async def _diagnose_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
+    """Diagnose app health and suggest fixes."""
+    app_id = input_data.get("app_id")
+
+    if not app_id:
+        return {"error": "app_id is required"}
+
+    # Get app
+    app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
+    if not app:
+        return {"error": f"App '{app_id}' not found"}
+
+    diagnosis = {
+        "app_id": app_id,
+        "name": app["name"],
+        "status": app.get("status"),
+        "url": app.get("deployment_url"),
+        "last_deploy": app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None,
+        "error_message": app.get("error_message"),
+        "issues": [],
+        "suggestions": []
+    }
+
+    # Get deployment status from K8s
+    try:
+        deployment_status = await get_deployment_status(app, user)
+        if deployment_status:
+            diagnosis["pod_status"] = deployment_status.get("pod_phase")
+            diagnosis["ready_replicas"] = deployment_status.get("ready_replicas", 0)
+            diagnosis["restart_count"] = deployment_status.get("restart_count", 0)
+
+            # Analyze issues
+            if deployment_status.get("pod_phase") == "CrashLoopBackOff":
+                diagnosis["issues"].append("App is crash-looping (repeatedly failing and restarting)")
+                diagnosis["suggestions"].append("Check logs with get_app_logs for the error message")
+
+            if deployment_status.get("restart_count", 0) > 3:
+                diagnosis["issues"].append(f"High restart count ({deployment_status['restart_count']})")
+                diagnosis["suggestions"].append("App may have a startup error or resource issue")
+
+            if deployment_status.get("ready_replicas", 0) == 0:
+                diagnosis["issues"].append("No healthy pods running")
+                diagnosis["suggestions"].append("App failed to start - check validation and logs")
+
+    except Exception as e:
+        logger.error(f"Error getting deployment status: {e}")
+        diagnosis["deployment_check_error"] = str(e)
+
+    # Get recent logs for error analysis
+    try:
+        logs_result = await get_pod_logs(app_id, 30)
+        logs = logs_result.get("logs", [])
+        log_text = "\n".join([log.get("message", "") for log in logs])
+
+        # Analyze common errors
+        error_patterns = [
+            (r"ImportError.*No module named '(\w+)'", lambda m: f"Missing import: '{m.group(1)}' is not in allowed imports"),
+            (r"ModuleNotFoundError.*No module named '(\w+)'", lambda m: f"Module not found: '{m.group(1)}' - check allowed imports"),
+            (r"SyntaxError", lambda m: "Syntax error in code - check for typos"),
+            (r"NameError.*name '(\w+)' is not defined", lambda m: f"Undefined variable: '{m.group(1)}'"),
+            (r"KeyError.*'(\w+)'", lambda m: f"Missing key: '{m.group(1)}' - check your data structures"),
+            (r"AttributeError.*'(\w+)'.*has no attribute '(\w+)'", lambda m: f"Object '{m.group(1)}' has no attribute '{m.group(2)}'"),
+            (r"TypeError.*argument", lambda m: "Type error - check function arguments"),
+            (r"Connection refused", lambda m: "Cannot connect to service - check MongoDB URI or external services"),
+            (r"PLATFORM_MONGO_URI", lambda m: "Database connection issue - ensure database is set up"),
+        ]
+
+        detected_errors = []
+        for pattern, handler in error_patterns:
+            match = re.search(pattern, log_text, re.IGNORECASE)
+            if match:
+                detected_errors.append(handler(match))
+
+        if detected_errors:
+            diagnosis["detected_errors"] = detected_errors
+            diagnosis["issues"].extend(detected_errors)
+
+        # Include recent error lines
+        error_lines = [l for l in log_text.split('\n') if 'error' in l.lower() or 'exception' in l.lower()][:5]
+        if error_lines:
+            diagnosis["recent_error_lines"] = error_lines
+
+    except Exception as e:
+        logger.error(f"Error analyzing logs: {e}")
+
+    # Generate overall assessment
+    if not diagnosis["issues"]:
+        diagnosis["assessment"] = "App appears healthy"
+    elif len(diagnosis["issues"]) == 1:
+        diagnosis["assessment"] = f"Found 1 issue: {diagnosis['issues'][0]}"
+    else:
+        diagnosis["assessment"] = f"Found {len(diagnosis['issues'])} issues that need attention"
+
+    return diagnosis

@@ -16,7 +16,8 @@ function EditorHeader({
   onDelete,
   onBrowseTemplates,
   onOpenHistory,
-  onSaveAsTemplate
+  onSaveAsTemplate,
+  onChatAboutApp
 }) {
   const isDeploying = deploymentStatus && deploymentStatus.status === 'deploying'
 
@@ -51,6 +52,15 @@ function EditorHeader({
     {
       label: 'Version History',
       onClick: onOpenHistory,
+      show: isEditing
+    },
+    {
+      type: 'separator',
+      show: isEditing
+    },
+    {
+      label: 'Chat about this app',
+      onClick: onChatAboutApp,
       show: isEditing
     },
     {
