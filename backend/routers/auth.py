@@ -1,132 +1,78 @@
 """
-Authentication routes for FastAPI Platform
+Authentication routes for FastAPI Platform.
+
+This module contains thin HTTP handlers that delegate to UserService
+for business logic.
 """
 from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime
+import logging
 
 from models import UserSignup, UserLogin, UserResponse, TokenResponse
-from auth import hash_password, verify_password, create_access_token, get_current_user
-from database import users_collection, settings_collection, client
+from auth import create_access_token, get_current_user
 from utils import error_payload
-import logging
+from services.user_service import (
+    user_service,
+    UserServiceError,
+    SignupsDisabledError,
+    UserExistsError,
+    InvalidCredentialsError
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def handle_service_error(e: UserServiceError) -> HTTPException:
+    """Convert service exceptions to HTTP exceptions."""
+    status_map = {
+        "SIGNUPS_DISABLED": 403,
+        "USER_EXISTS": 400,
+        "INVALID_CREDENTIALS": 401,
+        "USER_NOT_FOUND": 404,
+    }
+    status_code = status_map.get(e.code, 500)
+
+    # Use error_payload for structured errors, simple string for auth errors
+    if e.code in ("SIGNUPS_DISABLED",):
+        return HTTPException(
+            status_code=status_code,
+            detail=error_payload(e.code, e.message)
+        )
+    return HTTPException(
+        status_code=status_code,
+        detail=e.message
+    )
+
+
+# Re-export for backwards compatibility with admin router
 def build_user_response(user: dict) -> UserResponse:
     """Build a UserResponse from a user document."""
-    return UserResponse(
-        id=str(user["_id"]),
-        username=user["username"],
-        email=user["email"],
-        created_at=user["created_at"].isoformat(),
-        is_admin=user.get("is_admin", False)
-    )
+    return user_service.to_response(user)
 
 
 @router.post("/signup", response_model=UserResponse)
 async def signup(user_data: UserSignup):
-    # Check if signups are allowed
-    settings = await settings_collection.find_one({"_id": "global"})
-    if settings and not settings.get("allow_signups", True):
-        raise HTTPException(
-            status_code=403,
-            detail=error_payload("SIGNUPS_DISABLED", "Public signups are disabled")
-        )
-    
-    # Check if username or email already exists
-    existing = await users_collection.find_one({
-        "$or": [
-            {"username": user_data.username},
-            {"email": user_data.email}
-        ]
-    })
-    if existing:
-        raise HTTPException(status_code=400, detail="Username or email already exists")
-    
-    # Check if this is the first user (becomes admin)
-    user_count = await users_collection.count_documents({})
-    is_first_user = user_count == 0
-    
-    # Create user with multi-database support
-    now = datetime.utcnow()
-    user_doc = {
-        "username": user_data.username,
-        "email": user_data.email,
-        "password_hash": hash_password(user_data.password),
-        "created_at": now,
-        "is_admin": is_first_user,  # First user is admin
-        # Multi-database support
-        "databases": [],  # Will be populated after MongoDB user creation
-        "default_database_id": "default"
-    }
-    result = await users_collection.insert_one(user_doc)
-
-    # Initialize settings on first signup
-    if is_first_user:
-        await settings_collection.update_one(
-            {"_id": "global"},
-            {"$setOnInsert": {
-                "allow_signups": True,
-                "updated_at": now
-            }},
-            upsert=True
-        )
-
-    # Create per-user MongoDB credentials for default database
+    """Create a new user account."""
     try:
-        from mongo_users import (
-            create_mongo_user_for_database, create_viewer_user, encrypt_password
-        )
-
-        user_id = str(result.inserted_id)
-
-        mongo_username, mongo_password = await create_mongo_user_for_database(
-            client, user_id, "default"
-        )
-
-        # Create viewer user with access to all databases (just default for now)
-        viewer_password = await create_viewer_user(client, user_id, ["default"])
-
-        # Create default database entry
-        default_db_entry = {
-            "id": "default",
-            "name": "Default",
-            "mongo_password_encrypted": encrypt_password(mongo_password),
-            "created_at": now,
-            "is_default": True,
-            "description": "Default database"
-        }
-
-        # Store database entry and viewer password in user document
-        await users_collection.update_one(
-            {"_id": result.inserted_id},
-            {"$set": {
-                "databases": [default_db_entry],
-                "viewer_password_encrypted": encrypt_password(viewer_password)
-            }}
-        )
-        logger.info(f"Created MongoDB user {mongo_username} and viewer for platform user {user_id}")
-    except Exception as e:
-        # Log error but don't fail signup - user can still use platform without MongoDB access
-        logger.error(f"Failed to create MongoDB user for {result.inserted_id}: {e}")
-    
-    user = await users_collection.find_one({"_id": result.inserted_id})
-    return build_user_response(user)
+        user = await user_service.signup(user_data)
+        return user_service.to_response(user)
+    except UserServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
-    user = await users_collection.find_one({"username": credentials.username})
-    if not user or not verify_password(credentials.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    
-    access_token = create_access_token(data={"sub": str(user["_id"])})
-    return TokenResponse(access_token=access_token, token_type="bearer")
+    """Authenticate and get access token."""
+    try:
+        user = await user_service.validate_login(credentials.username, credentials.password)
+        access_token = create_access_token(data={"sub": str(user["_id"])})
+        return TokenResponse(access_token=access_token, token_type="bearer")
+    except UserServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(user: dict = Depends(get_current_user)):
-    return build_user_response(user)
+    """Get current user information."""
+    return user_service.to_response(user)
