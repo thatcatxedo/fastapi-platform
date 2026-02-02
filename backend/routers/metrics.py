@@ -11,7 +11,7 @@ from models import (
 )
 from auth import get_current_user
 from database import app_metrics_collection, app_errors_collection, app_health_checks_collection
-from routers.apps import get_user_app
+from services.app_service import app_service
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/apps", tags=["metrics"])
 @router.get("/{app_id}/metrics", response_model=AppMetricsResponse)
 async def get_app_metrics(app_id: str, hours: int = 24, user: dict = Depends(get_current_user)):
     """Get aggregated metrics for an app over the specified time period"""
-    await get_user_app(app_id, user)  # Verify app exists and user owns it
+    await app_service.get_by_app_id(app_id, user)  # Verify app exists and user owns it
     
     # Calculate time window
     since = datetime.utcnow() - timedelta(hours=hours)
@@ -59,7 +59,7 @@ async def get_app_metrics(app_id: str, hours: int = 24, user: dict = Depends(get
 @router.get("/{app_id}/errors", response_model=AppErrorsResponse)
 async def get_app_errors(app_id: str, limit: int = 50, user: dict = Depends(get_current_user)):
     """Get recent errors for an app"""
-    await get_user_app(app_id, user)  # Verify app exists and user owns it
+    await app_service.get_by_app_id(app_id, user)  # Verify app exists and user owns it
     
     # Fetch recent errors, sorted by timestamp descending
     errors = []
@@ -87,7 +87,7 @@ async def get_app_errors(app_id: str, limit: int = 50, user: dict = Depends(get_
 @router.get("/{app_id}/health-status", response_model=AppHealthStatusResponse)
 async def get_app_health_status(app_id: str, user: dict = Depends(get_current_user)):
     """Get health status for an app based on recent health checks"""
-    await get_user_app(app_id, user)  # Verify app exists and user owns it
+    await app_service.get_by_app_id(app_id, user)  # Verify app exists and user owns it
     
     # Get health checks from the last 5 minutes
     since = datetime.utcnow() - timedelta(minutes=5)

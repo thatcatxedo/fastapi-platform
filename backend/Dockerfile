@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py config.py database.py models.py auth.py validation.py utils.py lifespan.py ./
 COPY seed_templates.py mongo_users.py log_parser.py ./
 COPY routers/ ./routers/
+COPY services/ ./services/
 COPY chat/ ./chat/
 COPY deployment/ ./deployment/
 COPY background/ ./background/
