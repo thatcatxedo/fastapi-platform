@@ -1,5 +1,6 @@
 name: "Kanban Board"
 description: "A full-featured personal Kanban board with drag-style task management. Move tasks between To Do, In Progress, and Done columns. Includes task descriptions, timestamps, and a polished dark theme UI."
+requires_database: true
 complexity: medium
 tags:
   - multifile

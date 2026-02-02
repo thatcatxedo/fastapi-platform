@@ -27,6 +27,8 @@ class TemplateData(BaseModel):
     framework: Optional[str] = None
     entrypoint: Optional[str] = None
     files: Optional[Dict[str, str]] = None
+    # Database requirement indicator
+    requires_database: bool = False
 
     @validator("complexity")
     def validate_complexity(cls, v):
@@ -94,6 +96,7 @@ def load_global_templates(templates_dir: Path = TEMPLATES_DIR) -> List[Dict[str,
                 "complexity": template_data.complexity,
                 "tags": template_data.tags,
                 "mode": template_data.mode,
+                "requires_database": template_data.requires_database,
                 "is_global": True,
                 "user_id": None,
             }

@@ -1,5 +1,5 @@
-name: "Progress Bars"
-description: "Track life goals with beautiful progress bars. Create countdowns to future events, count-up streaks, manual counters, and goal trackers. Includes user signup/login with session-based authentication."
+name: "Progress Bars Enhanced"
+description: "Enhanced progress tracking app with fasthtml-auth authentication, beautiful UI, and robust session management. Track countdowns, streaks, counters, and goals with secure authentication and improved user experience."
 requires_database: true
 complexity: complex
 tags:
@@ -10,22 +10,37 @@ tags:
   - auth
   - dashboard
   - fullstack
+  - enhanced
+  - fasthtml-auth
 mode: multi
 framework: fasthtml
 entrypoint: app.py
 files:
   app.py: |
     from fasthtml.common import *
+    from monsterui.all import *
+    from fasthtml_auth import AuthManager
     from routes import setup_routes
 
-    # FastHTML has built-in session support via the sess parameter
+    # Initialize fasthtml-auth
+    # Uses SQLite for user management, MongoDB for progress bars
+    auth = AuthManager(db_path="data/auth.db")
+    db = auth.initialize()
+    beforeware = auth.create_beforeware()
+
+    # Create app with auth middleware and MonsterUI theme
     app, rt = fast_app(
-        hdrs=(
+        before=beforeware,
+        hdrs=Theme.blue.headers() + (
             Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"),
         )
     )
 
-    setup_routes(rt)
+    # Register auth routes (/auth/login, /auth/register, /auth/logout, etc.)
+    auth.register_routes(app)
+
+    # Setup custom routes
+    setup_routes(rt, auth)
 
     @rt("/health")
     def health():
@@ -34,171 +49,114 @@ files:
   routes.py: |
     from fasthtml.common import *
     from services import (
-        create_user, authenticate_user, get_user_by_id,
         get_user_bars, create_bar, get_bar, update_bar, delete_bar,
         increment_bar, decrement_bar, reset_bar, update_bar_value
     )
     from components import (
-        page_layout, landing_page, auth_form, dashboard_page,
+        page_layout, landing_page, dashboard_page,
         bar_card, create_bar_modal, edit_bar_modal, bar_grid
     )
 
-    def get_current_user(sess):
-        """Get current user from session."""
-        user_id = sess.get("user_id")
-        if not user_id:
-            return None
-        return get_user_by_id(user_id)
+    def get_current_user(req):
+        """Get current user from fasthtml-auth session."""
+        return req.scope.get('user')
 
-    def setup_routes(rt):
+    def setup_routes(rt, auth):
         # Landing page
         @rt("/")
-        def home(sess):
-            user = get_current_user(sess)
+        def home(req):
+            user = get_current_user(req)
             if user:
                 return RedirectResponse("/dashboard", status_code=303)
             return page_layout(landing_page(), logged_in=False)
 
-        # Auth routes
-        @rt("/signup")
-        def signup_page(sess):
-            user = get_current_user(sess)
-            if user:
-                return RedirectResponse("/dashboard", status_code=303)
-            return page_layout(auth_form("signup"), logged_in=False)
-
-        @rt("/signup", methods=["POST"])
-        def signup_submit(sess, username: str, email: str, password: str):
-            error = create_user(username, email, password)
-            if error:
-                return page_layout(auth_form("signup", error=error), logged_in=False)
-            # Auto-login after signup
-            user = authenticate_user(username, password)
-            if user:
-                sess["user_id"] = user["id"]
-                sess["username"] = user["username"]
-                return RedirectResponse("/dashboard", status_code=303)
-            return RedirectResponse("/login", status_code=303)
-
-        @rt("/login")
-        def login_page(sess):
-            user = get_current_user(sess)
-            if user:
-                return RedirectResponse("/dashboard", status_code=303)
-            return page_layout(auth_form("login"), logged_in=False)
-
-        @rt("/login", methods=["POST"])
-        def login_submit(sess, username: str, password: str):
-            user = authenticate_user(username, password)
-            if not user:
-                return page_layout(auth_form("login", error="Invalid username or password"), logged_in=False)
-            sess["user_id"] = user["id"]
-            sess["username"] = user["username"]
-            return RedirectResponse("/dashboard", status_code=303)
-
-        @rt("/logout", methods=["POST"])
-        def logout(sess):
-            sess.clear()
-            return RedirectResponse("/", status_code=303)
-
-        # Dashboard
+        # Dashboard - protected route
         @rt("/dashboard")
-        def dashboard(sess):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            bars = get_user_bars(user["id"])
-            return page_layout(dashboard_page(user, bars), logged_in=True, username=user["username"])
+        @auth.require_role('user', 'manager', 'admin')
+        def dashboard(req):
+            user = get_current_user(req)
+            bars = get_user_bars(str(user.id))
+            return page_layout(dashboard_page(user, bars), logged_in=True, username=user.username)
 
-        # Bar CRUD
+        # Bar CRUD - all protected
         @rt("/bars", methods=["POST"])
-        def create_new_bar(sess, name: str, bar_type: str, color: str = "#10b981",
+        @auth.require_role('user', 'manager', 'admin')
+        def create_new_bar(req, name: str, bar_type: str, color: str = "#10b981",
                           target_date: str = None, current_value: int = 0, target_value: int = None):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            create_bar(user["id"], name, bar_type, color, target_date, current_value, target_value)
-            bars = get_user_bars(user["id"])
+            user = get_current_user(req)
+            create_bar(str(user.id), name, bar_type, color, target_date, current_value, target_value)
+            bars = get_user_bars(str(user.id))
             return (
                 bar_grid(bars),
                 Div(id="modal-container", hx_swap_oob="true")
             )
 
         @rt("/bars/new")
-        def new_bar_form(sess):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
+        @auth.require_role('user', 'manager', 'admin')
+        def new_bar_form(req):
             return create_bar_modal()
 
         @rt("/bars/{bar_id}/edit")
-        def edit_bar_form(sess, bar_id: str):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            bar = get_bar(bar_id, user["id"])
+        @auth.require_role('user', 'manager', 'admin')
+        def edit_bar_form(req, bar_id: str):
+            user = get_current_user(req)
+            bar = get_bar(bar_id, str(user.id))
             if not bar:
                 return ""
             return edit_bar_modal(bar)
 
         @rt("/bars/{bar_id}", methods=["PUT"])
-        def update_existing_bar(sess, bar_id: str, name: str, color: str = "#10b981",
+        @auth.require_role('user', 'manager', 'admin')
+        def update_existing_bar(req, bar_id: str, name: str, color: str = "#10b981",
                                target_date: str = None, current_value: int = None, target_value: int = None):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            update_bar(bar_id, user["id"], name, color, target_date, current_value, target_value)
-            bars = get_user_bars(user["id"])
+            user = get_current_user(req)
+            update_bar(bar_id, str(user.id), name, color, target_date, current_value, target_value)
+            bars = get_user_bars(str(user.id))
             return (
                 bar_grid(bars),
                 Div(id="modal-container", hx_swap_oob="true")
             )
 
         @rt("/bars/{bar_id}", methods=["DELETE"])
-        def delete_existing_bar(sess, bar_id: str):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            delete_bar(bar_id, user["id"])
-            bars = get_user_bars(user["id"])
+        @auth.require_role('user', 'manager', 'admin')
+        def delete_existing_bar(req, bar_id: str):
+            user = get_current_user(req)
+            delete_bar(bar_id, str(user.id))
+            bars = get_user_bars(str(user.id))
             return bar_grid(bars)
 
         @rt("/bars/{bar_id}/increment", methods=["POST"])
-        def increment_bar_value(sess, bar_id: str):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            bar = increment_bar(bar_id, user["id"])
+        @auth.require_role('user', 'manager', 'admin')
+        def increment_bar_value(req, bar_id: str):
+            user = get_current_user(req)
+            bar = increment_bar(bar_id, str(user.id))
             if bar:
                 return bar_card(bar)
             return ""
 
         @rt("/bars/{bar_id}/decrement", methods=["POST"])
-        def decrement_bar_value(sess, bar_id: str):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            bar = decrement_bar(bar_id, user["id"])
+        @auth.require_role('user', 'manager', 'admin')
+        def decrement_bar_value(req, bar_id: str):
+            user = get_current_user(req)
+            bar = decrement_bar(bar_id, str(user.id))
             if bar:
                 return bar_card(bar)
             return ""
 
         @rt("/bars/{bar_id}/reset", methods=["POST"])
-        def reset_bar_streak(sess, bar_id: str):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            bar = reset_bar(bar_id, user["id"])
+        @auth.require_role('user', 'manager', 'admin')
+        def reset_bar_streak(req, bar_id: str):
+            user = get_current_user(req)
+            bar = reset_bar(bar_id, str(user.id))
             if bar:
                 return bar_card(bar)
             return ""
 
         @rt("/bars/{bar_id}/update-value", methods=["POST"])
-        def set_bar_value(sess, bar_id: str, value: int):
-            user = get_current_user(sess)
-            if not user:
-                return RedirectResponse("/login", status_code=303)
-            bar = update_bar_value(bar_id, user["id"], value)
+        @auth.require_role('user', 'manager', 'admin')
+        def set_bar_value(req, bar_id: str, value: int):
+            user = get_current_user(req)
+            bar = update_bar_value(bar_id, str(user.id), value)
             if bar:
                 return bar_card(bar)
             return ""
@@ -211,68 +169,17 @@ files:
     from pymongo import MongoClient
     from bson import ObjectId
     from datetime import datetime, date, timedelta
-    import hashlib
     import os
 
+    # MongoDB connection for progress bars
+    # Note: fasthtml-auth handles user authentication in SQLite
     client = MongoClient(os.environ["PLATFORM_MONGO_URI"])
     db = client.get_default_database()
-    users = db.progress_users
-    bars = db.progress_bars
+    bars = db.progress_bars_enhanced
 
     # Indexes
-    users.create_index("username", unique=True)
-    users.create_index("email", unique=True)
     bars.create_index("user_id")
-
-    def hash_password(password: str) -> str:
-        return hashlib.sha256(password.encode()).hexdigest()
-
-    # User operations
-    def create_user(username: str, email: str, password: str) -> str:
-        """Create user, return error message or None on success."""
-        if len(username) < 3:
-            return "Username must be at least 3 characters"
-        if len(password) < 6:
-            return "Password must be at least 6 characters"
-        if "@" not in email:
-            return "Invalid email address"
-        try:
-            users.insert_one({
-                "username": username.lower(),
-                "email": email.lower(),
-                "password_hash": hash_password(password),
-                "created_at": datetime.utcnow()
-            })
-            return None
-        except Exception as e:
-            if "username" in str(e):
-                return "Username already taken"
-            if "email" in str(e):
-                return "Email already registered"
-            return "Registration failed"
-
-    def authenticate_user(username: str, password: str):
-        """Authenticate user, return user dict or None."""
-        user = users.find_one({
-            "$or": [
-                {"username": username.lower()},
-                {"email": username.lower()}
-            ],
-            "password_hash": hash_password(password)
-        })
-        if user:
-            return {"id": str(user["_id"]), "username": user["username"], "email": user["email"]}
-        return None
-
-    def get_user_by_id(user_id: str):
-        """Get user by ID."""
-        try:
-            user = users.find_one({"_id": ObjectId(user_id)})
-            if user:
-                return {"id": str(user["_id"]), "username": user["username"], "email": user["email"]}
-        except:
-            pass
-        return None
+    bars.create_index([("user_id", 1), ("created_at", -1)])
 
     # Progress bar operations
     def get_user_bars(user_id: str):
@@ -329,7 +236,7 @@ files:
         """Create a new progress bar."""
         doc = {
             "user_id": user_id,
-            "name": name,
+            "name": name.strip(),
             "type": bar_type,
             "color": color,
             "created_at": datetime.utcnow(),
@@ -341,9 +248,9 @@ files:
         elif bar_type == "countup":
             doc["start_date"] = date.today().isoformat()
         elif bar_type in ("counter", "goal"):
-            doc["current_value"] = current_value
+            doc["current_value"] = max(0, current_value)
             if target_value:
-                doc["target_value"] = target_value
+                doc["target_value"] = max(1, target_value)
         
         bars.insert_one(doc)
 
@@ -369,13 +276,17 @@ files:
     def update_bar(bar_id: str, user_id: str, name: str, color: str,
                    target_date: str = None, current_value: int = None, target_value: int = None):
         """Update bar properties."""
-        update = {"name": name, "color": color, "updated_at": datetime.utcnow()}
+        update = {
+            "name": name.strip(),
+            "color": color,
+            "updated_at": datetime.utcnow()
+        }
         if target_date:
             update["target_date"] = target_date
         if current_value is not None:
-            update["current_value"] = current_value
+            update["current_value"] = max(0, current_value)
         if target_value is not None:
-            update["target_value"] = target_value
+            update["target_value"] = max(1, target_value) if target_value else None
         bars.update_one({"_id": ObjectId(bar_id), "user_id": user_id}, {"$set": update})
 
     def delete_bar(bar_id: str, user_id: str):
@@ -432,6 +343,8 @@ files:
         ("#f59e0b", "Orange"),
         ("#ec4899", "Pink"),
         ("#ef4444", "Red"),
+        ("#06b6d4", "Cyan"),
+        ("#84cc16", "Lime"),
     ]
 
     STYLES = Style("""
@@ -477,19 +390,6 @@ files:
             color: #e4e4e7;
             font-weight: 500;
         }
-        .btn-logout {
-            background: none;
-            border: 1px solid rgba(255,255,255,0.2);
-            color: #a1a1aa;
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-family: inherit;
-        }
-        .btn-logout:hover {
-            border-color: #ef4444;
-            color: #ef4444;
-        }
         
         /* Landing page */
         .landing {
@@ -527,6 +427,7 @@ files:
             text-decoration: none;
             font-family: inherit;
             transition: all 0.2s;
+            display: inline-block;
         }
         .btn-primary {
             background: linear-gradient(90deg, #10b981, #059669);
@@ -565,67 +466,6 @@ files:
             font-size: 0.9rem;
             color: #a1a1aa;
         }
-        
-        /* Auth form */
-        .auth-container {
-            max-width: 400px;
-            margin: 60px auto;
-            padding: 0 20px;
-        }
-        .auth-card {
-            background: rgba(255,255,255,0.05);
-            border-radius: 16px;
-            padding: 32px;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .auth-card h2 {
-            text-align: center;
-            margin-bottom: 24px;
-            font-size: 1.5rem;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 0.9rem;
-            color: #a1a1aa;
-        }
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px;
-            background: rgba(0,0,0,0.3);
-            color: #e4e4e7;
-            font-family: inherit;
-            font-size: 1rem;
-        }
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: #10b981;
-        }
-        .error-msg {
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid rgba(239, 68, 68, 0.5);
-            color: #fca5a5;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
-        }
-        .auth-footer {
-            text-align: center;
-            margin-top: 20px;
-            font-size: 0.9rem;
-            color: #a1a1aa;
-        }
-        .auth-footer a {
-            color: #10b981;
-            text-decoration: none;
-        }
-        .auth-footer a:hover { text-decoration: underline; }
         
         /* Dashboard */
         .dashboard-header {
@@ -876,22 +716,18 @@ files:
             nav_items = [
                 Div(
                     Span(f"@{username}", cls="username"),
-                    Form(
-                        Button("Logout", type="submit", cls="btn-logout"),
-                        action="/logout",
-                        method="post"
-                    ),
+                    A("Logout", href="/auth/logout", cls="btn-logout", style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); text-decoration: none; color: #a1a1aa; transition: all 0.2s;"),
                     cls="user-info"
                 )
             ]
         else:
             nav_items = [
-                A("Login", href="/login"),
-                A("Sign Up", href="/signup", cls="btn btn-primary", style="padding: 8px 16px;")
+                A("Login", href="/auth/login"),
+                A("Sign Up", href="/auth/register", cls="btn btn-primary", style="padding: 8px 16px;")
             ]
         
         return (
-            Title("Progress Bars"),
+            Title("Progress Bars Enhanced"),
             STYLES,
             Div(
                 Div(
@@ -910,8 +746,8 @@ files:
             H1("Track Your Progress"),
             P("Create beautiful progress bars for life goals, countdowns, streaks, and more. Stay motivated with visual tracking."),
             Div(
-                A("Get Started", href="/signup", cls="btn btn-primary"),
-                A("Login", href="/login", cls="btn btn-secondary"),
+                A("Get Started", href="/auth/register", cls="btn btn-primary"),
+                A("Login", href="/auth/login", cls="btn btn-secondary"),
                 cls="landing-actions"
             ),
             Div(
@@ -942,42 +778,6 @@ files:
                 cls="features"
             ),
             cls="landing"
-        )
-
-    def auth_form(mode, error=None):
-        is_signup = mode == "signup"
-        return Div(
-            Div(
-                H2("Create Account" if is_signup else "Welcome Back"),
-                Div(error, cls="error-msg") if error else None,
-                Form(
-                    Div(
-                        Label("Username", for_="username"),
-                        Input(name="username", id="username", placeholder="johndoe", required=True, autocomplete="username"),
-                        cls="form-group"
-                    ),
-                    Div(
-                        Label("Email", for_="email"),
-                        Input(name="email", id="email", type="email", placeholder="john@example.com", required=True),
-                        cls="form-group"
-                    ) if is_signup else None,
-                    Div(
-                        Label("Password", for_="password"),
-                        Input(name="password", id="password", type="password", placeholder="••••••••", required=True, autocomplete="current-password"),
-                        cls="form-group"
-                    ),
-                    Button("Sign Up" if is_signup else "Login", type="submit", cls="btn btn-primary", style="width: 100%;"),
-                    action=f"/{mode}",
-                    method="post"
-                ),
-                Div(
-                    "Already have an account? " if is_signup else "Don't have an account? ",
-                    A("Login" if is_signup else "Sign Up", href="/login" if is_signup else "/signup"),
-                    cls="auth-footer"
-                ),
-                cls="auth-card"
-            ),
-            cls="auth-container"
         )
 
     def dashboard_page(user, bars):
@@ -1292,19 +1092,12 @@ files:
         )
 
   models.py: |
-    """Data models and validation helpers for Progress Bars app."""
+    """Data models and validation helpers for Progress Bars Enhanced app."""
     from dataclasses import dataclass
     from typing import Optional
     from datetime import datetime
 
     BAR_TYPES = ["countdown", "countup", "counter", "goal"]
-
-    @dataclass
-    class User:
-        id: str
-        username: str
-        email: str
-        created_at: Optional[datetime] = None
 
     @dataclass
     class ProgressBar:

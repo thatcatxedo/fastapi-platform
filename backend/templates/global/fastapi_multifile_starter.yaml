@@ -1,5 +1,6 @@
 name: "FastAPI Multi-File Starter"
 description: "An organized FastAPI app with routes, models, services, and helpers in separate files. Uses MongoDB for persistence."
+requires_database: true
 complexity: medium
 tags:
   - multifile

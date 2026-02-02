@@ -1,5 +1,6 @@
 name: "Enhanced Kanban (Drag & Drop)"
 description: "A modern Kanban board with full drag-and-drop support between columns. Built with SortableJS and FastHTML for a smooth, interactive experience. Includes OOB updates and a sleek dark theme."
+requires_database: true
 complexity: complex
 tags:
   - multifile

@@ -154,6 +154,8 @@ class TemplateResponse(BaseModel):
     created_at: str
     tags: List[str] = []
     user_id: Optional[str] = None
+    # Database requirement indicator
+    requires_database: bool = False
 
 
 class TemplateCreate(BaseModel):

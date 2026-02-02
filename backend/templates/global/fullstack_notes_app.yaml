@@ -1,5 +1,6 @@
 name: "Full-Stack Notes App"
 description: "A complete full-stack app with MongoDB persistence and server-rendered HTML."
+requires_database: true
 complexity: medium
 tags:
   - fullstack

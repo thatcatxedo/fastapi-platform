@@ -86,6 +86,9 @@ function EditorPage({ user }) {
   // Welcome screen state - show for new apps until user makes a choice
   const [showWelcome, setShowWelcome] = useState(!appId)
 
+  // Track if current template/code requires database
+  const [templateRequiresDb, setTemplateRequiresDb] = useState(false)
+
   // Refresh apps list when deployment succeeds
   useEffect(() => {
     if (deploymentStatus?.status === 'running' && deploymentStatus?.deployment_ready) {
@@ -131,6 +134,12 @@ function EditorPage({ user }) {
     }
   }
 
+  // Helper to detect if code uses MongoDB
+  const detectRequiresDatabase = (template) => {
+    const allCode = template.code || Object.values(template.files || {}).join('\n')
+    return /MongoClient|PLATFORM_MONGO_URI|from\s+pymongo|import\s+pymongo/.test(allCode)
+  }
+
   const handleUseTemplate = (template) => {
     // Handle multi-file templates
     if (template.mode === 'multi' && template.files) {
@@ -142,7 +151,16 @@ function EditorPage({ user }) {
       setCode(template.code)
       setName(template.name)
     }
-    setSuccess(`Template "${template.name}" loaded. Edit the code before deployment.`)
+
+    // Check if template requires database (explicit flag or code detection)
+    const requiresDb = template.requires_database || detectRequiresDatabase(template)
+    setTemplateRequiresDb(requiresDb)
+
+    if (requiresDb) {
+      setSuccess(`Template "${template.name}" loaded. This template uses MongoDB - a database will be auto-selected.`)
+    } else {
+      setSuccess(`Template "${template.name}" loaded. Edit the code before deployment.`)
+    }
     setError('')
     setTemplatesModalOpen(false)
   }
@@ -321,7 +339,24 @@ function EditorPage({ user }) {
             value={databaseId}
             onChange={setDatabaseId}
             disabled={loading}
+            autoSelectDefault={templateRequiresDb}
           />
+        )}
+
+        {/* Warning banner when code uses MongoDB but no database is selected */}
+        {!isEditing && !databaseId && (
+          (() => {
+            const allCode = mode === 'multi' ? Object.values(files).join('\n') : code
+            const usesMongo = /MongoClient|PLATFORM_MONGO_URI|from\s+pymongo|import\s+pymongo/.test(allCode)
+            return usesMongo ? (
+              <div className={styles.warningBanner}>
+                <span>This code uses MongoDB but no database is connected.</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Select a database above, or the default database will be used.
+                </span>
+              </div>
+            ) : null
+          })()
         )}
 
         <EnvVarsPanel

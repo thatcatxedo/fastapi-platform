@@ -163,6 +163,9 @@ log_success "MongoDB URI configured"
 if [ -z "$SECRET_KEY" ]; then
     log_info "Generating random SECRET_KEY..."
     SECRET_KEY=$(openssl rand -hex 32)
+    # Persist to .env for future deployments (prevents encryption key loss)
+    echo "SECRET_KEY=$SECRET_KEY" >> .env
+    log_info "SECRET_KEY saved to .env (keep this file safe!)"
 fi
 
 # ------------------------------------------------------------------------------

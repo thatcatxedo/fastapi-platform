@@ -1,14 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { API_URL } from '../../../App'
 
-function DatabaseSelector({ value, onChange, disabled }) {
+function DatabaseSelector({ value, onChange, disabled, autoSelectDefault }) {
   const [databases, setDatabases] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const autoSelectDone = useRef(false)
 
   useEffect(() => {
     fetchDatabases()
   }, [])
+
+  // Auto-select default database when autoSelectDefault is true and no value is set
+  useEffect(() => {
+    if (autoSelectDefault && !autoSelectDone.current && databases.length > 0 && !value) {
+      const defaultDb = databases.find(db => db.is_default)
+      if (defaultDb) {
+        onChange(defaultDb.id)
+        autoSelectDone.current = true
+      }
+    }
+  }, [autoSelectDefault, databases, value, onChange])
 
   const fetchDatabases = async () => {
     try {

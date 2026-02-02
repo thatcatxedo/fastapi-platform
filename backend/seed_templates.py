@@ -81,6 +81,7 @@ async def seed_templates(client=None, force_update=False):
             "files": template.get("files"),
             "framework": template.get("framework"),
             "entrypoint": template.get("entrypoint"),
+            "requires_database": template.get("requires_database", False),
         }
 
         update_doc = {

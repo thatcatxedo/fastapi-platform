@@ -1,5 +1,6 @@
 name: "FastHTML Multi-File Starter"
 description: "An organized FastHTML app with HTMX interactions. Routes, services, and HTML components in separate files."
+requires_database: true
 complexity: medium
 tags:
   - multifile

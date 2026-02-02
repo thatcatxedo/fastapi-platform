@@ -1,5 +1,6 @@
 name: "Community Weather Tracker"
 description: "Collect and share weather snapshots for user-chosen locations. Uses Open-Meteo by default and supports optional OpenWeatherMap API keys."
+requires_database: true
 complexity: medium
 tags:
   - multifile

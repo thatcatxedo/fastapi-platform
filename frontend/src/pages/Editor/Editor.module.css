@@ -333,3 +333,28 @@
   transform: translateX(4px);
   color: var(--primary);
 }
+
+/* Database Warning Banner */
+.warningBanner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+}
+
+.warningBanner span:first-child {
+  font-size: 0.875rem;
+  color: #856404;
+  font-weight: 500;
+}
+
+.warningBanner span:last-child {
+  font-size: 0.75rem;
+  color: #856404;
+  opacity: 0.8;
+}
