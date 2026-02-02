@@ -418,6 +418,114 @@ Implementation:
 
 ---
 
+## Technical Debt / DX Improvements
+
+Infrastructure-level improvements identified from platform analysis:
+
+### High Priority
+
+- [ ] **Static assets support for FastHTML apps**
+  - Current limitation: `validate_multifile()` only allows `.py` files
+  - FastHTML apps often need `static/styles.css`, small JS snippets, images
+  - **Phased approach:**
+    1. Phase 1: Text-only assets (CSS, JS, SVG) - covers 80% of needs
+    2. Phase 2: Binary assets via base64 encoding in API (images)
+  - Changes needed:
+    - Allow `static/*.css`, `static/*.js`, `static/*.svg` in validation
+    - Consider per-type size caps (e.g., 50KB for CSS, 100KB for JS)
+    - Runner: auto-mount `/code/static` as Starlette `StaticFiles` if exists
+    - Keep within existing 500KB total limit (safe for ConfigMaps)
+  - Note: ConfigMaps handle text fine; binary is awkward but doable
+  - Enables: real-world FastHTML apps with styling
+
+- [ ] **Network egress controls (NetworkPolicy)**
+  - Current risk: Every app gets `PLATFORM_MONGO_URI` with user's credentials.
+    If egress is unrestricted, compromised app code could exfiltrate all user data.
+  - Recommended approach:
+    - Default deny egress NetworkPolicy for user app pods
+    - Allow: DNS, MongoDB service (internal), optionally allowlisted external domains
+  - Alternative (simpler): Two-tier system
+    - `egress: locked` (default) — only internal services
+    - `egress: open` — admin-only toggle for apps needing external APIs
+  - This is more urgent than pod securityContext given the credential exposure
+
+- [ ] **Pod security hardening**
+  - Current gap: `deployment/apps.py` creates pods without security context
+  - Add to container spec:
+    ```python
+    security_context=k8s_client.V1SecurityContext(
+        run_as_non_root=True,
+        run_as_user=1000,
+        read_only_root_filesystem=True,
+        allow_privilege_escalation=False,
+        capabilities={"drop": ["ALL"]},
+    )
+    ```
+  - If runner needs writes, add `emptyDir` at `/tmp`
+  - Consider: Separate ServiceAccount per app (currently uses namespace default)
+  - "Cheap insurance" tier — usually painless to implement
+
+### Medium Priority
+
+- [ ] **Replace exec() with importlib in runner**
+  - Current: `runner/entrypoint.py` uses `exec(compile(code, ...))` 
+  - Issues with exec():
+    - Worse stack traces (line numbers/module context can be weird)
+    - Tricky relative imports in multi-file mode
+    - Manual injection of globals (FastAPI, BaseModel, etc.)
+  - Better approach: `importlib.util.spec_from_file_location`
+    ```python
+    spec = importlib.util.spec_from_file_location("user_app", CODE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["user_app"] = module
+    spec.loader.exec_module(module)
+    app = module.app
+    ```
+  - Benefits:
+    - Cleaner module boundaries for multi-file imports
+    - Better tracebacks
+    - No need to pre-inject globals
+  - Note: `/code` is already on `sys.path`, so imports would work naturally
+  - Consider: Also support `create_app()` factory pattern for forward compatibility
+
+- [ ] **Circular import detection in validation**
+  - Common issue in multi-file apps: `routes` → `components` → `routes`
+  - Can detect via AST by building import graph from `local_modules`
+  - Return warning (not error) with explanation of the cycle
+  - Low effort, high value for reducing "why doesn't my app start?" confusion
+
+- [ ] **Dry-load validation (subprocess + timeout)**
+  - Current validation catches syntax/imports but not import-time crashes
+  - Many users put logic at import time that fails at runtime
+  - Approach:
+    - Spawn subprocess with 1-2 second timeout
+    - Minimal env (no credentials)
+    - Attempt to import entrypoint module
+    - Catch ImportError, AttributeError, etc.
+  - Catches "works locally, crashes on platform" before K8s deploy
+  - Consider: Run in locked-down container for extra safety
+
+### Low Priority / Nice-to-Have
+
+- [ ] **Show available packages in editor UI**
+  - Users waste time guessing what's installed in runner
+  - Add "Available Packages" panel in editor sidebar
+  - Derive from runner build metadata or hardcoded list
+  - Low effort, nice DX polish
+
+- [ ] **HTMX-aware logging**
+  - Log HX-* headers (HX-Request, HX-Target, HX-Trigger) at debug level
+  - Add filter in pod log viewer for HTMX requests
+  - Helpful for debugging partial update issues
+
+- [ ] **FastHTML editor actions**
+  - "Add route" button → inserts handler in routes.py
+  - "Extract component" → moves selected HTML builder to components.py
+  - "Extract service" → moves DB logic to services.py
+  - High effort (IDE-like features), but would make FastHTML feel premium
+
+---
+
 ## Future / Needs Validation
 
 These are ideas that need real user feedback before committing:

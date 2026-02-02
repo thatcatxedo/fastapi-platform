@@ -105,7 +105,7 @@ TOOLS = [
     },
     {
         "name": "get_app_logs",
-        "description": "Get recent logs from an app's deployment. Useful for debugging errors.",
+        "description": "Get recent logs from an app's deployment with automatic error parsing. Returns raw logs plus structured errors_detected array with type, message, and suggestion for each error found. Use has_errors to quickly check if problems exist, and error_summary for a one-line overview.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -540,7 +540,9 @@ async def _get_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
 
 
 async def _get_app_logs(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
-    """Get logs from an app's deployment."""
+    """Get logs from an app's deployment with automatic error parsing."""
+    from chat.log_errors import parse_errors
+
     app_id = input_data.get("app_id")
     tail_lines = input_data.get("tail_lines", 50)
 
@@ -559,12 +561,20 @@ async def _get_app_logs(input_data: Dict[str, Any], user: dict) -> Dict[str, Any
         # Format logs as simple text
         log_lines = [log.get("message", "") for log in logs]
 
+        # Parse errors from logs
+        error_analysis = parse_errors(log_lines)
+
         return {
             "app_id": app_id,
             "pod_name": result.get("pod_name"),
             "logs": log_lines,
             "truncated": result.get("truncated", False),
-            "error": result.get("error")
+            "error": result.get("error"),
+            # Enhanced error context
+            "errors_detected": error_analysis["errors_detected"],
+            "has_errors": error_analysis["has_errors"],
+            "error_summary": error_analysis["error_summary"],
+            "traceback": error_analysis["traceback"]
         }
     except Exception as e:
         return {"error": f"Failed to get logs: {str(e)}"}
@@ -854,36 +864,31 @@ async def _diagnose_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any
         logger.error(f"Error getting deployment status: {e}")
         diagnosis["deployment_check_error"] = str(e)
 
-    # Get recent logs for error analysis
+    # Get recent logs for error analysis using shared parser
     try:
+        from chat.log_errors import parse_errors
+
         logs_result = await get_pod_logs(app_id, 30)
         logs = logs_result.get("logs", [])
-        log_text = "\n".join([log.get("message", "") for log in logs])
+        log_lines = [log.get("message", "") for log in logs]
 
-        # Analyze common errors
-        error_patterns = [
-            (r"ImportError.*No module named '(\w+)'", lambda m: f"Missing import: '{m.group(1)}' is not in allowed imports"),
-            (r"ModuleNotFoundError.*No module named '(\w+)'", lambda m: f"Module not found: '{m.group(1)}' - check allowed imports"),
-            (r"SyntaxError", lambda m: "Syntax error in code - check for typos"),
-            (r"NameError.*name '(\w+)' is not defined", lambda m: f"Undefined variable: '{m.group(1)}'"),
-            (r"KeyError.*'(\w+)'", lambda m: f"Missing key: '{m.group(1)}' - check your data structures"),
-            (r"AttributeError.*'(\w+)'.*has no attribute '(\w+)'", lambda m: f"Object '{m.group(1)}' has no attribute '{m.group(2)}'"),
-            (r"TypeError.*argument", lambda m: "Type error - check function arguments"),
-            (r"Connection refused", lambda m: "Cannot connect to service - check MongoDB URI or external services"),
-            (r"PLATFORM_MONGO_URI", lambda m: "Database connection issue - ensure database is set up"),
-        ]
+        # Use shared error parser
+        error_analysis = parse_errors(log_lines)
 
-        detected_errors = []
-        for pattern, handler in error_patterns:
-            match = re.search(pattern, log_text, re.IGNORECASE)
-            if match:
-                detected_errors.append(handler(match))
+        if error_analysis["has_errors"]:
+            # Add detected errors with suggestions to diagnosis
+            diagnosis["detected_errors"] = [
+                f"{e['message']} - {e['suggestion']}" if e.get('suggestion') else e['message']
+                for e in error_analysis["errors_detected"]
+            ]
+            diagnosis["issues"].extend(diagnosis["detected_errors"])
 
-        if detected_errors:
-            diagnosis["detected_errors"] = detected_errors
-            diagnosis["issues"].extend(detected_errors)
+        # Include traceback if found
+        if error_analysis["traceback"]:
+            diagnosis["traceback"] = error_analysis["traceback"]
 
         # Include recent error lines
+        log_text = "\n".join(log_lines)
         error_lines = [l for l in log_text.split('\n') if 'error' in l.lower() or 'exception' in l.lower()][:5]
         if error_lines:
             diagnosis["recent_error_lines"] = error_lines
