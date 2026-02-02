@@ -1,49 +1,57 @@
 """
-Admin routes for FastAPI Platform
+Admin routes for FastAPI Platform.
+
+This module contains thin HTTP handlers that delegate to AdminService
+for all business logic.
 """
 from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime
-from bson import ObjectId
 import logging
 
 from models import AdminSettingsUpdate, AdminStatusUpdate, UserSignup, UserResponse
-from auth import require_admin, hash_password
+from auth import require_admin
 from routers.auth import build_user_response
-from database import (
-    users_collection, apps_collection, templates_collection,
-    settings_collection, viewer_instances_collection, client
-)
 from utils import error_payload
-from validation import ALLOWED_IMPORTS
-from deployment import delete_app_deployment, delete_mongo_viewer_resources
+from services.admin_service import (
+    admin_service,
+    AdminServiceError,
+    UserNotFoundError,
+    CannotDemoteSelfError,
+    CannotRemoveLastAdminError,
+    CannotDeleteSelfError,
+    InvalidSettingsError,
+    UserExistsError
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-def normalize_allowed_imports(allowed_imports: list[str]) -> list[str]:
-    normalized = [
-        item.strip().lower()
-        for item in allowed_imports
-        if isinstance(item, str)
-    ]
-    normalized = [item for item in normalized if item]
-    return sorted(set(normalized))
+def handle_service_error(e: AdminServiceError) -> HTTPException:
+    """Convert service exceptions to HTTP exceptions."""
+    status_map = {
+        "USER_NOT_FOUND": 404,
+        "CANNOT_DEMOTE_SELF": 400,
+        "CANNOT_REMOVE_LAST_ADMIN": 400,
+        "CANNOT_DELETE_SELF": 400,
+        "INVALID_SETTINGS": 400,
+        "USER_EXISTS": 400,
+    }
+    status_code = status_map.get(e.code, 500)
+    return HTTPException(
+        status_code=status_code,
+        detail=error_payload(e.code, e.message, e.details if e.details else None)
+    )
 
+
+# =============================================================================
+# Settings
+# =============================================================================
 
 @router.get("/settings")
 async def get_admin_settings(admin: dict = Depends(require_admin)):
-    settings = await settings_collection.find_one({"_id": "global"})
-    allowed_imports = settings.get("allowed_imports") if settings else None
-    if not allowed_imports:
-        allowed_imports = sorted(ALLOWED_IMPORTS)
-    else:
-        allowed_imports = normalize_allowed_imports(allowed_imports)
-    return {
-        "allow_signups": settings.get("allow_signups", True) if settings else True,
-        "allowed_imports": allowed_imports
-    }
+    """Get platform settings."""
+    return await admin_service.get_settings()
 
 
 @router.put("/settings")
@@ -51,41 +59,22 @@ async def update_admin_settings(
     settings: AdminSettingsUpdate,
     admin: dict = Depends(require_admin)
 ):
-    allowed_imports = normalize_allowed_imports(settings.allowed_imports)
-    if not allowed_imports:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("INVALID_SETTINGS", "allowed_imports must include at least one module")
-        )
-    await settings_collection.update_one(
-        {"_id": "global"},
-        {"$set": {
-            "allow_signups": settings.allow_signups,
-            "allowed_imports": allowed_imports,
-            "updated_at": datetime.utcnow(),
-            "updated_by": admin["_id"]
-        }},
-        upsert=True
-    )
-    return {"success": True}
+    """Update platform settings."""
+    try:
+        await admin_service.update_settings(settings, admin)
+        return {"success": True}
+    except AdminServiceError as e:
+        raise handle_service_error(e)
 
+
+# =============================================================================
+# User Management
+# =============================================================================
 
 @router.get("/users")
 async def list_all_users(admin: dict = Depends(require_admin)):
-    users = []
-    async for user in users_collection.find().sort("created_at", -1):
-        app_count = await apps_collection.count_documents({"user_id": user["_id"]})
-        running_app_count = await apps_collection.count_documents({"user_id": user["_id"], "status": "running"})
-        users.append({
-            "id": str(user["_id"]),
-            "username": user["username"],
-            "email": user["email"],
-            "created_at": user["created_at"].isoformat(),
-            "is_admin": user.get("is_admin", False),
-            "app_count": app_count,
-            "running_app_count": running_app_count
-        })
-    return users
+    """List all users with app counts."""
+    return await admin_service.list_users_with_stats()
 
 
 @router.patch("/users/{user_id}/admin")
@@ -94,104 +83,11 @@ async def update_user_admin_status(
     status_update: AdminStatusUpdate,
     admin: dict = Depends(require_admin)
 ):
-    """Promote or demote a user to/from admin status"""
-    # Prevent self-demotion
-    if str(admin["_id"]) == user_id and not status_update.is_admin:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("CANNOT_DEMOTE_SELF", "Cannot remove your own admin status")
-        )
-    
-    # Check if user exists
-    user = await users_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail=error_payload("USER_NOT_FOUND", "User not found")
-        )
-    
-    # Prevent removing the last admin
-    if not status_update.is_admin:
-        admin_count = await users_collection.count_documents({"is_admin": True})
-        if admin_count <= 1:
-            raise HTTPException(
-                status_code=400,
-                detail=error_payload("CANNOT_REMOVE_LAST_ADMIN", "Cannot remove the last admin")
-            )
-    
-    # Update user's admin status
-    await users_collection.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {"is_admin": status_update.is_admin}}
-    )
-    
-    action = "promoted to" if status_update.is_admin else "demoted from"
-    logger.info(f"User {user['username']} {action} admin by {admin['username']}")
-    
-    return {"success": True, "is_admin": status_update.is_admin}
-
-
-@router.get("/stats")
-async def get_platform_stats(admin: dict = Depends(require_admin)):
-    user_count = await users_collection.count_documents({})
-    app_count = await apps_collection.count_documents({})
-    running_apps = await apps_collection.count_documents({"status": "running"})
-    template_count = await templates_collection.count_documents({})
-
-    recent_users = await users_collection.find().sort("created_at", -1).limit(5).to_list(5)
-    recent_apps = await apps_collection.find().sort("created_at", -1).limit(5).to_list(5)
-
-    # MongoDB stats
-    mongo_stats = {}
+    """Promote or demote a user to/from admin status."""
     try:
-        # Get list of user databases
-        db_list = await client.list_database_names()
-        user_dbs = [db for db in db_list if db.startswith("user_")]
-
-        total_storage = 0
-        total_collections = 0
-        total_documents = 0
-
-        for db_name in user_dbs:
-            try:
-                db = client[db_name]
-                stats = await db.command("dbStats")
-                total_storage += stats.get("storageSize", 0)
-                total_collections += stats.get("collections", 0)
-                total_documents += stats.get("objects", 0)
-            except Exception:
-                pass
-
-        # Platform DB stats
-        platform_db = client.fastapi_platform_db
-        platform_stats = await platform_db.command("dbStats")
-
-        mongo_stats = {
-            "user_databases": len(user_dbs),
-            "total_storage_mb": round(total_storage / (1024 * 1024), 2),
-            "total_collections": total_collections,
-            "total_documents": total_documents,
-            "platform_storage_mb": round(platform_stats.get("storageSize", 0) / (1024 * 1024), 2)
-        }
-    except Exception as e:
-        logger.warning(f"Failed to get MongoDB stats: {e}")
-        mongo_stats = {"error": str(e)}
-
-    return {
-        "users": user_count,
-        "apps": app_count,
-        "running_apps": running_apps,
-        "templates": template_count,
-        "mongo": mongo_stats,
-        "recent_signups": [
-            {"username": u["username"], "created_at": u["created_at"].isoformat()}
-            for u in recent_users
-        ],
-        "recent_deploys": [
-            {"name": a["name"], "app_id": a["app_id"], "created_at": a["created_at"].isoformat()}
-            for a in recent_apps
-        ]
-    }
+        return await admin_service.update_admin_status(user_id, status_update, admin)
+    except AdminServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.post("/users", response_model=UserResponse)
@@ -199,38 +95,12 @@ async def admin_create_user(
     user_data: UserSignup,
     admin: dict = Depends(require_admin)
 ):
-    # Reuse signup logic but skip signups_allowed check
-    existing = await users_collection.find_one({
-        "$or": [
-            {"username": user_data.username},
-            {"email": user_data.email}
-        ]
-    })
-    if existing:
-        raise HTTPException(status_code=400, detail="Username or email already exists")
-    
-    user_doc = {
-        "username": user_data.username,
-        "email": user_data.email,
-        "password_hash": hash_password(user_data.password),
-        "created_at": datetime.utcnow(),
-        "is_admin": False  # Admin-created users are not admins
-    }
-    result = await users_collection.insert_one(user_doc)
-    
-    # Create MongoDB user
+    """Create a new user (admin action)."""
     try:
-        from mongo_users import create_mongo_user, encrypt_password
-        mongo_username, mongo_password = await create_mongo_user(client, str(result.inserted_id))
-        await users_collection.update_one(
-            {"_id": result.inserted_id},
-            {"$set": {"mongo_password_encrypted": encrypt_password(mongo_password)}}
-        )
-    except Exception as e:
-        logger.error(f"Failed to create MongoDB user: {e}")
-    
-    user = await users_collection.find_one({"_id": result.inserted_id})
-    return build_user_response(user)
+        user = await admin_service.create_user(user_data, admin)
+        return build_user_response(user)
+    except AdminServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.delete("/users/{user_id}")
@@ -238,52 +108,18 @@ async def admin_delete_user(
     user_id: str,
     admin: dict = Depends(require_admin)
 ):
-    # Prevent self-deletion
-    if str(admin["_id"]) == user_id:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("CANNOT_DELETE_SELF", "Cannot delete your own account")
-        )
-    
-    user = await users_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail=error_payload("USER_NOT_FOUND", "User not found")
-        )
-    
-    # Delete user's apps (K8s resources + DB records)
-    async for app in apps_collection.find({"user_id": ObjectId(user_id)}):
-        try:
-            await delete_app_deployment(app, user)
-        except Exception as e:
-            logger.warning(f"Failed to delete app {app['app_id']}: {e}")
-    
-    await apps_collection.delete_many({"user_id": ObjectId(user_id)})
-    
-    # Delete MongoDB user
+    """Delete a user with cascade cleanup."""
     try:
-        from mongo_users import delete_mongo_user
-        await delete_mongo_user(client, user_id)
-    except Exception as e:
-        logger.warning(f"Failed to delete MongoDB user for {user_id}: {e}")
-    
-    # Delete user's database
-    try:
-        await client.drop_database(f"user_{user_id}")
-    except Exception as e:
-        logger.warning(f"Failed to drop database for {user_id}: {e}")
-    
-    # Delete viewer instance and resources
-    viewer = await viewer_instances_collection.find_one({"user_id": ObjectId(user_id)})
-    if viewer:
-        try:
-            await delete_mongo_viewer_resources(user_id)
-        except Exception as e:
-            logger.warning(f"Failed to delete viewer resources for {user_id}: {e}")
-        await viewer_instances_collection.delete_many({"user_id": ObjectId(user_id)})
-    
-    # Delete user record
-    await users_collection.delete_one({"_id": ObjectId(user_id)})
-    
-    return {"success": True, "deleted_user_id": user_id}
+        return await admin_service.delete_user(user_id, admin)
+    except AdminServiceError as e:
+        raise handle_service_error(e)
+
+
+# =============================================================================
+# Statistics
+# =============================================================================
+
+@router.get("/stats")
+async def get_platform_stats(admin: dict = Depends(require_admin)):
+    """Get platform statistics."""
+    return await admin_service.get_platform_stats()
