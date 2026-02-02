@@ -142,19 +142,20 @@ kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply
 log_success "Namespace ready"
 
 # ------------------------------------------------------------------------------
-# Step 5: Build MongoDB URI from cluster-foundation secrets
+# Step 5: Build MongoDB URI
 # ------------------------------------------------------------------------------
 log_info "Building MongoDB connection string..."
 
-# Get MongoDB password from cluster-foundation secrets
-MONGO_PASSWORD=$(kubectl get secret -n mongodb mongodb-secrets -o jsonpath='{.data.MONGODB_APP_PASSWORD}' 2>/dev/null | base64 -d || echo "")
+# Get MongoDB password from environment variable (must match cluster-foundation .env)
+MONGODB_APP_PASSWORD="${MONGODB_APP_PASSWORD:-}"
 
-if [ -z "$MONGO_PASSWORD" ]; then
-    log_warn "Could not get MongoDB password from secrets, using default"
-    MONGO_PASSWORD="platformpass456"
+if [ -z "$MONGODB_APP_PASSWORD" ]; then
+    log_error "MONGODB_APP_PASSWORD not set in .env"
+    log_error "This must match the password configured in cluster-foundation"
+    exit 1
 fi
 
-MONGO_URI="mongodb://platform:${MONGO_PASSWORD}@mongodb.mongodb.svc.cluster.local:27017/fastapi_platform_db?authSource=platform"
+MONGO_URI="mongodb://platform:${MONGODB_APP_PASSWORD}@mongodb.mongodb.svc.cluster.local:27017/fastapi_platform_db?authSource=platform"
 log_success "MongoDB URI configured"
 
 # ------------------------------------------------------------------------------
