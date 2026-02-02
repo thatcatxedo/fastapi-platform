@@ -1,9 +1,10 @@
 """
-Database management routes for multi-database support
+Database management routes for multi-database support.
+
+This module contains thin HTTP handlers that delegate to DatabaseService
+for all business logic.
 """
 from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime
-import uuid
 import logging
 
 from models import (
@@ -11,88 +12,60 @@ from models import (
     DatabaseListResponse, ViewerResponse
 )
 from auth import get_current_user
-from database import users_collection, apps_collection, client
-from mongo_users import (
-    create_mongo_user_for_database,
-    delete_mongo_user_for_database,
-    update_viewer_user_roles,
-    encrypt_password,
-    decrypt_password,
-    get_mongo_db_name,
-    generate_mongo_password
-)
 from utils import error_payload
-from config import APP_DOMAIN
+from services.database_service import (
+    database_service,
+    DatabaseServiceError,
+    DatabaseNotFoundError,
+    DatabaseLimitReachedError,
+    DuplicateNameError,
+    CannotDeleteError,
+    DatabaseInUseError,
+    DatabaseCreateError,
+    ViewerLaunchError,
+    NoDatabasesError
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/databases", tags=["databases"])
 
-MAX_DATABASES_PER_USER = 10
+
+def handle_service_error(e: DatabaseServiceError) -> HTTPException:
+    """Convert service exceptions to HTTP exceptions."""
+    status_map = {
+        "NOT_FOUND": 404,
+        "LIMIT_REACHED": 400,
+        "DUPLICATE_NAME": 400,
+        "CANNOT_DELETE": 400,
+        "DATABASE_IN_USE": 400,
+        "DB_CREATE_FAILED": 500,
+        "VIEWER_LAUNCH_FAILED": 500,
+        "NO_DATABASES": 400,
+    }
+    status_code = status_map.get(e.code, 500)
+    return HTTPException(
+        status_code=status_code,
+        detail=error_payload(e.code, e.message, e.details if e.details else None)
+    )
 
 
-async def get_database_stats(user_id: str, database_id: str) -> dict:
-    """Get stats for a specific user database."""
-    db_name = get_mongo_db_name(user_id, database_id)
-    user_db = client[db_name]
-
-    try:
-        collection_names = await user_db.list_collection_names()
-        db_stats = await user_db.command("dbStats")
-
-        return {
-            "total_collections": len(collection_names),
-            "total_documents": db_stats.get("objects", 0),
-            "total_size_bytes": db_stats.get("dataSize", 0),
-            "total_size_mb": round(db_stats.get("dataSize", 0) / (1024 * 1024), 2)
-        }
-    except Exception as e:
-        logger.warning(f"Error getting stats for {db_name}: {e}")
-        return {
-            "total_collections": 0,
-            "total_documents": 0,
-            "total_size_bytes": 0,
-            "total_size_mb": 0
-        }
-
-
-def format_datetime(dt) -> str:
-    """Format datetime to ISO string."""
-    if hasattr(dt, 'isoformat'):
-        return dt.isoformat()
-    return str(dt)
-
+# =============================================================================
+# List and Create
+# =============================================================================
 
 @router.get("", response_model=DatabaseListResponse)
 async def list_databases(user: dict = Depends(get_current_user)):
     """List all databases for the current user."""
-    user_id = str(user["_id"])
-    databases = user.get("databases", [])
-
-    result = []
-    total_size = 0
-
-    for db_entry in databases:
-        stats = await get_database_stats(user_id, db_entry["id"])
-        total_size += stats["total_size_mb"]
-
-        result.append(DatabaseResponse(
-            id=db_entry["id"],
-            name=db_entry["name"],
-            description=db_entry.get("description"),
-            is_default=db_entry.get("is_default", False),
-            mongo_database=get_mongo_db_name(user_id, db_entry["id"]),
-            created_at=format_datetime(db_entry["created_at"]),
-            total_collections=stats["total_collections"],
-            total_documents=stats["total_documents"],
-            total_size_mb=stats["total_size_mb"]
-        ))
-
-    return DatabaseListResponse(
-        databases=result,
-        total_size_mb=round(total_size, 2),
-        default_database_id=user.get("default_database_id", "default")
-    )
+    try:
+        databases, total_size, default_id = await database_service.list_for_user(user)
+        return DatabaseListResponse(
+            databases=databases,
+            total_size_mb=total_size,
+            default_database_id=default_id
+        )
+    except DatabaseServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.post("", response_model=DatabaseResponse)
@@ -101,102 +74,24 @@ async def create_database(
     user: dict = Depends(get_current_user)
 ):
     """Create a new database for the current user."""
-    user_id = str(user["_id"])
-    databases = user.get("databases", [])
-
-    # Check limit
-    if len(databases) >= MAX_DATABASES_PER_USER:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("LIMIT_REACHED", f"Maximum {MAX_DATABASES_PER_USER} databases allowed")
-        )
-
-    # Check for duplicate name
-    if any(db["name"].lower() == data.name.lower() for db in databases):
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("DUPLICATE_NAME", "A database with this name already exists")
-        )
-
-    # Generate unique ID
-    database_id = str(uuid.uuid4())[:8]
-
-    # Create MongoDB user for this database
     try:
-        _, mongo_password = await create_mongo_user_for_database(
-            client, user_id, database_id
-        )
-    except Exception as e:
-        logger.error(f"Failed to create MongoDB user: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=error_payload("DB_CREATE_FAILED", "Failed to create database")
-        )
+        return await database_service.create(data, user)
+    except DatabaseServiceError as e:
+        raise handle_service_error(e)
 
-    # Create database entry
-    # Auto-set as default if this is the user's first database
-    is_first_database = len(databases) == 0
-    now = datetime.utcnow()
-    new_db = {
-        "id": database_id,
-        "name": data.name,
-        "description": data.description,
-        "mongo_password_encrypted": encrypt_password(mongo_password),
-        "created_at": now,
-        "is_default": is_first_database
-    }
 
-    # Add to user's databases (and set as default if first)
-    update_ops = {"$push": {"databases": new_db}}
-    if is_first_database:
-        update_ops["$set"] = {"default_database_id": database_id}
-
-    await users_collection.update_one(
-        {"_id": user["_id"]},
-        update_ops
-    )
-
-    # Update viewer user to include new database
-    try:
-        all_db_ids = [db["id"] for db in databases] + [database_id]
-        await update_viewer_user_roles(client, user_id, all_db_ids)
-    except Exception as e:
-        logger.warning(f"Failed to update viewer user roles: {e}")
-
-    return DatabaseResponse(
-        id=database_id,
-        name=data.name,
-        description=data.description,
-        is_default=is_first_database,
-        mongo_database=get_mongo_db_name(user_id, database_id),
-        created_at=format_datetime(now),
-        total_collections=0,
-        total_documents=0,
-        total_size_mb=0
-    )
-
+# =============================================================================
+# Get, Update, Delete
+# =============================================================================
 
 @router.get("/{database_id}", response_model=DatabaseResponse)
 async def get_database(database_id: str, user: dict = Depends(get_current_user)):
     """Get details for a specific database."""
-    user_id = str(user["_id"])
-    databases = user.get("databases", [])
-
-    db_entry = next((db for db in databases if db["id"] == database_id), None)
-    if not db_entry:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "Database not found"))
-
-    stats = await get_database_stats(user_id, database_id)
-
-    return DatabaseResponse(
-        id=db_entry["id"],
-        name=db_entry["name"],
-        description=db_entry.get("description"),
-        is_default=db_entry.get("is_default", False),
-        mongo_database=get_mongo_db_name(user_id, database_id),
-        created_at=format_datetime(db_entry["created_at"]),
-        **stats
-    )
+    try:
+        db_entry, stats = await database_service.get_by_id(database_id, user)
+        return database_service.to_response(db_entry, str(user["_id"]), stats)
+    except DatabaseServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.patch("/{database_id}", response_model=DatabaseResponse)
@@ -206,206 +101,39 @@ async def update_database(
     user: dict = Depends(get_current_user)
 ):
     """Update a database's name, description, or default status."""
-    user_id = str(user["_id"])
-    databases = user.get("databases", [])
-
-    db_index = next((i for i, db in enumerate(databases) if db["id"] == database_id), None)
-    if db_index is None:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "Database not found"))
-
-    update_ops = {}
-
-    if data.name is not None:
-        # Check for duplicate name
-        if any(db["name"].lower() == data.name.lower() and db["id"] != database_id for db in databases):
-            raise HTTPException(
-                status_code=400,
-                detail=error_payload("DUPLICATE_NAME", "A database with this name already exists")
-            )
-        update_ops[f"databases.{db_index}.name"] = data.name
-
-    if data.description is not None:
-        update_ops[f"databases.{db_index}.description"] = data.description
-
-    if data.is_default is True:
-        # Clear other defaults and set this one
-        for i, db in enumerate(databases):
-            update_ops[f"databases.{i}.is_default"] = (i == db_index)
-        update_ops["default_database_id"] = database_id
-
-    if update_ops:
-        await users_collection.update_one(
-            {"_id": user["_id"]},
-            {"$set": update_ops}
-        )
-
-    # Fetch updated user and return database
-    updated_user = await users_collection.find_one({"_id": user["_id"]})
-    db_entry = updated_user["databases"][db_index]
-    stats = await get_database_stats(user_id, database_id)
-
-    return DatabaseResponse(
-        id=db_entry["id"],
-        name=db_entry["name"],
-        description=db_entry.get("description"),
-        is_default=db_entry.get("is_default", False),
-        mongo_database=get_mongo_db_name(user_id, database_id),
-        created_at=format_datetime(db_entry["created_at"]),
-        **stats
-    )
+    try:
+        return await database_service.update(database_id, data, user)
+    except DatabaseServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.delete("/{database_id}")
 async def delete_database(database_id: str, user: dict = Depends(get_current_user)):
     """Delete a database. Cannot delete the last or default database."""
-    user_id = str(user["_id"])
-    databases = user.get("databases", [])
-
-    if len(databases) <= 1:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("CANNOT_DELETE", "Cannot delete the last database")
-        )
-
-    db_entry = next((db for db in databases if db["id"] == database_id), None)
-    if not db_entry:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "Database not found"))
-
-    if db_entry.get("is_default"):
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("CANNOT_DELETE", "Cannot delete the default database. Set another database as default first.")
-        )
-
-    # Check if any apps use this database
-    apps_using_db = await apps_collection.count_documents({
-        "user_id": user["_id"],
-        "database_id": database_id,
-        "status": {"$ne": "deleted"}
-    })
-
-    if apps_using_db > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload(
-                "DATABASE_IN_USE",
-                f"{apps_using_db} app(s) are using this database. Update them to use a different database first."
-            )
-        )
-
-    # Delete MongoDB user
     try:
-        await delete_mongo_user_for_database(client, user_id, database_id)
-    except Exception as e:
-        logger.warning(f"Failed to delete MongoDB user for database {database_id}: {e}")
+        await database_service.delete(database_id, user)
+        return {"success": True, "message": "Database deleted"}
+    except DatabaseServiceError as e:
+        raise handle_service_error(e)
 
-    # Drop the MongoDB database
-    db_name = get_mongo_db_name(user_id, database_id)
-    try:
-        await client.drop_database(db_name)
-        logger.info(f"Dropped MongoDB database {db_name}")
-    except Exception as e:
-        logger.warning(f"Failed to drop database {db_name}: {e}")
 
-    # Remove from user's databases array
-    await users_collection.update_one(
-        {"_id": user["_id"]},
-        {"$pull": {"databases": {"id": database_id}}}
-    )
-
-    # Update viewer user to remove deleted database
-    try:
-        remaining_db_ids = [db["id"] for db in databases if db["id"] != database_id]
-        await update_viewer_user_roles(client, user_id, remaining_db_ids)
-    except Exception as e:
-        logger.warning(f"Failed to update viewer user roles: {e}")
-
-    return {"success": True, "message": "Database deleted"}
-
+# =============================================================================
+# Viewer
+# =============================================================================
 
 @router.post("/viewer", response_model=ViewerResponse)
 async def launch_viewer_all_databases(user: dict = Depends(get_current_user)):
     """Launch MongoDB viewer with access to all user's databases."""
-    user_id = str(user["_id"])
-    databases = user.get("databases", [])
-
-    if not databases:
-        raise HTTPException(
-            status_code=400,
-            detail=error_payload("NO_DATABASES", "No databases found for this user")
-        )
-
-    # Generate viewer credentials (basic auth for mongo-express)
-    viewer_username = "admin"
-    viewer_password = generate_mongo_password()[:12]
-
     try:
-        from deployment.viewer import create_mongo_viewer_resources, get_mongo_viewer_status
-
-        # Create/update viewer resources with all-database access
-        await create_mongo_viewer_resources(
-            user_id, user, viewer_username, viewer_password,
-            use_viewer_user=True  # Use viewer user instead of database-specific user
-        )
-
-        # Get status
-        status = await get_mongo_viewer_status(user_id)
-        viewer_url = f"http://mongo-{user_id}.{APP_DOMAIN}"
-
-        return ViewerResponse(
-            url=viewer_url,
-            username=viewer_username,
-            password=viewer_password,
-            password_provided=True,
-            ready=status.get("ready", False) if status else False,
-            pod_status=status.get("pod_status") if status else None
-        )
-    except Exception as e:
-        logger.error(f"Failed to launch viewer: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=error_payload("VIEWER_LAUNCH_FAILED", str(e))
-        )
+        return await database_service.launch_viewer(user)
+    except DatabaseServiceError as e:
+        raise handle_service_error(e)
 
 
 @router.post("/{database_id}/viewer", response_model=ViewerResponse)
 async def launch_viewer_single_database(database_id: str, user: dict = Depends(get_current_user)):
     """Launch MongoDB viewer for a specific database (deprecated - use /viewer instead)."""
-    user_id = str(user["_id"])
-    databases = user.get("databases", [])
-
-    db_entry = next((db for db in databases if db["id"] == database_id), None)
-    if not db_entry:
-        raise HTTPException(status_code=404, detail=error_payload("NOT_FOUND", "Database not found"))
-
-    # Generate viewer credentials (basic auth for mongo-express)
-    viewer_username = "admin"
-    viewer_password = generate_mongo_password()[:12]
-
     try:
-        from deployment.viewer import create_mongo_viewer_resources, get_mongo_viewer_status
-
-        # Create/update viewer resources - use all-database access for better UX
-        await create_mongo_viewer_resources(
-            user_id, user, viewer_username, viewer_password,
-            use_viewer_user=True  # Use viewer user for all-database access
-        )
-
-        # Get status
-        status = await get_mongo_viewer_status(user_id)
-        viewer_url = f"http://mongo-{user_id}.{APP_DOMAIN}"
-
-        return ViewerResponse(
-            url=viewer_url,
-            username=viewer_username,
-            password=viewer_password,
-            password_provided=True,
-            ready=status.get("ready", False) if status else False,
-            pod_status=status.get("pod_status") if status else None
-        )
-    except Exception as e:
-        logger.error(f"Failed to launch viewer for database {database_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=error_payload("VIEWER_LAUNCH_FAILED", str(e))
-        )
+        return await database_service.launch_viewer(user, database_id)
+    except DatabaseServiceError as e:
+        raise handle_service_error(e)
