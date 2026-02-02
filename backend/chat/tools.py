@@ -442,12 +442,17 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
     # Handle code/files update based on mode
     if mode == "multi":
         if files:
+            # Merge new files with existing files for validation
+            # This ensures imports between files work correctly
+            existing_files = app.get("files", {})
+            merged_files = {**existing_files, **files}  # New files override existing
+
             is_valid, error_msg, error_line, error_file = validate_multifile(
-                files, app.get("entrypoint", "app.py")
+                merged_files, app.get("entrypoint", "app.py")
             )
             if not is_valid:
                 return {"error": f"Code validation failed in {error_file or 'unknown'} line {error_line or '?'}: {error_msg}"}
-            update_data["files"] = files
+            update_data["files"] = merged_files
     else:
         if code:
             is_valid, error_msg, error_line = validate_code(code)

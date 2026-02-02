@@ -234,7 +234,12 @@ async def validate_existing_app(app_id: str, payload: ValidateRequest, user: dic
     allowed_imports = await app_service.get_allowed_imports()
 
     if mode == "multi" or payload.files:
-        files = payload.files or app.get("files", {})
+        # Merge payload files with existing files to allow partial updates
+        existing_files = app.get("files", {})
+        if payload.files:
+            files = {**existing_files, **payload.files}
+        else:
+            files = existing_files
         entrypoint = payload.entrypoint or app.get("entrypoint", "app.py")
         is_valid, error_msg, error_line, error_file = validate_multifile(
             files, entrypoint, allowed_imports_override=allowed_imports
