@@ -408,6 +408,17 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
     if not app_id:
         return {"error": "app_id is required"}
 
+    # Validate files structure early if provided
+    if files is not None:
+        if not isinstance(files, dict):
+            return {"error": f"'files' must be a dict of {{filename: code}}, got {type(files).__name__}"}
+        if files:
+            # Check all values are strings (code content)
+            for filename, content in files.items():
+                if not isinstance(content, str):
+                    return {"error": f"File content for '{filename}' must be a string, got {type(content).__name__}"}
+            logger.info(f"update_app called with {len(files)} files: {list(files.keys())}")
+
     # Find the app
     app = await apps_collection.find_one({"app_id": app_id, "user_id": user["_id"]})
     if not app:
@@ -435,7 +446,7 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
                 files, app.get("entrypoint", "app.py")
             )
             if not is_valid:
-                return {"error": f"Code validation failed in {error_file} line {error_line}: {error_msg}"}
+                return {"error": f"Code validation failed in {error_file or 'unknown'} line {error_line or '?'}: {error_msg}"}
             update_data["files"] = files
     else:
         if code:
@@ -443,6 +454,9 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
             if not is_valid:
                 return {"error": f"Code validation failed at line {error_line}: {error_msg}"}
             update_data["code"] = code
+        # If files passed to single-file app, that's an error
+        if files:
+            return {"error": "Cannot pass 'files' to a single-file app. Use 'code' instead, or convert the app to multi-file mode."}
 
     if not update_data:
         return {"error": "No updates provided (need code, files, name, or database_id)"}
