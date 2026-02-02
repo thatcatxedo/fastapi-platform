@@ -241,6 +241,26 @@ if [ ! -d "$OVERLAY_PATH" ]; then
     exit 1
 fi
 
+# Dynamic domain replacement in overlay files
+if [ "$ENVIRONMENT" = "homelab" ] && [ -n "$DOMAIN" ]; then
+    log_info "Configuring domain: ${DOMAIN}"
+
+    # Backup and replace domains in overlay files
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        SED_INPLACE="sed -i ''"
+    else
+        SED_INPLACE="sed -i"
+    fi
+
+    # Replace gatorlunch.com (default homelab domain) with configured domain
+    for file in "$OVERLAY_PATH"/*.yaml; do
+        if [ -f "$file" ]; then
+            $SED_INPLACE "s/gatorlunch\.com/${DOMAIN}/g" "$file"
+        fi
+    done
+    log_success "Domain configured in overlay"
+fi
+
 kubectl apply -k "$OVERLAY_PATH"
 
 log_success "Manifests applied"
