@@ -10,7 +10,7 @@
   width: 260px;
   min-width: 260px;
   background: var(--bg);
-  border-right: 1px solid var(--bg-light);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -36,9 +36,9 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background-color 0.15s;
   margin-bottom: 2px;
 }
 
@@ -67,8 +67,8 @@
   cursor: pointer;
   padding: 0.25rem 0.5rem;
   font-size: 1rem;
-  border-radius: 4px;
-  transition: opacity 0.15s, background 0.15s;
+  border-radius: 0;
+  transition: opacity 0.15s, background-color 0.15s;
 }
 
 .conversationItem:hover .deleteBtn {
@@ -121,11 +121,11 @@
 }
 
 .appSelectorSelect {
-  background: var(--bg-light);
-  border: 1px solid var(--bg-lighter);
+  background: var(--bg);
+  border: 1px solid var(--border);
   color: var(--text);
   padding: 0.35rem 0.5rem;
-  border-radius: 4px;
+  border-radius: 0;
   min-width: 200px;
   font-size: 0.9rem;
 }
@@ -178,14 +178,15 @@
   align-self: flex-end;
   background: var(--primary);
   color: white;
-  border-bottom-right-radius: 4px;
+  border-radius: 0;
 }
 
 .message.assistant {
   align-self: flex-start;
-  background: var(--bg);
+  background: var(--bg-light);
   color: var(--text);
-  border-bottom-left-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: 0;
 }
 
 .messageContent {
@@ -211,8 +212,9 @@
 }
 
 .toolCall {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: 0;
   padding: 0.75rem;
   margin-top: 0.5rem;
   font-size: 0.85rem;
@@ -245,8 +247,9 @@
 
 /* Tool status indicator (while executing) */
 .toolStatus {
-  background: var(--bg);
-  border-radius: 8px;
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: 0;
   padding: 1rem;
   margin: 0.5rem 0;
   align-self: flex-start;
@@ -273,8 +276,9 @@
 .toolStatusResult {
   margin-top: 0.5rem;
   padding: 0.5rem;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0;
   font-size: 0.85rem;
 }
 
@@ -338,6 +342,7 @@
 
 .welcomeTitle {
   font-size: 1.5rem;
+  font-weight: 400;
   color: var(--text);
   margin-bottom: 0.5rem;
 }
@@ -384,9 +389,9 @@
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 1.25rem;
-  background: var(--bg);
-  border-radius: 12px;
-  border-bottom-left-radius: 4px;
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: 0;
   align-self: flex-start;
   max-width: 200px;
   animation: slideIn 0.2s ease-out;
@@ -435,18 +440,16 @@
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 .message {
   max-width: 80%;
   padding: 1rem;
-  border-radius: 12px;
+  border-radius: 0;
   line-height: 1.5;
   animation: slideIn 0.2s ease-out;
 }
@@ -470,7 +473,7 @@
   align-items: center;
   gap: 0.5rem;
   color: var(--text);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .toolStatusIcon {
@@ -604,12 +607,12 @@
   transform: translateX(-50%);
   background: var(--primary);
   color: white;
-  border: none;
+  border: 1px solid var(--primary);
   padding: 0.5rem 1rem;
-  border-radius: 20px;
+  border-radius: 0;
   font-size: 0.85rem;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   animation: slideIn 0.2s ease-out;
   z-index: 10;
 }

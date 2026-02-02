@@ -94,7 +94,7 @@ function AppView({ user }) {
           justifyContent: 'space-between', 
           marginBottom: '1.5rem' 
         }}>
-          <h1>App Preview</h1>
+          <h1 style={{ fontWeight: '400' }}>App Preview</h1>
         </div>
         <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
           <div style={{ 
@@ -232,7 +232,7 @@ function AppView({ user }) {
       {!isRunning && !error && (
         <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
           <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>⚠</div>
-          <h2 style={{ marginBottom: '0.5rem', color: 'var(--text)' }}>App Not Available</h2>
+          <h2 style={{ marginBottom: '0.5rem', color: 'var(--text)', fontWeight: '500' }}>App Not Available</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
             This app is not currently running. You may need to deploy it first.
           </p>

@@ -93,7 +93,7 @@ function Login({ onLogin }) {
 
   return (
     <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '2rem' }}>Login</h1>
+      <h1 style={{ marginBottom: '2rem', fontWeight: '400' }}>Login</h1>
       
       {error && <div className="error">{error}</div>}
 

@@ -255,9 +255,9 @@ function Database({ user }) {
                 <div style={{ flex: 1, minWidth: '200px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
                     {db.is_default && <span style={{ color: 'var(--warning)' }}>★</span>}
-                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '600' }}>{db.name}</h3>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '500' }}>{db.name}</h3>
                     {db.is_default && (
-                      <span style={{ fontSize: '0.75rem', padding: '0.125rem 0.5rem', background: 'var(--bg-light)', borderRadius: '0.25rem', color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: '0.75rem', padding: '0.125rem 0.5rem', background: 'var(--bg-light)', borderRadius: '0', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
                         Default
                       </span>
                     )}
@@ -306,7 +306,7 @@ function Database({ user }) {
 
               {/* Delete Confirmation */}
               {deleteConfirm === db.id && (
-                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg-light)', borderRadius: '0.375rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg-light)', borderRadius: '0', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <span style={{ fontSize: '0.875rem' }}>Delete "{db.name}"? This cannot be undone.</span>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
@@ -347,7 +347,7 @@ function Database({ user }) {
           zIndex: 1000
         }}>
           <div className="card" style={{ width: '100%', maxWidth: '400px', margin: '1rem', padding: '1.5rem' }}>
-            <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.25rem' }}>New Database</h2>
+            <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.25rem', fontWeight: '500' }}>New Database</h2>
             {createError && <div className="error" style={{ marginBottom: '1rem' }}>{createError}</div>}
             <form onSubmit={createDatabase}>
               <div style={{ marginBottom: '1rem' }}>
@@ -360,11 +360,11 @@ function Database({ user }) {
                   onChange={(e) => setNewDbName(e.target.value)}
                   placeholder="e.g., Production"
                   required
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border)' }}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0', border: '1px solid var(--border)' }}
                 />
               </div>
               <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: '500' }}>
+                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: '400' }}>
                   Description (optional)
                 </label>
                 <input
@@ -372,7 +372,7 @@ function Database({ user }) {
                   value={newDbDescription}
                   onChange={(e) => setNewDbDescription(e.target.value)}
                   placeholder="e.g., Production database for live apps"
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border)' }}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0', border: '1px solid var(--border)' }}
                 />
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>

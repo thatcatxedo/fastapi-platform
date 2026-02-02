@@ -209,7 +209,7 @@ function Admin({ user }) {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h1 style={{ margin: 0 }}>Admin Dashboard</h1>
+        <h1 style={{ margin: 0, fontWeight: '400' }}>Admin Dashboard</h1>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
           <input
             type="checkbox"
@@ -225,7 +225,7 @@ function Admin({ user }) {
 
       <div className="card" style={{ padding: '1rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Allowed Imports</h2>
+          <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '500' }}>Allowed Imports</h2>
           <button
             className="btn btn-primary"
             disabled={allowedImportsSaving}
@@ -275,7 +275,7 @@ function Admin({ user }) {
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Users</div>
           </div>
           <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.apps}</div>
+            <div style={{ fontSize: '1.75rem', fontWeight: '500' }}>{stats.apps}</div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Apps</div>
           </div>
           <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
@@ -283,7 +283,7 @@ function Admin({ user }) {
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Running</div>
           </div>
           <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.templates}</div>
+            <div style={{ fontSize: '1.75rem', fontWeight: '500' }}>{stats.templates}</div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Templates</div>
           </div>
           {stats.mongo && !stats.mongo.error && (
@@ -293,7 +293,7 @@ function Admin({ user }) {
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>User DBs</div>
               </div>
               <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.75rem', fontWeight: '600' }}>{stats.mongo.total_storage_mb}</div>
+                <div style={{ fontSize: '1.75rem', fontWeight: '500' }}>{stats.mongo.total_storage_mb}</div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>User MB</div>
               </div>
               <div className="card" style={{ flex: '1', minWidth: '120px', padding: '1rem', textAlign: 'center' }}>
@@ -310,7 +310,7 @@ function Admin({ user }) {
         {/* Users Table */}
         <div className="card" style={{ padding: '1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Users ({users.length})</h2>
+            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '500' }}>Users ({users.length})</h2>
             {!settings.allow_signups && (
               <button
                 className="btn btn-secondary"
@@ -323,7 +323,7 @@ function Admin({ user }) {
           </div>
 
           {showCreateForm && (
-            <form onSubmit={handleCreateUser} style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '4px' }}>
+            <form onSubmit={handleCreateUser} style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-light)', borderRadius: '0', border: '1px solid var(--border)' }}>
               {createError && <div className="error" style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>{createError}</div>}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
                 <input
@@ -391,7 +391,7 @@ function Admin({ user }) {
                           style={{
                             background: 'none',
                             border: '1px solid var(--border)',
-                            borderRadius: '3px',
+                            borderRadius: '0',
                             padding: '0.15rem 0.4rem',
                             cursor: 'pointer',
                             fontSize: '0.75rem',
@@ -401,7 +401,7 @@ function Admin({ user }) {
                           {adminToggleLoading === u.id ? '...' : (u.is_admin ? 'Admin' : 'User')}
                         </button>
                       ) : (
-                        <span style={{ padding: '0.15rem 0.4rem', background: 'var(--primary)', color: 'white', borderRadius: '3px', fontSize: '0.75rem' }}>Admin</span>
+                        <span style={{ padding: '0.15rem 0.4rem', background: 'var(--primary)', color: 'white', borderRadius: '0', fontSize: '0.75rem' }}>Admin</span>
                       )}
                     </td>
                     <td style={{ padding: '0.5rem', textAlign: 'center' }}>
@@ -427,7 +427,7 @@ function Admin({ user }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {stats?.recent_signups?.length > 0 && (
             <div className="card" style={{ padding: '1rem' }}>
-              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Recent Signups</h3>
+              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '500' }}>Recent Signups</h3>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem' }}>
                 {stats.recent_signups.slice(0, 5).map((signup, idx) => (
                   <li key={idx} style={{ padding: '0.35rem 0', borderBottom: idx < Math.min(stats.recent_signups.length, 5) - 1 ? '1px solid var(--border)' : 'none' }}>
@@ -441,11 +441,11 @@ function Admin({ user }) {
 
           {stats?.recent_deploys?.length > 0 && (
             <div className="card" style={{ padding: '1rem' }}>
-              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Recent Deploys</h3>
+              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '500' }}>Recent Deploys</h3>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem' }}>
                 {stats.recent_deploys.slice(0, 5).map((deploy, idx) => (
                   <li key={idx} style={{ padding: '0.35rem 0', borderBottom: idx < Math.min(stats.recent_deploys.length, 5) - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <strong style={{ wordBreak: 'break-all' }}>{deploy.name}</strong>
+                    <strong style={{ wordBreak: 'break-all', fontWeight: '500' }}>{deploy.name}</strong>
                     <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem', fontSize: '0.8rem' }}>{formatDate(deploy.created_at)}</span>
                   </li>
                 ))}
@@ -455,7 +455,7 @@ function Admin({ user }) {
 
           {stats?.mongo && !stats.mongo.error && (
             <div className="card" style={{ padding: '1rem' }}>
-              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>MongoDB</h3>
+              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '500' }}>MongoDB</h3>
               <div style={{ fontSize: '0.85rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Platform DB</span>

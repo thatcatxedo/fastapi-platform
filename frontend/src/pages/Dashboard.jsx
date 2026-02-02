@@ -64,8 +64,8 @@ function Dashboard({ user }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
           {[1, 2, 3, 4].map(i => (
             <div key={i} className="card" style={{ padding: '1.25rem' }}>
-              <div style={{ height: '1rem', width: '60%', background: 'var(--bg-lighter)', borderRadius: '0.25rem', marginBottom: '0.5rem' }} />
-              <div style={{ height: '2rem', width: '40%', background: 'var(--bg-lighter)', borderRadius: '0.25rem' }} />
+              <div style={{ height: '1rem', width: '60%', background: 'var(--bg-light)', borderRadius: '0', marginBottom: '0.5rem' }} />
+              <div style={{ height: '2rem', width: '40%', background: 'var(--bg-light)', borderRadius: '0' }} />
             </div>
           ))}
         </div>
@@ -89,28 +89,28 @@ function Dashboard({ user }) {
       {/* Stats Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+          <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
             Total Apps
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: '600', color: 'var(--text)' }}>
+          <div style={{ fontSize: '2rem', fontWeight: '500', color: 'var(--text)' }}>
             {stats.total}
           </div>
         </div>
 
         <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+          <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
             Running
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: '600', color: 'var(--success)' }}>
+          <div style={{ fontSize: '2rem', fontWeight: '500', color: 'var(--success)' }}>
             {stats.running}
           </div>
         </div>
 
         <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+          <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
             Deploying
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: '600', color: 'var(--warning)' }}>
+          <div style={{ fontSize: '2rem', fontWeight: '500', color: 'var(--warning)' }}>
             {stats.deploying}
           </div>
         </div>
@@ -128,31 +128,31 @@ function Dashboard({ user }) {
       {/* Metrics Summary */}
       {stats.running > 0 && (
         <div className="card" style={{ padding: '1.25rem', marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text)' }}>
+          <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text)', fontWeight: '500' }}>
             Aggregate Metrics (24h)
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem' }}>
             <div>
-              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+              <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
                 Total Requests
               </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '600', color: 'var(--text)' }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: '500', color: 'var(--text)' }}>
                 {loadingMetrics ? '...' : totalRequests.toLocaleString()}
               </div>
             </div>
             <div>
-              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+              <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
                 Total Errors
               </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '600', color: totalErrors > 0 ? 'var(--error)' : 'var(--text)' }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: '500', color: totalErrors > 0 ? 'var(--error)' : 'var(--text)' }}>
                 {loadingMetrics ? '...' : totalErrors.toLocaleString()}
               </div>
             </div>
             <div>
-              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+              <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
                 Avg Response Time
               </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '600', color: 'var(--text)' }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: '500', color: 'var(--text)' }}>
                 {loadingMetrics ? '...' : `${avgResponseTime}ms`}
               </div>
             </div>
@@ -160,92 +160,115 @@ function Dashboard({ user }) {
         </div>
       )}
 
-      {/* Running Apps Quick Access */}
+      {/* Running Apps Table */}
       {runningApps.length > 0 ? (
         <div>
-          <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text)' }}>
+          <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text)', fontWeight: '500' }}>
             Running Apps
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
-            {runningApps.map(app => (
-              <div key={app.app_id} className="card" style={{ padding: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                  <div>
-                    <Link 
-                      to={`/editor/${app.app_id}`}
-                      style={{ 
-                        fontWeight: '500', 
-                        color: 'var(--text)', 
-                        textDecoration: 'none',
-                        display: 'block',
-                        marginBottom: '0.25rem'
-                      }}
-                    >
-                      {app.name}
-                    </Link>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {app.app_id}
-                    </span>
-                  </div>
-                  <span className="status-badge status-running">● running</span>
-                </div>
-                
-                {appMetrics[app.app_id] && (
-                  <div style={{ 
-                    display: 'flex', 
-                    gap: '1rem', 
-                    fontSize: '0.75rem', 
-                    color: 'var(--text-muted)',
-                    marginBottom: '0.75rem'
-                  }}>
-                    <span>{appMetrics[app.app_id].request_count} req</span>
-                    <span style={{ color: appMetrics[app.app_id].error_count > 0 ? 'var(--error)' : undefined }}>
-                      {appMetrics[app.app_id].error_count} err
-                    </span>
-                    <span>{appMetrics[app.app_id].avg_response_time_ms}ms avg</span>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <a
-                    href={app.deployment_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-secondary"
-                    style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
-                  >
-                    Open App
-                  </a>
-                  <a
-                    href={`${app.deployment_url}/docs`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-secondary"
-                    style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
-                  >
-                    API Docs
-                  </a>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setLogsAppId(app.app_id)}
-                    style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }}
-                  >
-                    Logs
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setErrorsAppId(app.app_id)}
-                    style={{ 
-                      padding: '0.375rem 0.75rem', 
-                      fontSize: '0.75rem',
-                      color: appMetrics[app.app_id]?.error_count > 0 ? 'var(--error)' : undefined
-                    }}
-                  >
-                    Errors
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="table-container">
+            <table className="apps-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>URL</th>
+                  <th>Requests</th>
+                  <th>Errors</th>
+                  <th>Response Time</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runningApps.map(app => (
+                  <tr key={app.app_id}>
+                    <td>
+                      <div>
+                        <Link 
+                          to={`/editor/${app.app_id}`}
+                          style={{ 
+                            fontWeight: '500', 
+                            color: 'var(--text)', 
+                            textDecoration: 'none',
+                            display: 'block'
+                          }}
+                        >
+                          {app.name}
+                        </Link>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {app.app_id}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="status-badge status-running">● running</span>
+                    </td>
+                    <td>
+                      <a
+                        href={app.deployment_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.875rem' }}
+                      >
+                        {app.deployment_url}
+                      </a>
+                    </td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                      {appMetrics[app.app_id] ? appMetrics[app.app_id].request_count.toLocaleString() : '-'}
+                    </td>
+                    <td style={{ 
+                      color: appMetrics[app.app_id]?.error_count > 0 ? 'var(--error)' : 'var(--text-muted)',
+                      fontSize: '0.875rem'
+                    }}>
+                      {appMetrics[app.app_id] ? appMetrics[app.app_id].error_count : '-'}
+                    </td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                      {appMetrics[app.app_id] ? `${appMetrics[app.app_id].avg_response_time_ms}ms` : '-'}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <a
+                          href={app.deployment_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                        >
+                          Open
+                        </a>
+                        <a
+                          href={`${app.deployment_url}/docs`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                        >
+                          Docs
+                        </a>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setLogsAppId(app.app_id)}
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                        >
+                          Logs
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setErrorsAppId(app.app_id)}
+                          style={{ 
+                            padding: '0.25rem 0.5rem', 
+                            fontSize: '0.75rem',
+                            color: appMetrics[app.app_id]?.error_count > 0 ? 'var(--error)' : undefined
+                          }}
+                        >
+                          Errors
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : stats.total === 0 ? (

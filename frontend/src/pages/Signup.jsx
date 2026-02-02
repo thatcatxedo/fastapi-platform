@@ -120,7 +120,7 @@ function Signup({ onSignup }) {
 
   return (
     <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '2rem' }}>Sign Up</h1>
+      <h1 style={{ marginBottom: '2rem', fontWeight: '400' }}>Sign Up</h1>
       
       {error && <div className="error">{error}</div>}
 

@@ -19,9 +19,9 @@
 .appNameSection {
   margin-bottom: 0.75rem;
   padding: 0.5rem 0.75rem;
-  background: var(--bg-light);
+  background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: 0;
   flex-shrink: 0;
 }
 
@@ -45,7 +45,7 @@
   font-size: 0.875rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  border-radius: 0;
   color: var(--text);
   outline: none;
   transition: border-color 0.2s;
@@ -68,7 +68,7 @@
 .modeSelectorLabel {
   font-size: 0.75rem;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .modeOptions {
@@ -110,7 +110,7 @@
   font-size: 0.8125rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  border-radius: 0;
   color: var(--text);
   cursor: pointer;
 }
@@ -154,11 +154,9 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -201,23 +199,21 @@
   flex-direction: column;
   align-items: center;
   padding: 1.75rem 1.5rem;
-  background: var(--bg-light);
-  border: 2px solid var(--border);
-  border-radius: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
   text-align: center;
 }
 
 .starterCard:hover {
   border-color: var(--primary);
-  background: var(--bg-lighter);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  background: var(--bg-light);
 }
 
 .starterCard:active {
-  transform: translateY(0);
+  background: var(--bg-light);
 }
 
 .starterCardIcon {
@@ -233,7 +229,7 @@
 
 .starterCardTitle {
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text);
   margin: 0;
 }
@@ -271,8 +267,8 @@
   padding: 0 1rem;
   font-size: 0.875rem;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* Browse Templates Button */
@@ -314,7 +310,7 @@
 
 .browseTemplatesTitle {
   font-size: 1rem;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text);
 }
 
@@ -341,20 +337,20 @@
   gap: 0.25rem;
   padding: 0.75rem 1rem;
   margin-bottom: 0.75rem;
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  border-radius: 0.5rem;
+  background: rgba(255, 153, 0, 0.1);
+  border: 1px solid var(--warning);
+  border-radius: 0;
   flex-shrink: 0;
 }
 
 .warningBanner span:first-child {
   font-size: 0.875rem;
-  color: #856404;
-  font-weight: 500;
+  color: var(--warning);
+  font-weight: 400;
 }
 
 .warningBanner span:last-child {
   font-size: 0.75rem;
-  color: #856404;
+  color: var(--warning);
   opacity: 0.8;
 }
