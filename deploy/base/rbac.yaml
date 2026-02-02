@@ -39,3 +39,31 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: platform-backend
+---
+# Cross-namespace access to Traefik for log parsing
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-backend-traefik-reader
+  namespace: traefik
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-backend-traefik-reader
+  namespace: traefik
+subjects:
+  - kind: ServiceAccount
+    name: platform-backend
+    namespace: fastapi-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-backend-traefik-reader
