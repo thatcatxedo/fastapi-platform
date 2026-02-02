@@ -17,7 +17,8 @@ function EditorHeader({
   onBrowseTemplates,
   onOpenHistory,
   onSaveAsTemplate,
-  onChatAboutApp
+  chatSidebarOpen,
+  onToggleChatSidebar
 }) {
   const isDeploying = deploymentStatus && deploymentStatus.status === 'deploying'
 
@@ -52,15 +53,6 @@ function EditorHeader({
     {
       label: 'Version History',
       onClick: onOpenHistory,
-      show: isEditing
-    },
-    {
-      type: 'separator',
-      show: isEditing
-    },
-    {
-      label: 'Chat about this app',
-      onClick: onChatAboutApp,
       show: isEditing
     },
     {
@@ -119,6 +111,15 @@ function EditorHeader({
             isEditing ? 'Update' : 'Deploy'
           )}
         </button>
+        {isEditing && (
+          <button
+            className={`btn btn-secondary ${chatSidebarOpen ? 'btn-active' : ''}`}
+            onClick={onToggleChatSidebar}
+            title={chatSidebarOpen ? 'Close chat' : 'Open chat'}
+          >
+            💬 Chat
+          </button>
+        )}
         <DropdownMenu
           trigger={<>More <span style={{ fontSize: '0.7rem' }}>▼</span></>}
           items={dropdownItems}

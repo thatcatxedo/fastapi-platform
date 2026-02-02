@@ -70,13 +70,6 @@ function Sidebar({ user, onLogout }) {
           Dashboard
         </NavLink>
         <NavLink
-          to="/chat"
-          className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
-        >
-          <span className="sidebar-nav-icon">💬</span>
-          AI Chat
-        </NavLink>
-        <NavLink
           to="/database"
           className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
         >

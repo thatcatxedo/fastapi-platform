@@ -249,10 +249,35 @@ function useAppState(appId) {
   const monacoRef = useRef(null)
   const decorationsRef = useRef([])
 
-  // Fetch app data if editing
+  // Fetch app data if editing, or reset state for new app
   useEffect(() => {
     if (appId) {
       fetchApp()
+    } else {
+      // Reset to fresh state for new app
+      setCode(DEFAULT_TEMPLATE)
+      setName('')
+      setEnvVars([])
+      setIsEditing(false)
+      setMode('single')
+      setFramework('fastapi')
+      setFiles(null)
+      setEntrypoint('app.py')
+      setDatabaseId(null)
+      setDeployedCode(null)
+      setDeployedFiles(null)
+      setHasUnpublishedChanges(false)
+      setLastSavedCode(null)
+      setLastSavedFiles(null)
+      setError('')
+      setSuccess('')
+      setValidationMessage('')
+      setErrorLine(null)
+      setErrorFile(null)
+      setDeploymentStatus(null)
+      setDeployingAppId(null)
+      setDeployStage('draft')
+      setDeployDuration(null)
     }
   }, [appId])
 

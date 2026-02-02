@@ -7,6 +7,14 @@
   overflow: hidden;
 }
 
+/* Wrapper for editor content + chat sidebar */
+.mainWithSidebar {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
 .mainContent {
   flex: 1;
   overflow: hidden;

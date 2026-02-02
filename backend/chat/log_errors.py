@@ -38,6 +38,9 @@ ERROR_PATTERNS = [
      "Unexpected keyword argument '{0}'. Check function parameters."),
     (r"TypeError.*'(\w+)' object is not (callable|iterable|subscriptable)", "type_error",
      "'{0}' is not {1}. Check variable type."),
+    (r"TypeError: can only concatenate (\w+) \(not \"(\w+)\"\)", "type_error",
+     "Cannot concatenate {0} with {1}. Convert to same type first."),
+    (r"TypeError: (.+)", "type_error", "Type error: {0}"),
 
     # Value errors
     (r"ValueError: (.+)", "value_error", "Invalid value: {0}"),

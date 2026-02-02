@@ -183,7 +183,19 @@ Current code:
 {code}
 ```"""
             elif app_context.get('files'):
-                prompt += f"\n\nFiles in app: {', '.join(app_context['files'])}"
+                # Show all file contents for multi-file apps
+                prompt += "\n\nCurrent files:"
+                total_chars = 0
+                for filename, content in app_context['files'].items():
+                    # Truncate if getting too long
+                    if total_chars > 6000:
+                        prompt += f"\n\n--- {filename} ---\n(truncated - file not shown)"
+                        continue
+                    file_content = content
+                    if len(file_content) > 2000:
+                        file_content = file_content[:2000] + "\n... (truncated)"
+                    prompt += f"\n\n--- {filename} ---\n```python\n{file_content}\n```"
+                    total_chars += len(file_content)
 
             prompt += """
 
@@ -428,7 +440,8 @@ Remember: You're a helpful collaborator, not just a code generator. Have a conve
                     "mode": app.get("mode", "single"),
                     "framework": app.get("framework"),
                     "code": app.get("code") if app.get("mode") != "multi" else None,
-                    "files": list(app.get("files", {}).keys()) if app.get("mode") == "multi" else None
+                    # Include actual file contents for multi-file apps so AI can modify them
+                    "files": app.get("files") if app.get("mode") == "multi" else None
                 }
                 logger.info(f"Chat using app context: {app_context['app_id']} ({app_context['name']})")
 

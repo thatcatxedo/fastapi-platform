@@ -137,6 +137,12 @@ body {
   border-color: var(--primary);
 }
 
+.btn-secondary.btn-active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
 .btn-danger {
   background: var(--error);
   color: white;

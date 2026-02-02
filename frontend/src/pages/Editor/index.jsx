@@ -12,6 +12,7 @@ import EnvVarsPanel from './components/EnvVarsPanel'
 import DatabaseSelector from './components/DatabaseSelector'
 import CodeEditor from './components/CodeEditor'
 import MultiFileEditor from './components/MultiFileEditor'
+import ChatSidebar from './components/ChatSidebar'
 import TemplatesModal from './components/TemplatesModal'
 import VersionHistoryModal from './components/VersionHistoryModal'
 import SaveAsTemplateModal from './components/SaveAsTemplateModal'
@@ -86,6 +87,13 @@ function EditorPage({ user }) {
   // Welcome screen state - show for new apps until user makes a choice
   const [showWelcome, setShowWelcome] = useState(!appId)
 
+  // Reset welcome screen when navigating to /editor (no appId)
+  useEffect(() => {
+    if (!appId) {
+      setShowWelcome(true)
+    }
+  }, [appId])
+
   // Track if current template/code requires database
   const [templateRequiresDb, setTemplateRequiresDb] = useState(false)
 
@@ -103,6 +111,27 @@ function EditorPage({ user }) {
   const [deployModalOpen, setDeployModalOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Chat sidebar state
+  const [chatSidebarOpen, setChatSidebarOpen] = useState(false)
+
+  // Load chat sidebar state from localStorage when appId changes
+  useEffect(() => {
+    if (appId) {
+      const stored = localStorage.getItem(`chatSidebarOpen_${appId}`)
+      setChatSidebarOpen(stored === 'true')
+    } else {
+      setChatSidebarOpen(false)
+    }
+  }, [appId])
+
+  const toggleChatSidebar = () => {
+    const newState = !chatSidebarOpen
+    setChatSidebarOpen(newState)
+    if (appId) {
+      localStorage.setItem(`chatSidebarOpen_${appId}`, String(newState))
+    }
+  }
 
   // Wrapped handlers with confirmation modals
   const requestDeploy = () => {
@@ -201,13 +230,6 @@ function EditorPage({ user }) {
     setTemplatesModalOpen(true)
   }
 
-  // Navigate to chat with this app selected
-  const handleChatAboutApp = () => {
-    if (appId) {
-      navigate(`/chat?app=${appId}`)
-    }
-  }
-
   // Show welcome screen for new apps
   if (showWelcome && !appId) {
     return (
@@ -252,7 +274,8 @@ function EditorPage({ user }) {
         onBrowseTemplates={() => setTemplatesModalOpen(true)}
         onOpenHistory={() => setHistoryModalOpen(true)}
         onSaveAsTemplate={() => setSaveTemplateModalOpen(true)}
-        onChatAboutApp={handleChatAboutApp}
+        chatSidebarOpen={chatSidebarOpen}
+        onToggleChatSidebar={toggleChatSidebar}
       />
 
       <NotificationsPanel
@@ -265,9 +288,10 @@ function EditorPage({ user }) {
         loading={loading}
       />
 
-      <div className={styles.mainContent}>
-        {/* App Name Input */}
-        <div className={styles.appNameSection}>
+      <div className={styles.mainWithSidebar}>
+        <div className={styles.mainContent}>
+          {/* App Name Input */}
+          <div className={styles.appNameSection}>
           <div className={styles.appNameRow}>
             <label className={styles.appNameLabel}>App Name:</label>
             <input
@@ -383,6 +407,15 @@ function EditorPage({ user }) {
             onDeploy={requestDeploy}
             onValidate={handleValidate}
             onSaveDraft={handleSaveDraft}
+          />
+        )}
+        </div>
+
+        {/* Chat Sidebar */}
+        {appId && chatSidebarOpen && (
+          <ChatSidebar
+            appId={appId}
+            onClose={() => setChatSidebarOpen(false)}
           />
         )}
       </div>
