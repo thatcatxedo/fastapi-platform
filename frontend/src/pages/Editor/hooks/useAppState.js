@@ -497,10 +497,10 @@ function useAppState(appId) {
 
       if (mode === 'multi') {
         body.files = files
-        // Only include these for new apps
+        // Only include these for new apps (framework optional - backend auto-detects)
         if (!isEditing) {
           body.mode = 'multi'
-          body.framework = framework
+          if (framework) body.framework = framework
           body.entrypoint = entrypoint
           body.database_id = databaseId  // Include database selection
         }

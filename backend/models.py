@@ -45,7 +45,7 @@ class AppCreate(BaseModel):
     code: Optional[str] = None
     # Multi-file mode (new)
     mode: Optional[str] = "single"  # "single" or "multi"
-    framework: Optional[str] = None  # "fastapi" or "fasthtml" (required if multi)
+    framework: Optional[str] = None  # "fastapi" or "fasthtml"; auto-detected when omitted for multi-file
     files: Optional[Dict[str, str]] = None
     entrypoint: Optional[str] = "app.py"
     env_vars: Optional[Dict[str, str]] = None
@@ -312,6 +312,21 @@ class HealthStatus(BaseModel):
 class AppHealthStatusResponse(BaseModel):
     app_id: str
     health: HealthStatus
+
+
+class RequestLogEntry(BaseModel):
+    timestamp: str
+    method: str
+    path: str
+    status_code: int
+    duration_ms: float
+    query_string: Optional[str] = None
+
+
+class AppRequestLogsResponse(BaseModel):
+    app_id: str
+    requests: List[RequestLogEntry]
+    total_count: int = 0
 
 
 class AppWithMetrics(AppResponse):

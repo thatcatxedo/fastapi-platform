@@ -1,0 +1,162 @@
+.app-config {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.config-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.config-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.config-section-header h4 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.config-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.config-label {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.config-select {
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+.config-select:focus {
+  border-color: var(--primary);
+}
+
+.config-link-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--primary);
+  border-radius: 0;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.config-link-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--primary);
+}
+
+.env-var-row {
+  display: flex;
+  gap: 8px;
+}
+
+.env-var-key {
+  flex: 0 0 120px;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  outline: none;
+}
+
+.env-var-value {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+
+.env-var-value:focus {
+  border-color: var(--primary);
+}
+
+.config-add-btn {
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px dashed var(--border);
+  color: var(--text-secondary);
+  border-radius: 0;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.config-add-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--primary);
+  border-style: solid;
+}
+
+.config-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.config-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+.config-footer {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+  background: var(--bg-secondary);
+}
+
+.config-save-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--primary);
+  color: white;
+  border: 1px solid var(--primary);
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.config-save-btn:hover {
+  background: var(--aws-blue-hover);
+  border-color: var(--aws-blue-hover);
+}

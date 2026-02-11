@@ -4,8 +4,9 @@ App management routes for FastAPI Platform.
 This module contains thin HTTP handlers that delegate to AppService
 for all business logic.
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Optional
+import asyncio
 import logging
 
 from models import (
@@ -320,6 +321,157 @@ async def get_app_events_endpoint(
         deployment_phase=result.get("deployment_phase", "unknown"),
         error=result.get("error")
     )
+
+
+# =============================================================================
+# WebSocket Log Streaming
+# =============================================================================
+
+async def _authenticate_websocket(websocket: WebSocket) -> dict:
+    """Authenticate a WebSocket connection via token query parameter.
+
+    Returns user dict on success, or None after closing the socket on failure.
+    """
+    from jose import JWTError, jwt as jose_jwt
+    from bson import ObjectId
+    from config import SECRET_KEY, ALGORITHM
+    from database import users_collection
+
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return None
+
+    try:
+        payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=4001, reason="Invalid token")
+            return None
+    except JWTError:
+        await websocket.close(code=4001, reason="Invalid token")
+        return None
+
+    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        await websocket.close(code=4001, reason="User not found")
+        return None
+
+    return user
+
+
+@router.websocket("/{app_id}/logs/stream")
+async def stream_app_logs(websocket: WebSocket, app_id: str):
+    """Stream live pod logs via WebSocket.
+
+    Authentication is via `token` query parameter (browser WebSocket API
+    cannot set custom headers).
+    """
+    user = await _authenticate_websocket(websocket)
+    if not user:
+        return
+
+    # Verify user owns this app
+    try:
+        await app_service.get_by_app_id(app_id, user)
+    except AppServiceError:
+        await websocket.close(code=4004, reason="App not found")
+        return
+
+    await websocket.accept()
+
+    from deployment.k8s_client import core_v1
+    from config import PLATFORM_NAMESPACE
+
+    if not core_v1:
+        await websocket.send_json({"type": "error", "message": "Kubernetes client not available"})
+        await websocket.close()
+        return
+
+    try:
+        while True:
+            # Find the pod
+            try:
+                pods = core_v1.list_namespaced_pod(
+                    namespace=PLATFORM_NAMESPACE,
+                    label_selector=f"app-id={app_id}"
+                )
+            except Exception as e:
+                await websocket.send_json({"type": "error", "message": f"K8s error: {e}"})
+                await asyncio.sleep(5)
+                continue
+
+            if not pods.items:
+                await websocket.send_json({"type": "status", "message": "No pod found, waiting..."})
+                await asyncio.sleep(5)
+                continue
+
+            pod = pods.items[0]
+            pod_name = pod.metadata.name
+
+            if pod.status.phase not in ("Running", "Succeeded", "Failed"):
+                await websocket.send_json({
+                    "type": "status",
+                    "message": f"Pod is {pod.status.phase}, waiting..."
+                })
+                await asyncio.sleep(3)
+                continue
+
+            # Stream logs using follow=True
+            try:
+                stream = core_v1.read_namespaced_pod_log(
+                    name=pod_name,
+                    namespace=PLATFORM_NAMESPACE,
+                    container="runner",
+                    follow=True,
+                    tail_lines=100,
+                    timestamps=True,
+                    _preload_content=False
+                )
+
+                await websocket.send_json({"type": "connected", "pod_name": pod_name})
+
+                loop = asyncio.get_event_loop()
+                while True:
+                    # Read line in executor to avoid blocking the event loop
+                    line_bytes = await loop.run_in_executor(
+                        None, lambda: next(stream, None)
+                    )
+                    if line_bytes is None:
+                        break
+
+                    line = line_bytes.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        continue
+
+                    # Parse K8s timestamp: "2024-01-15T10:30:00.123456789Z message"
+                    parts = line.split(" ", 1)
+                    if len(parts) == 2:
+                        log_data = {"type": "log", "timestamp": parts[0], "message": parts[1]}
+                    else:
+                        log_data = {"type": "log", "timestamp": None, "message": line}
+
+                    await websocket.send_json(log_data)
+
+                # Stream ended (pod terminated or restarted)
+                await websocket.send_json({
+                    "type": "status", "message": "Log stream ended, reconnecting..."
+                })
+                await asyncio.sleep(2)
+
+            except Exception as e:
+                logger.warning(f"Log stream error for app {app_id}: {e}")
+                await websocket.send_json({"type": "error", "message": f"Stream error: {e}"})
+                await asyncio.sleep(3)
+
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for app {app_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for app {app_id}: {e}")
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 # =============================================================================

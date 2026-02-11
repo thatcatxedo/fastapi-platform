@@ -1,33 +1,75 @@
 # Roadmap
 
-This roadmap organizes the long-term vision into shippable phases, starting with
-developer/prototyper workflows and expanding toward full-stack builder experiences.
+This roadmap organizes the long-term vision into shippable phases. Completed phases
+are preserved as historical record. Future phases reflect a strategic shift toward
+stateful serverless for self-hosters, informed by competitive analysis and UX rethinking.
 
 ## North Star
 
-The fastest path from idea to deployed full-stack app. Write code → deploy in
-seconds → get a URL and a database. No git, no CLI, no Docker, no infrastructure.
+Deploy Python APIs from your browser. Each app gets its own database. Scales to zero
+when idle. Runs on your cluster.
+
+The core metric is **time-to-first-request**: how fast can someone go from "I found
+this platform" to "my code is running and I just called it." Target: under 3 minutes.
 
 ## Differentiation
 
-| Platform       | Gap we fill                                |
-|----------------|--------------------------------------------|
-| Replit         | Complex, expensive, not Python-API focused |
-| Railway/Render | Requires git, no web editor                |
-| PythonAnywhere | Dated UX, no instant deploy                |
+| Platform           | Gap we fill                                          |
+|--------------------|------------------------------------------------------|
+| Replit             | Complex, expensive, not Python-API focused            |
+| Railway/Render     | Requires git, no web editor, no included database     |
+| PythonAnywhere     | Dated UX, no instant deploy                           |
+| Coolify/CapRover   | No scale-to-zero, no browser editor, not serverless   |
+| OpenFaaS           | Scale-to-zero paywalled, CLI-only, license concerns   |
+| Knative            | Heavy (~1GB RAM control plane), requires Istio        |
+| faasd              | Single-tenant, CLI-only, no web editor                |
+| Val Town           | Cloud-only, JavaScript-focused, no self-hosting       |
 
-Our niche: **Dead-simple FastAPI prototyping with batteries included.**
+Our niche: **Self-hosted Cloud Run with a built-in editor and database.**
+
+Browser-first serverless Python, with built-in tenant-scoped MongoDB, that runs on
+your own cluster. Nobody else fills this spot.
+
+### What we deliberately don't compete on
+
+- Multi-language support (Python is the focus)
+- Multi-cloud deployment
+- GitHub-based CI/CD pipelines (that's Coolify territory)
+- Enterprise IAM / SSO
+
+### Infrastructure advantages (from cluster foundation)
+
+The cluster foundation (`fastapi-platform-cluster-foundation`) provides infrastructure
+that directly enables the zero-config story:
+
+- **Wildcard Cloudflare tunnel** — `*.gatorlunch.com` routes through Cloudflare Edge to
+  Traefik. Every deployed app gets public HTTPS automatically with zero DNS or TLS
+  configuration. This is a huge part of why time-to-first-request can be under 3 minutes.
+- **MongoDB with `readWriteAnyDatabase` + `userAdminAnyDatabase`** — The platform user
+  can create per-user databases and MongoDB users on the fly. The "database just works"
+  story has solid infrastructure backing.
+- **No network policies (currently)** — All pods can reach all pods. Simplifies the
+  scale-to-zero wakeup proxy. Network egress controls for user pods (see Tech Debt)
+  should be added before any public launch.
+- **Small cluster footprint** — k3d with 1 server + 1 agent. Resource efficiency matters,
+  which strengthens the case for scale-to-zero over always-on pods.
+- **No monitoring stack** — No Prometheus, Grafana, or Loki in the foundation. The "logs
+  in the dashboard" feature (Phase 3) must pull from the K8s API directly (`kubectl logs`
+  equivalent). This has implications for Phase 4: when a pod scales to zero, its logs
+  disappear unless captured first. See Phase 4 notes on log persistence.
 
 ---
 
-## Phase 0 — Foundations (complete)
+## Completed Phases
+
+### Phase 0 — Foundations (complete)
 
 - [x] Deploy UX with validate + deploy stages + error clarity
 - [x] Deployment manifests in `deploy/` with overlays
 - [x] Local dev cluster workflows documented
 - [x] Logs + deployment events (basic lifecycle visibility)
 
-## Phase 1a — Core Polish (complete)
+### Phase 1a — Core Polish (complete)
 
 **Goal:** Make the core loop feel fast and polished.
 
@@ -38,7 +80,7 @@ Our niche: **Dead-simple FastAPI prototyping with batteries included.**
 - [x] OpenGraph meta tags on app URLs (better sharing)
 - [x] App deletion (self-serve cleanup of throwaway apps)
 
-## Phase 1b — Platform Database (complete)
+### Phase 1b — Platform Database (complete)
 
 **Goal:** Zero-config persistence for full-stack apps.
 
@@ -50,520 +92,470 @@ Our niche: **Dead-simple FastAPI prototyping with batteries included.**
 - [x] Full-stack starter template ("Full-Stack Notes App" with MongoDB + HTML)
 - [x] Allow `jinja2` import for server-rendered HTML
 
-This enables:
-```python
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from pymongo import MongoClient
-import os
-
-app = FastAPI()
-db = MongoClient(os.environ["PLATFORM_MONGO_URI"]).get_default_database()
-
-@app.get("/", response_class=HTMLResponse)
-def home():
-    items = list(db.items.find({}, {"_id": 0}))
-    return f"<html><body><h1>Items: {len(items)}</h1></body></html>"
-```
-
-Constraints (document, enforce later):
-- 100MB storage per user
-- No backup guarantees (homelab)
-- Database-level isolation (not bulletproof)
-- Resource limits per app (CPU/memory caps)
-- Network isolation between apps (where feasible)
-- Mongo query limits / timeouts for runaway ops
-- Abuse guardrails (cryptomining or other misuse)
-
-## Phase 1c — Database UI & Security (complete)
+### Phase 1c — Database UI & Security (complete)
 
 **Goal:** Give users visibility into their data and secure multi-tenancy.
 
 - [x] Database stats page (`/database`)
-  - Collection list with document counts
-  - Total database size
-  - Per-collection size and avg doc size
-- [x] mongo-viewer integration
-  - Subdomain routing (`mongo-{user_id}.{APP_DOMAIN}`)
-  - Basic auth with rotate credentials
+- [x] mongo-viewer integration with subdomain routing
 - [x] Per-user MongoDB authentication
-  - Each user gets dedicated MongoDB credentials
-  - Credentials created on signup
-  - User apps can only access their own database
-  - Prevents cross-user data access
 
-## Phase 1d — Admin & Access Control (complete)
+### Phase 1d — Admin & Access Control (complete)
 
 **Goal:** Secure the platform and enable administrative oversight.
 
-- [x] Admin role
-  - First user to sign up becomes admin automatically
-  - `is_admin` flag in user document
-  - Admin-only API endpoints with role check middleware (`require_admin`)
-- [x] Signup control
-  - Admin setting: allow public signups (on/off)
-  - When off, only admin can create new users
-  - Stored in platform settings collection
+- [x] Admin role (first user auto-promoted)
+- [x] Signup control (on/off toggle)
 - [x] Admin dashboard (`/admin`)
-  - User list with app counts, last activity
-  - Platform stats: total users, apps, running apps, templates
-  - Recent activity feed (signups, deploys)
 - [x] Allowed imports configuration
-  - Admin-editable allowlist for code validation
-  - Overrides default allowed imports globally
-- [x] User management
-  - List users with app counts
-  - Delete user (cascades to apps, MongoDB user, database)
-  - Admin can create users manually when signups disabled
+- [x] User management with cascade deletion
 - [x] Multi-admin support
-  - Admins can promote/demote other users to co-admin
-  - `PATCH /api/admin/users/{user_id}/admin` endpoint
-  - Safety checks: can't demote yourself, can't remove last admin
-  - Role toggle button in admin dashboard user list
 
-## Phase 1e — User Observability (partial)
+### Phase 1e — User Observability (partial)
 
 **Goal:** Help users understand how their apps are performing.
 
-- [x] App metrics (lightweight) - **backend implemented, UI removed**
-  - Request count (last 24h)
-  - Error count (last 24h)
-  - Avg response time
-  - ~~Display on Dashboard app cards~~ (removed - Traefik RBAC not configured)
+- [x] App metrics API (backend implemented, UI removed pending Traefik RBAC)
 - [x] Recent errors panel
-  - Last N errors with timestamps
-  - Error type classification (client/server)
-  - API endpoint: `GET /api/apps/{id}/errors`
-- [x] Health status badge - **backend implemented, UI removed**
-  - Green/yellow/red based on recent health checks
-  - Background job polls `/health` every 60s
-  - API endpoint: `GET /api/apps/{id}/health-status`
-- [x] Metrics API endpoints
-  - `GET /api/apps/{id}/metrics` — aggregated metrics
-  - `GET /api/apps/{id}/errors` — recent errors
-  - `GET /api/apps/{id}/health-status` — health summary
-- [x] TTL-indexed storage
-  - Observability data auto-expires after 24 hours
-  - Keeps database lean without manual cleanup
+- [x] Health status badge (backend implemented, UI removed)
+- [x] Metrics API endpoints (`/metrics`, `/errors`, `/health-status`)
+- [x] TTL-indexed storage (24h auto-expiry)
 
-Implementation notes:
-- Health checks use aiohttp to poll app `/health` endpoints
-- Traefik log parsing requires cross-namespace RBAC (not configured)
-- Dashboard metrics column removed until RBAC is set up
-- Dashboard links simplified to icon buttons (↗ 📋 📄)
+Note: Dashboard metrics UI was removed because Traefik RBAC for log parsing is not
+configured. The backend APIs exist and will be resurfaced in Phase 3.
 
-## Phase 1f — Drafts & Safety (complete)
+### Phase 1f — Drafts & Safety (complete)
 
 **Goal:** Enable iteration without deployment risk.
 
 - [x] Clone app
-  - Duplicate with new ID from latest draft or deployed code
 - [x] Draft save (explicit save without deploy)
-  - `PUT /api/apps/{app_id}/draft` endpoint stores draft code
-  - Ctrl+S keyboard shortcut in editor
-  - "Save Draft" button in editor header
 - [x] "Deployed vs Latest" indicator
-  - Track `deployed_code` vs current code via hash comparison
-  - UI shows "Up to date" / "Unsaved changes" / "Changes not deployed"
-- [x] Version history (last 10 deploys)
-  - `GET /api/apps/{app_id}/versions` returns history
-  - `POST /api/apps/{app_id}/rollback/{index}` reverts to previous version
-  - "History" button opens modal with preview and rollback
-- [x] Deployment restart on code change
-  - Fixed: ConfigMap updates now trigger pod restart
-  - Added `platform.gofastapi.xyz/code-hash` annotation to pod template
-  - When code changes, hash changes → K8s triggers rolling update
-  - Previously: ConfigMap updated but pod kept running old code in memory
+- [x] Version history (last 10 deploys) with rollback
+- [x] Deployment restart on code change (code-hash annotation)
 
-## Phase 1g — Codebase Quality (complete)
+### Phase 1g — Codebase Quality (complete)
 
 **Goal:** Improve maintainability and reduce large file sizes.
 
-- [x] Backend reorganization
-  - Split `deployment.py` (904 lines) into `deployment/` package:
-    - `k8s_client.py` — K8s API client initialization
-    - `helpers.py` — Shared utilities (MongoDB URI builders, K8s helpers)
-    - `apps.py` — App deployment operations (ConfigMap, Deployment, Service, Ingress)
-    - `viewer.py` — MongoDB viewer deployment operations
-    - `__init__.py` — Re-exports for backwards compatibility
-  - Grouped background tasks into `background/` package:
-    - `cleanup.py` — Inactive app/viewer cleanup
-    - `health_checks.py` — App health polling
-  - Grouped migrations into `migrations/` package:
-    - `admin_role.py` — First user admin migration
-    - `mongo_users.py` — Per-user MongoDB auth migration
-    - `templates.py` — Template seeding migration
-- [x] Admin dashboard improvements
-  - Added MongoDB stats (user DBs, storage, collections, documents)
-  - Compact horizontal layout for stats
-  - Two-column layout: users table + activity sidebar
+- [x] Backend reorganization (`deployment/`, `background/`, `migrations/` packages)
+- [x] Admin dashboard improvements (MongoDB stats, compact layout)
 
-Files unchanged (appropriately sized):
-- `routers/apps.py` (611 lines) — Cohesive, helpers are route-specific
-- `seed_templates.py` (789 lines) — Mostly template data/content
-- All other modules — Under 250 lines each
-
----
-
-## Quick Wins
-
-Small improvements that can be shipped quickly between major phases:
-
-- [ ] App descriptions/notes
-  - Add optional `description` field to app documents (stored in MongoDB)
-  - Display description on dashboard app cards
-  - Editable in app settings or app page header
-  - Helps users document what each app does, especially as app count grows
-- [x] Save applications as templates
-  - "Save as Template" button in editor
-  - User templates stored separately from global templates
-  - Full CRUD: create, edit, delete own templates
-  - Templates modal with tabs: All / My Templates / Global
-
----
-
-## Phase 2 — Multi-File Mode (complete)
+### Phase 2 — Multi-File Mode (complete)
 
 **Goal:** Support real-world app structure without losing simplicity.
 
-- [x] Project structure
-  - Files: `app.py`, `routes.py`, `models.py`, `services.py`, `helpers.py` (FastAPI preset)
-  - Files: `app.py`, `routes.py`, `models.py`, `services.py`, `components.py` (FastHTML preset)
-  - Tabbed file editor with add/remove file support
-- [x] Build/run model
-  - Multi-file ConfigMap with all files mounted at `/code`
-  - Entrypoint via `CODE_PATH` env var (e.g., `/code/app.py`)
-  - Runner adds `/code` to `sys.path` for imports between files
-- [x] Size limits for bundled projects
-  - Max 10 files, 100KB per file, 500KB total
-  - Validation enforced in backend
-- [x] Backward compatibility
-  - Single-file mode remains default
-  - New apps can choose single-file or multi-file mode
-  - Framework selection: FastAPI (API-focused) or FastHTML (HTML/HTMX-focused)
-- [x] Template system refactor
-  - Templates stored as individual YAML files (`backend/templates/global/`)
-  - Template loader with Pydantic validation
-  - Multi-file template support (files dict in YAML)
+- [x] Project structure (FastAPI and FastHTML presets)
+- [x] Multi-file ConfigMap with entrypoint via `CODE_PATH`
+- [x] Size limits (50 files, 100KB/file, 500KB total)
+- [x] Template system refactor (individual YAML files, Pydantic validation)
 
-## Phase 3 — Custom Dependencies
+### LLM Assistant (in progress, cross-cutting)
 
-**Goal:** Unlock real-world apps that need extra packages.
+**Goal:** AI-assisted code authoring and debugging.
 
-- [ ] Curated allow-list extensions
-- [ ] Per-app `requirements.txt` (validated against allow-list)
-- [ ] Build-time install or dynamic runtime install
-- [ ] UI for dependency management
-- [ ] Hard constraints (no native extensions, no system packages)
+Completed:
+- [x] Backend chat infrastructure (`backend/chat/`, SSE streaming)
+- [x] Chat tools: `create_app`, `update_app`, `get_app`, `get_app_logs`,
+  `list_apps`, `delete_app`, `list_databases`
+- [x] Agent tools: `list_templates`, `get_template_code`, `validate_code_only`,
+  `test_endpoint`, `diagnose_app`
+- [x] Agentic loop (multi-step tool use, 10-iteration safety limit)
+- [x] Platform-aware system prompts
+- [x] Frontend chat sidebar in editor
 
-## Phase 4 — Auth Templates
+Remaining:
+- [ ] BYOK (users provide their own API keys)
+- [ ] AI-generated code validation before showing to user
+- [ ] Diff view for suggested changes with accept/reject
 
-**Goal:** Help builders ship protected APIs fast.
+The chat sidebar will be carried forward into the new frontend (Phase 3). It stays
+in the editor as a tool, not a standalone page.
 
-- [ ] JWT auth starter template
-  - Login + token issue + protected route
-  - Add `python-jose` to runner image
-- [ ] Platform auth helper module (optional)
+---
 
-## Phase 5 — LLM Assistant (in progress)
+## Future Phases
 
-**Goal:** Use AI to accelerate scaffolding and iteration.
+### Phase 3 — Frontend Overhaul
 
-**Architecture:** n8n as integration hub with tool-use for platform operations.
+**Goal:** Rebuild the frontend around three screens optimized for the
+write-deploy-operate loop. Replace the current multi-page layout with a focused
+experience that makes the platform feel like a different product.
 
-### Completed
+#### Design foundation
 
-- [x] n8n deployment in cluster
-  - Self-hosted n8n alongside platform in `fastapi-platform` namespace
-  - Kubernetes manifests: `deploy/base/n8n-*.yaml`
-  - No PVC (ephemeral data) - workflows sync from git on startup
-  - IngressRoute at `n8n.gatorlunch.com` (requires local cluster access)
-- [x] Backend chat infrastructure
-  - `backend/chat/` module with tools, service, models
-  - `backend/routers/chat.py` - SSE streaming endpoints
-  - `POST /api/chat/conversations` - Create conversation
-  - `GET /api/chat/conversations` - List conversations
-  - `POST /api/chat/conversations/{id}/messages` - Send message (SSE stream)
-  - MongoDB collections: `conversations`, `messages`
-- [x] Chat tools for Claude
-  - `create_app` - Create and deploy apps (single-file and multi-file)
-  - `update_app` - Update app code and redeploy
-  - `get_app` - Get app details including code
-  - `get_app_logs` - Fetch pod logs for debugging
-  - `list_apps` - List user's apps
-  - `delete_app` - Delete an app
-  - `list_databases` - List user's MongoDB databases
-- [x] n8n workflow management
-  - `scripts/n8n-helper.sh` - CLI for workflow operations
-  - Workflow JSON stored in `n8n-workflows/chat-workflow.json`
-  - Auto-sync via helper script (uses n8n REST API)
+- [ ] Adopt Tailwind CSS + component library (Shadcn/ui or similar)
+  - Replace all custom CSS and CSS variables
+  - Consistent design tokens, spacing, typography
+  - Dark mode support (editor is already dark; unify the whole app)
+- [ ] Replace `useAppState` god hook (~750 lines, 40+ state variables)
+  - Extract into focused stores with Zustand: `useEditorStore`, `useDeployStore`,
+    `useAppStore`
+  - Clean separation: code editing state vs deployment state vs app metadata
+- [ ] Break monolithic page components into composable pieces
+  - Current: Dashboard (300+ lines), Database (400+), Admin (480+), Editor (480+)
+  - Target: No component file over 200 lines
 
-### In Progress
+#### Screen 1: Editor (rethought)
 
-- [x] n8n webhook workflow
-  - Chat workflow calls Anthropic API with messages + tools
-  - Returns structured response for backend to parse
-  - Accessible at `http://n8n.localhost` (local only)
-  - Env var access enabled via `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`
-- [x] Frontend chat UI
-  - Chat page with conversation sidebar (`/chat`, `/chat/:id`)
-  - Message list with SSE streaming
-  - Tool execution status display
-  - Files: `frontend/src/pages/Chat/`, `frontend/src/hooks/useChat.js`
+- [ ] Code on the left, **test panel on the right**
+  - Pick method (GET/POST/PUT/DELETE), enter path, add headers/body
+  - Send request to deployed app, see response inline
+  - Show status code, response body, latency
+  - Like Postman built into the editor — no need to open new tabs or use curl
+- [ ] Single deploy button (validates automatically, shows inline errors on failure)
+  - Remove the separate "Validate" button — deploy should validate first
+  - Validation errors show as inline squiggly underlines in Monaco
+- [ ] Dynamic file management
+  - Start every new app as a single file — no mode/framework choice upfront (done)
+  - Framework auto-detected from code (done; uses AST app creation pattern)
+  - "+" button to add files, right-click to rename/delete (3b)
+  - File tree or tabs that grow naturally as project grows (3b)
+- [ ] Database shown as a binding indicator, not a separate panel
+  - Small badge showing which database is attached
+  - Click to change, but it's not in the way
+- [ ] Env vars in a collapsible settings drawer
+- [ ] Deployment progress with real K8s event streaming
+  - "Validating... Creating resources... Starting... Ready!" — not a spinner
+- [ ] Chat sidebar carries forward from current implementation
 
-### TODO
+#### Screen 2: App Dashboard (new)
 
-- [ ] BYOK (Bring Your Own Key)
-  - Users provide their own LLM API keys
-  - Keys stored encrypted in user settings
-  - Passed to n8n workflows at runtime
-- [ ] Multi-provider support
-  - Claude (Anthropic)
-  - GPT-4 (OpenAI)
-  - Other providers via n8n integrations
-  - User selects preferred provider in settings
-- [x] Platform-aware prompts
-  - System prompt includes all constraints (allowed imports, forbidden patterns)
-  - MongoDB integration patterns
-  - Single-file vs multi-file mode awareness
-  - No uvicorn imports, platform handles server startup
-- [ ] Safety model
-  - Validate all AI-generated code before showing to user
-  - Diff view for suggested changes
-  - Accept/reject workflow
-  - Rate limiting per user
+- [ ] Status badge: running / sleeping / error — one word, color-coded
+- [ ] URL with click-to-copy and click-to-open
+- [ ] **Recent requests table**
+  - Last N requests with timestamp, method, path, status code, latency
+  - Click a failed request to see the traceback / error detail
+  - This is the "Runs" concept from serverless, simplified for HTTP apps
+- [ ] Tailing logs — right there, not behind a separate page or panel
+- [ ] Database section — collection list, document counts, inline browse
+  - Replaces the standalone Database page and separate viewer pod deployment
+  - Embedded data inspector for simple read operations
 
-### Phase 5a — Claude Agent Enhancements (in progress)
+#### Screen 3: Apps List (simplified)
 
-**Goal:** Make Claude more effective at helping users by giving it better tools and context.
+- [ ] Cards or rows: name, status (running/sleeping/error), URL, last request time
+- [ ] Search and filter (by status, by name)
+- [ ] No separate Dashboard page — this IS the dashboard
 
-**User Stories Addressed:**
-| Story | Current Gap | Solution |
-|-------|-------------|----------|
-| "Create an app like the todo template" | Claude can't see templates | `list_templates`, `get_template_code` tools |
-| "My app is broken, fix it" | Manual log reading | `diagnose_app` tool with auto-analysis |
-| "Add a /users endpoint" | Can't verify it works | `test_endpoint` tool |
-| "Will this code work?" | Must deploy to find out | `validate_code_only` tool |
+#### What gets removed or folded in
 
-**Tools Added:**
+- **Dashboard page** → replaced by Apps List (Screen 3) + per-app dashboard (Screen 2)
+- **Database page** → database browsing moves into App Dashboard (Screen 2)
+- **WelcomeScreen mode selection** → removed; apps start as single file, grow naturally
+- **Separate Validate button** → deploy validates automatically
+- **Admin page** → kept but accessible via settings icon, not primary navigation
 
-- [x] `list_templates` — List available app templates with descriptions
-  ```json
-  {"framework": "fastapi"}  // optional filter
+#### Backend work for Phase 3
+
+- [x] Request logging middleware
+  - Pure ASGI middleware in runner captures method, path, status code, latency per request
+  - Background thread batches writes to `_platform_request_logs` in user's MongoDB database
+  - TTL index (7 days), compound index on `(app_id, timestamp)`
+  - Endpoint: `GET /api/apps/{app_id}/requests` (paginated)
+- [x] WebSocket endpoint for log streaming
+  - `WS /api/apps/{app_id}/logs/stream` — real-time log tailing via K8s pod log follow
+  - Token-based auth via query parameter, automatic pod reconnection
+  - Frontend LogsPanel tries WebSocket first, falls back to polling
+- [x] Remove mode/framework requirement from app creation
+  - Auto-detect framework from AST (FastAPI vs FastHTML app creation pattern)
+  - Mode inferred from request shape (files present → multi, else single)
+  - WelcomeScreen simplified to single "Start from scratch" card
+- [ ] Embed database stats in app detail response
+  - Include collection list and document counts in `GET /api/apps/{app_id}`
+  - No separate viewer deployment needed for basic data browsing
+
+### Phase 4 — Scale-to-Zero
+
+**Goal:** Apps sleep when idle and wake on first request. No wasted cluster resources.
+
+This is the biggest technical differentiator versus Coolify/CapRover and the feature
+that makes the platform genuinely serverless. It also removes the current 24h
+inactivity deletion — apps stay deployed but scale to zero replicas instead.
+
+- [ ] Wakeup proxy
+  - Lightweight service (or Traefik middleware) that intercepts requests to sleeping apps
+  - On request to a scaled-to-zero app: buffer request, scale Deployment to 1 replica,
+    wait for readiness probe, forward buffered request
+  - Timeout budget: 2-5 seconds for cold start (pod scheduling + image pull + uvicorn)
+  - Runner image must be pre-pulled on nodes to minimize cold start
+- [ ] Sleep lifecycle
+  - After N minutes of no traffic (configurable, default 15 min), scale to 0 replicas
+  - Preserve ConfigMap, Service, IngressRoute — only Deployment replicas change
+  - New app status: `sleeping` (distinct from `running`, `error`, `deleted`)
+  - Replaces the current 24h inactivity deletion for running apps
+- [ ] Cold start UX
+  - Loading page shown while app wakes (not a raw 504)
+  - "Cold start" marker visible in request history
+  - Frontend shows "sleeping" status with explanation
+- [ ] Pre-pull runner image on cluster nodes
+  - DaemonSet or node-level pull policy to ensure fast cold starts
+  - Without this, first wake after image update can take 30+ seconds
+  - Foundation cluster is k3d with 2 nodes — pre-pull is cheap but critical
+- [ ] Log persistence across sleep cycles
+  - When a pod scales to zero, its stdout/stderr logs are gone (no Loki/Fluentd in
+    the cluster foundation)
+  - Options: (a) flush logs to MongoDB before sleep, (b) the request logging middleware
+    from Phase 3 captures per-request data independently of pod logs, (c) add lightweight
+    log collector later
+  - At minimum, the Phase 3 request logging (stored in MongoDB with 7-day TTL) ensures
+    request-level observability survives pod restarts and scale-to-zero cycles
+  - Full stdout log persistence is a Phase 4+ concern — the request table is enough
+    for most debugging
+
+### Phase 5 — CLI Tool (`fp`)
+
+**Goal:** Let developers with local workflows deploy without the browser. The browser
+editor and CLI are complementary — not competing — entry points to the same platform.
+
+| Moment                          | Best tool      |
+|---------------------------------|----------------|
+| First time trying the platform  | Browser editor |
+| Quick template-based project    | Browser editor |
+| Hotfix to a running app         | Browser editor |
+| Building a real multi-file project | CLI + local editor |
+| CI/CD pipeline deploy           | CLI            |
+| Teaching/demos                  | Browser editor |
+
+- [ ] Core commands
+  - `fp login <platform-url>` — authenticate, store token
+  - `fp init` — scaffold `app.py` + `.fp.yaml` in current directory
+  - `fp dev` — run app locally using runner image (Docker) or uvicorn (fallback)
+  - `fp deploy` — validate locally, upload files, deploy, print URL
+  - `fp logs` — tail logs from deployed app
+  - `fp status` — one-line status (running / sleeping / error)
+  - `fp open` — open app URL in browser
+- [ ] Project manifest (`.fp.yaml`)
+  ```yaml
+  name: my-api
+  entrypoint: app.py
   ```
-  Returns: template names, descriptions, frameworks, complexity
+  Minimal by default. Optional fields: `env`, `database: true`.
+- [ ] `fp pull` / `fp push` — bridge browser editor and local workflow
+  - Pull existing app code to local directory
+  - Push local edits back to platform
+- [ ] Local validation
+  - Same AST parsing, import checking, blocked pattern scanning as backend
+  - Catches errors before the deploy round-trip
+  - Shared validation library between CLI and backend
+- [ ] `fp dev` MongoDB handling
+  - Default: point `PLATFORM_MONGO_URI` at `localhost:27017` if MongoDB detected
+  - `fp dev --remote-db`: use actual platform MongoDB with user credentials
+- [ ] Distribution
+  - `pip install fp-cli` (meets Python developers where they are)
+  - Optional: single binary via PyInstaller or Go rewrite later
 
-- [x] `get_template_code` — Fetch full template code as reference
-  ```json
-  {"template_name": "Todo API"}
-  ```
-  Returns: complete template code (single-file or multi-file)
+### Phase 6 — Async Invocation & Triggers
 
-- [x] `validate_code_only` — Pre-check code without deploying
-  ```json
-  {"code": "...", "mode": "single"}
-  ```
-  Returns: validation result with errors if any
+**Goal:** Move beyond request/response HTTP into event-driven workflows. This is where
+the platform becomes genuinely useful for automation, webhooks, and background jobs.
 
-- [x] `test_endpoint` — Make HTTP request to deployed app
-  ```json
-  {"app_id": "abc123", "method": "GET", "path": "/todos"}
-  ```
-  Returns: status code, response body, latency
+#### Async invocation
 
-- [x] `diagnose_app` — Analyze app health and suggest fixes
-  ```json
-  {"app_id": "abc123"}
-  ```
-  Returns: pod status, restart count, recent errors, suggested fixes
+- [ ] `POST /api/invoke/{app_id}` — queue-backed async invocation
+  - Immediate `202 Accepted` response with `run_id`
+  - Payload forwarded to app when it processes the job
+  - Run states: `queued` -> `running` -> `succeeded` -> `failed` -> `retried`
+- [ ] Run history in App Dashboard
+  - Each invocation tracked: trigger, payload, status, duration, result/error
+  - Click a failed run to see traceback + one-click replay
+  - Filterable by status, time range
+- [ ] Retry policy
+  - Configurable per-app (default: 3 retries with exponential backoff)
+  - Manual replay button for any failed run
+- [ ] Job queue implementation
+  - MongoDB-backed queue (avoids adding Redis as a dependency)
+  - Worker process polls queue, wakes app if sleeping, forwards request
+  - Concurrency limit per app (default: 1)
 
-**Agentic Loop (implemented)**
+#### Triggers
 
-Claude can now autonomously iterate using multiple tool calls:
-```
-User: "Create a working todo API"
-Claude: create_app → test_endpoint(GET /todos) → 200 OK ✓
-Claude: test_endpoint(POST /todos) → 500 Error
-Claude: get_app_logs → "KeyError: 'title'"
-Claude: update_app(fixed) → test_endpoint → 201 Created ✓
-Claude: "Done! Your API is working at https://..."
-```
+Start with two trigger types beyond HTTP:
 
-Implementation:
-- Backend loops calling Claude until `stop_reason != "tool_use"`
-- After tool execution, builds continuation messages with `tool_result` blocks
-- Safety limit of 10 iterations to prevent runaway loops
-- System prompt instructs Claude on agentic workflows
+- [ ] Cron trigger
+  - Cron expression stored in app document
+  - Backend scheduler makes HTTP call to app on schedule
+  - Shows next/last run time in App Dashboard
+- [ ] Webhook trigger
+  - Stable webhook URL per app: `POST /api/webhook/{app_id}/{path}`
+  - Wakes app if sleeping, forwards payload
+  - Useful for GitHub webhooks, Stripe events, etc.
 
-### Known Issues
+#### What we deliberately defer
 
-- ~~n8n uses emptyDir (no persistence)~~ **Fixed**: Now uses PVC for persistence
-- n8n requires one-time UI setup after fresh deploy (create owner, generate API key)
-  - Data persists across restarts with PVC
-  - License auto-activates via `N8N_LICENSE_ACTIVATION_KEY` env var
-- n8n accessible at `http://n8n.localhost` (requires `/etc/hosts` entry)
+- Complex event buses (Kafka, NATS, RabbitMQ connectors)
+- `handler(event, context)` function interface — keep full FastAPI apps
+- Backend adapter abstraction over OpenFaaS/Knative — complexity trap
 
-### Future Improvements
+### Phase 7 — Custom Dependencies
 
-- **Move n8n to cluster-foundation** — n8n is infrastructure, not app-specific.
-  Would allow sharing across multiple applications and simplify platform deploy.
+**Goal:** Unlock real-world apps that need packages beyond the runner's built-in set.
 
-## Phase 6 — Monetization & Limits
+- [ ] Per-app `requirements.txt` (validated against admin allow-list)
+- [ ] Runtime install at pod startup (pip install from requirements before running code)
+  - Adds cold start time but avoids per-app image builds
+  - Cached via PVC or init container with shared pip cache
+- [ ] UI for dependency management in editor settings drawer
+- [ ] Hard constraints: no native extensions, no system packages
+- [ ] Admin-configurable package allow-list (extends current import allow-list)
 
-**Goal:** Provide sustainable tiers without surprising users.
+### Phase 8 — Monetization & Limits
 
-- [ ] Free tier limits (apps, storage, requests)
-- [ ] Pro tier (higher limits, custom domains)
-- [ ] Team/shared apps (optional)
+**Goal:** Sustainable tiers without surprising users.
+
+- [ ] Usage metering (requests, compute time, storage per user)
+- [ ] Free tier limits (apps, storage, requests, databases)
+- [ ] Pro tier (higher limits, custom domains, longer sleep threshold)
+- [ ] Team/shared apps (optional, needs validation)
 
 ---
 
 ## Technical Debt / DX Improvements
 
-Infrastructure-level improvements identified from platform analysis:
+Infrastructure-level improvements that can be shipped alongside or between phases.
 
 ### High Priority
 
 - [ ] **Static assets support for FastHTML apps**
   - Current limitation: `validate_multifile()` only allows `.py` files
-  - FastHTML apps often need `static/styles.css`, small JS snippets, images
-  - **Phased approach:**
-    1. Phase 1: Text-only assets (CSS, JS, SVG) - covers 80% of needs
-    2. Phase 2: Binary assets via base64 encoding in API (images)
-  - Changes needed:
-    - Allow `static/*.css`, `static/*.js`, `static/*.svg` in validation
-    - Consider per-type size caps (e.g., 50KB for CSS, 100KB for JS)
-    - Runner: auto-mount `/code/static` as Starlette `StaticFiles` if exists
-    - Keep within existing 500KB total limit (safe for ConfigMaps)
-  - Note: ConfigMaps handle text fine; binary is awkward but doable
-  - Enables: real-world FastHTML apps with styling
+  - Phased: text assets first (CSS, JS, SVG), binary later (base64)
+  - Runner: auto-mount `/code/static` as Starlette `StaticFiles` if exists
+  - Keep within 500KB total limit (safe for ConfigMaps)
 
 - [ ] **Network egress controls (NetworkPolicy)**
-  - Current risk: Every app gets `PLATFORM_MONGO_URI` with user's credentials.
-    If egress is unrestricted, compromised app code could exfiltrate all user data.
-  - Recommended approach:
-    - Default deny egress NetworkPolicy for user app pods
-    - Allow: DNS, MongoDB service (internal), optionally allowlisted external domains
-  - Alternative (simpler): Two-tier system
-    - `egress: locked` (default) — only internal services
-    - `egress: open` — admin-only toggle for apps needing external APIs
-  - This is more urgent than pod securityContext given the credential exposure
+  - Default deny egress for user app pods
+  - Allow: DNS, MongoDB service (internal), admin-allowlisted external domains
+  - More urgent than pod securityContext given credential exposure
 
 - [ ] **Pod security hardening**
-  - Current gap: `deployment/apps.py` creates pods without security context
-  - Add to container spec:
-    ```python
-    security_context=k8s_client.V1SecurityContext(
-        run_as_non_root=True,
-        run_as_user=1000,
-        read_only_root_filesystem=True,
-        allow_privilege_escalation=False,
-        capabilities={"drop": ["ALL"]},
-    )
-    ```
-  - If runner needs writes, add `emptyDir` at `/tmp`
-  - Consider: Separate ServiceAccount per app (currently uses namespace default)
-  - "Cheap insurance" tier — usually painless to implement
+  - Add `securityContext`: non-root, read-only root fs, drop all capabilities
+  - Add `emptyDir` at `/tmp` if runner needs writes
 
 ### Medium Priority
 
 - [ ] **Replace exec() with importlib in runner**
-  - Current: `runner/entrypoint.py` uses `exec(compile(code, ...))` 
-  - Issues with exec():
-    - Worse stack traces (line numbers/module context can be weird)
-    - Tricky relative imports in multi-file mode
-    - Manual injection of globals (FastAPI, BaseModel, etc.)
-  - Better approach: `importlib.util.spec_from_file_location`
-    ```python
-    spec = importlib.util.spec_from_file_location("user_app", CODE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["user_app"] = module
-    spec.loader.exec_module(module)
-    app = module.app
-    ```
-  - Benefits:
-    - Cleaner module boundaries for multi-file imports
-    - Better tracebacks
-    - No need to pre-inject globals
-  - Note: `/code` is already on `sys.path`, so imports would work naturally
-  - Consider: Also support `create_app()` factory pattern for forward compatibility
+  - Better stack traces, cleaner module boundaries, no global injection
+  - Also support `create_app()` factory pattern for forward compatibility
 
 - [ ] **Circular import detection in validation**
-  - Common issue in multi-file apps: `routes` → `components` → `routes`
-  - Can detect via AST by building import graph from `local_modules`
-  - Return warning (not error) with explanation of the cycle
-  - Low effort, high value for reducing "why doesn't my app start?" confusion
+  - Build import graph from AST, warn on cycles
+  - Low effort, high value for multi-file debugging
 
 - [ ] **Dry-load validation (subprocess + timeout)**
-  - Current validation catches syntax/imports but not import-time crashes
-  - Many users put logic at import time that fails at runtime
-  - Approach:
-    - Spawn subprocess with 1-2 second timeout
-    - Minimal env (no credentials)
-    - Attempt to import entrypoint module
-    - Catch ImportError, AttributeError, etc.
-  - Catches "works locally, crashes on platform" before K8s deploy
-  - Consider: Run in locked-down container for extra safety
+  - Attempt to import entrypoint in subprocess with 1-2s timeout
+  - Catches import-time crashes before K8s deploy
+
+- [x] **Raise file limit from 10 to 50**
+  - ConfigMap 1MB limit is the real constraint, not file count
+  - Adjust 500KB total size limit if needed
 
 ### Low Priority / Nice-to-Have
 
 - [ ] **Show available packages in editor UI**
-  - Users waste time guessing what's installed in runner
-  - Add "Available Packages" panel in editor sidebar
-  - Derive from runner build metadata or hardcoded list
-  - Low effort, nice DX polish
-
-- [ ] **HTMX-aware logging**
-  - Log HX-* headers (HX-Request, HX-Target, HX-Trigger) at debug level
-  - Add filter in pod log viewer for HTMX requests
-  - Helpful for debugging partial update issues
-
-- [ ] **FastHTML editor actions**
-  - "Add route" button → inserts handler in routes.py
-  - "Extract component" → moves selected HTML builder to components.py
-  - "Extract service" → moves DB logic to services.py
-  - High effort (IDE-like features), but would make FastHTML feel premium
+- [ ] **HTMX-aware logging** (HX-* headers in log viewer)
+- [ ] **Container Image Automation** (Flux ImagePolicy or CI webhook for rollouts)
+- [ ] **App export/import** (download as ZIP, upload to recreate)
 
 ---
 
 ## Future / Needs Validation
 
-These are ideas that need real user feedback before committing:
+Ideas that need real user feedback or strategic clarity before committing:
 
-- **Container Image Automation** — Current gap: CI builds versioned tags
-  (`ts-{timestamp}-{sha}`) but deployments only reference `:latest`, and no
-  Flux Image Automation is configured to pick up new tags. Result: manual
-  `kubectl rollout restart` required after every CI build. Options to explore:
-  - Flux Image Automation with ImageRepository/ImagePolicy CRDs to auto-update
-    manifests when new `ts-*` tags appear
-  - GitHub Actions webhook to trigger rollout after image push
-  - Add `kubectl rollout restart` step to CI workflow (simplest)
-  - Use `imagePullPolicy: Always` with a rolling update annotation
-- **Advanced Admin Observability** — Prometheus/Grafana stack, alerting,
-  detailed resource tracking. Only if lightweight metrics prove insufficient.
-- **GridFS Templates** — File upload/storage patterns. Wait for user demand.
-- **FastHTML Templates** — HTML-first framework templates. Interesting but niche.
-- **Custom Domains** — CNAME support. Enterprise feature, low priority.
-- **Platform-Managed Auth** — Central user store + per-app access. Complex,
-  defer until clear need.
-- **Multi-Admin Support** — (Implemented in Phase 1d) Admins can now
-  promote/demote users. Role hierarchy (viewer, editor, admin) could be
-  added if more granular permissions are needed.
-- **Multiple Databases per User** — High priority. Currently each user gets one
-  database (`user_{user_id}`) with multiple collections. Want to allow users to
-  create multiple isolated databases for different projects. Would require:
-  - UI for database management (create, delete, select active)
-  - Per-app database selection in app settings
-  - Updated `PLATFORM_MONGO_URI` injection per app
-  - Storage quota tracking across all user databases
+- **Custom Domains** — CNAME support per app. Enterprise feature, low priority.
+- **Platform-Managed Auth** — Central user store + per-app access. Complex, defer.
+- **GitHub "Clone from repo" in templates** — Import starter code without full CI/CD.
+  Avoids Coolify territory while letting users bootstrap from existing code.
+- **MongoDB change streams as trigger** — Deploy logic when documents change.
+  Interesting differentiator but niche. Wait for demand.
+- **Branch-based preview URLs** — Deploy from git branch to preview subdomain.
+  Only relevant after CLI ships.
+- **Multi-language support** — JavaScript/TypeScript runtime. Major scope expansion.
+  Only if Python-only proves too limiting for adoption.
+
+---
+
+## Roadmap Sanity Check
+
+Notes on phase ordering, scope risks, and dependencies.
+
+### Phase ordering is sound
+
+Phase 3 (Frontend) → 4 (Scale-to-Zero) → 5 (CLI) → 6 (Async) → 7 (Dependencies) → 8
+(Monetization) follows a logical progression. The frontend overhaul gives you the
+dashboard where scale-to-zero status is visible. Scale-to-zero is the core serverless
+differentiator. CLI opens a second entry point. Async/triggers add depth for power users.
+Dependencies unlock real-world use cases. Monetization comes last because it needs a
+product worth paying for first.
+
+### Phase 3 scope risk
+
+Phase 3 is the largest phase by far: Tailwind migration, Zustand state rewrite, three new
+screens, request logging middleware, WebSocket log streaming, auto-detection refactor,
+embedded database browsing. This could easily become a multi-month rewrite that blocks
+everything behind it.
+
+**Mitigation:** Consider splitting Phase 3 into incremental deliverables:
+
+- **3a — Backend APIs first.** ~~Request logging middleware, WebSocket log endpoint,~~ embedded
+  DB stats. Request logging and WebSocket streaming are done. These are independently
+  useful and unblock Phase 4 work in parallel.
+- **3b — Editor improvements.** Single deploy button, inline test panel, dynamic file
+  management. These improve the core loop without a full rewrite.
+- **3c — Design system + restructure.** Tailwind migration, Zustand stores, component
+  decomposition. This is the "rewrite" part — do it last when the new screens are proven.
+
+The `useAppState` refactor (750 lines, 40+ state variables) is important but can be done
+incrementally. Extract one store at a time rather than rewriting everything at once.
+
+### Phase 4 can start before Phase 3 finishes
+
+The wakeup proxy and sleep lifecycle are backend-only. They don't depend on the new
+frontend. The Phase 3 app dashboard with "sleeping" status badge is the UI for Phase 4,
+but the backend can ship first with a simpler status indicator in the existing UI.
+
+### Phase 7 cold start compounding
+
+Custom dependencies (pip install at startup) compounds with scale-to-zero cold starts.
+A sleeping app that needs to pip install packages before starting could have 10-30 second
+wake times. The shared pip cache (PVC) is essential, not optional. Consider making the
+cache a hard requirement for Phase 7, not an optimization.
+
+### MongoDB as the only infrastructure dependency is a strength
+
+The roadmap avoids introducing Redis (async queue uses MongoDB), avoids Knative/KEDA,
+avoids external log collectors. Keeping MongoDB as the single stateful dependency is
+a deliberate and good choice for a homelab platform. The foundation already deploys
+MongoDB — no additional infra needed.
 
 ---
 
 ## Success Metrics
 
-- **Time from idea → deployed app** (target: under 60 seconds)
+### Primary (the numbers that matter)
+
+- **Time-to-first-request** — from signup to "my code responded to an HTTP call"
+  (target: under 3 minutes)
 - **Deploy success rate** (target: >95%)
-- **Full-stack capability** — can users build HTML + database apps?
-- **Repeat usage** — do builders come back?
-- **Shareability** — are deployed URLs being shared?
-- **Cleanup effectiveness** — inactive apps removed within 24 hours
+- **Weekly active deployers** — users who deploy at least once per week
+
+### Secondary
+
+- **Cold start p95** — time from first request to sleeping app responding
+  (target: under 5 seconds, Phase 4)
+- **Repeat deployment frequency** — how often users redeploy (signals iteration)
+- **Async adoption rate** — percent of apps using async invocation (Phase 6)
+- **CLI vs browser ratio** — healthy split indicates both entry points working (Phase 5)
+- **Database binding rate** — percent of apps using MongoDB (stickiness indicator)
+
+---
+
+## Reference Documents
+
+- `docs/serverless-pivot-exploration.md` — Competitive landscape analysis, scale-to-zero
+  architecture, CLI story, UX philosophy
+- `docs/FUNCTION_MODE_DEEP_DIVE.md` — Async invocation model, runs/replay UX,
+  trigger model, Mongo-as-binding concept
+- `../fastapi-platform-cluster-foundation/` — Cluster bootstrap repo. Deploys Traefik,
+  MongoDB, Cloudflare tunnel, Flux. Defines the infrastructure contract the platform
+  builds on.

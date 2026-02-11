@@ -25,25 +25,11 @@ function WelcomeScreen({ onSelectStarter, onBrowseTemplates, templateCount }) {
 
       <div className={styles.starterCards}>
         <StarterCard
-          title="Single File"
-          subtitle="Simple API in one file"
-          description="Best for beginners and quick experiments"
+          title="Start from scratch"
+          subtitle="Blank single-file app"
+          description="Best for beginners and quick experiments. Add files later as you grow."
           icon="📄"
-          onClick={() => onSelectStarter('single', 'fastapi')}
-        />
-        <StarterCard
-          title="Multi-File FastAPI"
-          subtitle="Organized project structure"
-          description="Routes, models, and services in separate files"
-          icon="📁"
-          onClick={() => onSelectStarter('multi', 'fastapi')}
-        />
-        <StarterCard
-          title="Multi-File FastHTML"
-          subtitle="HTML + HTMX components"
-          description="Build interactive web UIs with Python"
-          icon="🌐"
-          onClick={() => onSelectStarter('multi', 'fasthtml')}
+          onClick={() => onSelectStarter('single')}
         />
       </div>
 

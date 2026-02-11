@@ -1,0 +1,57 @@
+.metrics-chart {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.chart-title {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.chart-value {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.chart-svg {
+  width: 100%;
+  flex: 1;
+  min-height: 100px;
+}
+
+.chart-line {
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-area {
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}

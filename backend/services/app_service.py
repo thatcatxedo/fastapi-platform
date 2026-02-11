@@ -378,7 +378,7 @@ class AppService:
             InvalidRequestError: If required fields missing
             ValidationError: If code validation fails
         """
-        from validation import validate_code, validate_multifile
+        from validation import validate_code, validate_multifile, detect_framework_from_files
 
         allowed_imports = await self.get_allowed_imports()
 
@@ -386,7 +386,7 @@ class AppService:
             if not files:
                 raise InvalidRequestError("files required for multi-file mode")
             if not framework:
-                raise InvalidRequestError("framework required for multi-file mode")
+                framework = detect_framework_from_files(files, entrypoint)
             if framework not in ("fastapi", "fasthtml"):
                 raise InvalidRequestError("framework must be 'fastapi' or 'fasthtml'")
 
@@ -487,7 +487,16 @@ class AppService:
             ValidationError: If code validation fails
             DeploymentError: If deployment fails
         """
-        mode = app_data.mode or "single"
+        # Infer mode from request shape
+        if app_data.files and len(app_data.files) > 0:
+            mode = "multi"
+            from validation import detect_framework_from_files
+            framework = app_data.framework or detect_framework_from_files(
+                app_data.files, app_data.entrypoint or "app.py"
+            )
+        else:
+            mode = app_data.mode or "single"
+            framework = app_data.framework
 
         # Validate database access
         self.validate_database_access(app_data.database_id, user)
@@ -498,7 +507,7 @@ class AppService:
             code=app_data.code,
             files=app_data.files,
             entrypoint=app_data.entrypoint or "app.py",
-            framework=app_data.framework
+            framework=framework
         )
 
         # Generate unique app_id
@@ -524,7 +533,7 @@ class AppService:
         }
 
         if mode == "multi":
-            app_doc["framework"] = app_data.framework
+            app_doc["framework"] = framework
             app_doc["entrypoint"] = app_data.entrypoint or "app.py"
             app_doc["files"] = app_data.files
             app_doc["deployed_files"] = app_data.files
@@ -575,13 +584,18 @@ class AppService:
         # Handle code/files update based on mode
         if mode == "multi":
             if app_data.files is not None:
+                from validation import detect_framework_from_files
+                framework = detect_framework_from_files(
+                    app_data.files, app.get("entrypoint", "app.py")
+                )
                 await self.validate_code_or_files(
                     mode="multi",
                     files=app_data.files,
                     entrypoint=app.get("entrypoint", "app.py"),
-                    framework=app.get("framework")
+                    framework=framework
                 )
                 update_data["files"] = app_data.files
+                update_data["framework"] = framework
                 new_deployed_content = app_data.files
                 needs_redeploy = True
         else:

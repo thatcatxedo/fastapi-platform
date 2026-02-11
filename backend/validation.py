@@ -41,6 +41,45 @@ def find_forbidden_calls(tree: ast.AST, names: set) -> Optional[tuple[str, int]]
     return None
 
 
+def detect_framework_from_code(code: str) -> str:
+    """Detect framework from code AST. Returns 'fastapi' or 'fasthtml'."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return "fastapi"
+    has_fastapi_app = False
+    has_fasthtml_app = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            if not isinstance(node.value, ast.Call):
+                continue
+            func = node.value.func
+            func_name = func.id if isinstance(func, ast.Name) else None
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "app":
+                    if func_name == "FastAPI":
+                        has_fastapi_app = True
+                    if func_name in ("fast_app", "FastHTML"):
+                        has_fasthtml_app = True
+                elif isinstance(target, ast.Tuple) and func_name in ("fast_app", "FastHTML"):
+                    for elt in target.elts:
+                        if isinstance(elt, ast.Name) and elt.id == "app":
+                            has_fasthtml_app = True
+    if has_fasthtml_app:
+        return "fasthtml"
+    if has_fastapi_app:
+        return "fastapi"
+    return "fastapi"
+
+
+def detect_framework_from_files(files: dict, entrypoint: str = "app.py") -> str:
+    """Detect framework from entrypoint file. Returns 'fastapi' or 'fasthtml'."""
+    entrypoint_content = files.get(entrypoint)
+    if not entrypoint_content:
+        return "fastapi"
+    return detect_framework_from_code(entrypoint_content)
+
+
 def _normalize_allowed_imports(
     allowed_imports_override: Optional[Iterable[str]]
 ) -> Optional[Set[str]]:
@@ -275,7 +314,7 @@ def validate_multifile(
     Returns: (is_valid, error_message, error_line, error_file)
     """
     # Guardrails
-    MAX_FILES = 10
+    MAX_FILES = 50
     MAX_FILE_SIZE = 100 * 1024  # 100KB per file
     MAX_TOTAL_SIZE = 500 * 1024  # 500KB total
 

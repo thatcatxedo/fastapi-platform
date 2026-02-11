@@ -1,0 +1,10 @@
+.ide-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.ide-main {
+  flex: 1;
+  overflow: auto;
+  padding: 1.5rem;
+}

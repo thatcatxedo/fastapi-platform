@@ -216,10 +216,10 @@ function EditorPage({ user }) {
     initMultiFileMode(newFramework)
   }
 
-  // Welcome screen handlers
+  // Welcome screen handlers (mode only; framework auto-detected by backend when multi)
   const handleSelectStarter = (selectedMode, selectedFramework) => {
     if (selectedMode === 'multi') {
-      initMultiFileMode(selectedFramework)
+      initMultiFileMode(selectedFramework || 'fastapi')
     } else {
       initSingleFileMode()
     }

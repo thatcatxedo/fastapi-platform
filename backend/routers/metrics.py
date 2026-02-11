@@ -7,7 +7,10 @@ for all business logic.
 from fastapi import APIRouter, Depends
 import logging
 
-from models import AppMetricsResponse, AppErrorsResponse, AppHealthStatusResponse
+from models import (
+    AppMetricsResponse, AppErrorsResponse, AppHealthStatusResponse,
+    AppRequestLogsResponse
+)
 from auth import get_current_user
 from services.app_service import app_service
 from services.metrics_service import metrics_service
@@ -36,6 +39,19 @@ async def get_app_health_status(app_id: str, user: dict = Depends(get_current_us
     """Get health status for an app based on recent health checks."""
     await app_service.get_by_app_id(app_id, user)  # Verify app exists and user owns it
     return await metrics_service.get_health_status(app_id)
+
+
+@router.get("/{app_id}/requests", response_model=AppRequestLogsResponse)
+async def get_app_requests(
+    app_id: str, limit: int = 50, user: dict = Depends(get_current_user)
+):
+    """Get recent HTTP request logs for an app.
+
+    Request logs are captured by middleware running inside the app's runner
+    container and stored in the user's MongoDB database.
+    """
+    app = await app_service.get_by_app_id(app_id, user)
+    return await metrics_service.get_request_logs(app_id, app, user, limit)
 
 
 # Re-export for backwards compatibility

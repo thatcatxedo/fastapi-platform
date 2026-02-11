@@ -107,7 +107,8 @@ async def create_deployment(app_doc: dict, user: dict):
     mongo_uri = get_user_mongo_uri_secure(user_id, user, database_id=database_id)
     env_list = [
         k8s_client.V1EnvVar(name="CODE_PATH", value=code_path),
-        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=mongo_uri)
+        k8s_client.V1EnvVar(name="PLATFORM_MONGO_URI", value=mongo_uri),
+        k8s_client.V1EnvVar(name="APP_ID", value=app_id),
     ]
     # Add user-defined env vars
     if app_doc.get("env_vars"):

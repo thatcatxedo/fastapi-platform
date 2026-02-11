@@ -18,7 +18,7 @@ from deployment import (
     get_pod_logs,
     get_deployment_status
 )
-from validation import validate_code, validate_multifile
+from validation import validate_code, validate_multifile, detect_framework_from_files
 from config import APP_DOMAIN
 
 logger = logging.getLogger(__name__)
@@ -309,12 +309,12 @@ async def _create_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
     # Determine mode
     if files:
         mode = "multi"
-        if not framework:
-            return {"error": "framework is required for multi-file apps"}
-        if framework not in ("fastapi", "fasthtml"):
-            return {"error": "framework must be 'fastapi' or 'fasthtml'"}
         if "app.py" not in files:
             return {"error": "Multi-file apps must include app.py as entrypoint"}
+        if not framework:
+            framework = detect_framework_from_files(files, "app.py")
+        elif framework not in ("fastapi", "fasthtml"):
+            return {"error": "framework must be 'fastapi' or 'fasthtml'"}
     elif code:
         mode = "single"
     else:
@@ -453,6 +453,9 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
             if not is_valid:
                 return {"error": f"Code validation failed in {error_file or 'unknown'} line {error_line or '?'}: {error_msg}"}
             update_data["files"] = merged_files
+            update_data["framework"] = detect_framework_from_files(
+                merged_files, app.get("entrypoint", "app.py")
+            )
     else:
         if code:
             is_valid, error_msg, error_line = validate_code(code)
@@ -484,7 +487,7 @@ async def _update_app(input_data: Dict[str, Any], user: dict) -> Dict[str, Any]:
         # Update deployed code/files tracking
         success_update = {"status": "running", "deploy_stage": "running"}
         if mode == "multi" and files:
-            success_update["deployed_files"] = files
+            success_update["deployed_files"] = update_data.get("files", files)
             success_update["draft_files"] = None
         elif code:
             success_update["deployed_code"] = code

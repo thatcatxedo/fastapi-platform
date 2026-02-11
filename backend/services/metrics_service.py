@@ -9,7 +9,8 @@ from typing import List, Optional
 
 from models import (
     AppMetricsResponse, AppErrorsResponse, AppErrorEntry,
-    AppHealthStatusResponse, HealthStatus
+    AppHealthStatusResponse, HealthStatus,
+    AppRequestLogsResponse, RequestLogEntry
 )
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,8 @@ class MetricsService:
         self,
         metrics_collection=None,
         errors_collection=None,
-        health_checks_collection=None
+        health_checks_collection=None,
+        mongo_client=None
     ):
         """
         Initialize MetricsService with optional dependency injection.
@@ -40,15 +42,18 @@ class MetricsService:
             from database import (
                 app_metrics_collection,
                 app_errors_collection,
-                app_health_checks_collection
+                app_health_checks_collection,
+                client as default_client
             )
             self.metrics = app_metrics_collection
             self.errors = errors_collection or app_errors_collection
             self.health_checks = health_checks_collection or app_health_checks_collection
+            self.client = mongo_client or default_client
         else:
             self.metrics = metrics_collection
             self.errors = errors_collection
             self.health_checks = health_checks_collection
+            self.client = mongo_client
 
     # =========================================================================
     # Metrics
@@ -252,6 +257,58 @@ class MetricsService:
             "avg_response_time_ms": round(metrics_data.get("avg_response_time", 0) or 0, 2),
             "health_status": health_status
         }
+
+
+    # =========================================================================
+    # Request Logs (from runner middleware, stored in user databases)
+    # =========================================================================
+
+    async def get_request_logs(
+        self, app_id: str, app: dict, user: dict, limit: int = 50
+    ) -> AppRequestLogsResponse:
+        """
+        Get recent request logs for an app from the user's database.
+
+        The runner middleware writes request logs to _platform_request_logs
+        in the user's own MongoDB database.
+        """
+        from mongo_users import get_mongo_db_name
+
+        user_id = str(user["_id"])
+        database_id = app.get("database_id") or user.get("default_database_id", "default")
+        db_name = get_mongo_db_name(user_id, database_id)
+
+        try:
+            user_db = self.client[db_name]
+            collection = user_db["_platform_request_logs"]
+
+            requests = []
+            async for doc in collection.find(
+                {"app_id": app_id}
+            ).sort("timestamp", -1).limit(limit):
+                requests.append(RequestLogEntry(
+                    timestamp=doc["timestamp"].isoformat() if doc.get("timestamp") else "",
+                    method=doc.get("method", ""),
+                    path=doc.get("path", ""),
+                    status_code=doc.get("status_code", 0),
+                    duration_ms=doc.get("duration_ms", 0),
+                    query_string=doc.get("query_string", ""),
+                ))
+
+            total_count = await collection.count_documents({"app_id": app_id})
+
+            return AppRequestLogsResponse(
+                app_id=app_id,
+                requests=requests,
+                total_count=total_count
+            )
+        except Exception as e:
+            logger.warning(f"Failed to get request logs for app {app_id}: {e}")
+            return AppRequestLogsResponse(
+                app_id=app_id,
+                requests=[],
+                total_count=0
+            )
 
 
 # Singleton instance for production use
