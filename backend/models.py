@@ -370,5 +370,26 @@ class ProxyResponse(BaseModel):
     url: str
 
 
+# Explorer models (In-App MongoDB Explorer)
+
+class CollectionListResponse(BaseModel):
+    """Response for listing collections in a user database."""
+    database_id: str
+    database_name: str
+    collections: List[CollectionStats]
+    total_collections: int
+    total_documents: int
+    total_size_mb: float
+
+
+class DocumentListResponse(BaseModel):
+    """Response for paginated document listing."""
+    documents: List[Dict[str, Any]]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
 # Resolve forward references (DatabaseStatsEmbedded in AppDetailResponse)
 AppDetailResponse.model_rebuild()

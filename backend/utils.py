@@ -2,7 +2,11 @@
 Utility functions for FastAPI Platform
 Shared helper functions for error handling and formatting
 """
-from typing import Optional
+import base64
+from datetime import datetime
+from typing import Any, Optional
+
+from bson import ObjectId, Decimal128
 
 
 def error_payload(code: str, message: str, details: Optional[dict] = None) -> dict:
@@ -33,3 +37,25 @@ def friendly_k8s_error(error_msg: str) -> str:
         except Exception:
             pass
     return error_msg
+
+
+def serialize_mongo_doc(doc: Any) -> Any:
+    """
+    Recursively convert a MongoDB document to a JSON-serializable dict.
+
+    Handles: ObjectId -> str, datetime -> ISO str, bytes -> base64 str,
+    Decimal128 -> str, and nested dicts/lists.
+    """
+    if isinstance(doc, dict):
+        return {k: serialize_mongo_doc(v) for k, v in doc.items()}
+    if isinstance(doc, list):
+        return [serialize_mongo_doc(item) for item in doc]
+    if isinstance(doc, ObjectId):
+        return str(doc)
+    if isinstance(doc, datetime):
+        return doc.isoformat()
+    if isinstance(doc, bytes):
+        return base64.b64encode(doc).decode("ascii")
+    if isinstance(doc, Decimal128):
+        return str(doc)
+    return doc

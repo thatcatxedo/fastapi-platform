@@ -27,8 +27,24 @@ this platform" to "my code is running and I just called it." Target: under 3 min
 
 Our niche: **Self-hosted Cloud Run with a built-in editor and database.**
 
-Browser-first serverless Python, with built-in tenant-scoped MongoDB, that runs on
-your own cluster. Nobody else fills this spot.
+No single feature here is unique. Railway has easy deploys. Val Town has a browser
+editor. OpenFaaS has scale-to-zero. What's unique is the combination: browser editor
++ CLI + built-in database + scale-to-zero + self-hosted. Nobody packages all of these
+together.
+
+Three features carry the most weight:
+
+1. **Browser editor with instant deploy** — the adoption hook. This is what makes
+   someone try the platform. Write code, hit deploy, get a URL. Under 3 minutes from
+   signup to first request. Nothing else in the self-hosted space offers this.
+2. **CLI tool (`fp`)** — the retention hook. The browser editor gets people started,
+   but developers with real workflows live in their local editor. `fp init`, `fp dev`,
+   `fp deploy` makes the platform a daily-driver tool, not a novelty. Apps created in
+   the browser can be pulled down and developed locally, and vice versa.
+3. **Scale-to-zero** — the sustainability hook. A homelab cluster can't run 20
+   always-on pods for apps that get hit twice a day. Sleep/wake makes multi-tenant
+   feasible on small clusters and is what makes the platform genuinely serverless
+   rather than just "a web editor that deploys containers."
 
 ### What we deliberately don't compete on
 
@@ -248,20 +264,49 @@ experience that makes the platform feel like a different product.
 
 #### Template Management
 
-- [ ] Edit existing templates from the template gallery
-  - Backend `PUT` endpoint exists but no UI calls it
-  - Inline edit or modal for name, description, complexity, tags, code
-  - Users can edit their own templates; admins can edit global templates
-- [ ] Hide/show templates
-  - `is_hidden` field on template documents (per-user preference or admin toggle)
-  - Users can hide default templates they don't use from the gallery
-  - Admins can hide global templates from all users without deleting them
-  - Hidden templates still accessible via direct API if needed
-- [ ] Admin template management
-  - View all templates (global + all users') in the admin dashboard
-  - Create, edit, and delete global templates from the UI (currently YAML-only)
-  - Toggle global template visibility
-  - See template usage stats (how many apps were created from each template)
+- [x] Edit existing templates from the template gallery
+  - EditTemplateModal for name, description, complexity, tags
+  - Users edit own templates; admins edit global templates via separate endpoints
+- [x] Hide/show templates
+  - `is_hidden` field with hide/unhide endpoints
+  - Visibility toggle in TemplatesModal and Admin dashboard
+  - Hidden templates shown at reduced opacity in admin view
+- [x] Admin template management
+  - Templates table in admin dashboard (all global + user templates)
+  - Toggle visibility, delete, edit from admin UI
+  - Uses `/api/admin/templates/` endpoints
+
+#### In-App MongoDB Explorer
+
+Simple database browser built into the platform UI, replacing the need to launch a
+separate mongo-express viewer pod for basic data inspection.
+
+- [ ] Databases & collections view
+  - List all databases the current user has access to (their `user_{id}` database)
+  - Show collections within each database with document counts and storage size
+  - Admins see all databases across the platform
+- [ ] Collection browser
+  - Paginated document list with JSON viewer
+  - Sort by `_id` or indexed fields
+  - Basic filter (JSON query input, like `{"status": "active"}`)
+- [ ] Read-only by default
+  - No insert/update/delete from the explorer (that's what the app code is for)
+  - Reduces risk of accidental data mutation
+  - Optional: admin-only write mode behind a toggle (future)
+- [ ] Replaces mongo-viewer pod deployment
+  - Current flow: deploy a full mongo-express instance per user as a separate pod
+  - New flow: built-in explorer served by the platform backend, no extra pods
+  - Significant resource savings (one less deployment per user who wants data visibility)
+
+Backend:
+- `GET /api/databases` — list user's databases with collection stats
+- `GET /api/databases/{db_name}/collections` — list collections with counts
+- `GET /api/databases/{db_name}/{collection}/documents` — paginated document list
+- Admin variants for cross-user browsing
+
+This is separate from the per-app "database section" in Screen 2, which shows
+collections relevant to a specific app. The explorer is a standalone page for
+browsing all your data.
 
 #### What gets removed or folded in
 
@@ -294,9 +339,10 @@ experience that makes the platform feel like a different product.
 
 **Goal:** Apps sleep when idle and wake on first request. No wasted cluster resources.
 
-This is the biggest technical differentiator versus Coolify/CapRover and the feature
-that makes the platform genuinely serverless. It also removes the current 24h
-inactivity deletion — apps stay deployed but scale to zero replicas instead.
+Scale-to-zero is what makes the platform sustainable on small clusters and genuinely
+serverless. Without it, every deployed app is an always-on pod consuming resources
+whether it gets traffic or not. It also removes the current 24h inactivity deletion —
+apps stay deployed but scale to zero replicas instead.
 
 - [ ] Wakeup proxy
   - Lightweight service (or Traefik middleware) that intercepts requests to sleeping apps
@@ -625,8 +671,7 @@ multi-month rewrite that blocks everything behind it.
   DB stats. Request logging and WebSocket streaming are done. These are independently
   useful and unblock Phase 4 work in parallel.
 - **3b — Editor improvements.** ~~Single deploy button~~, ~~inline test panel~~, ~~static assets +
-  file list view~~, ~~database badge~~, ~~env vars drawer~~, template management UI. Core editor
-  improvements done. Remaining: template management UI.
+  file list view~~, ~~database badge~~, ~~env vars drawer~~, ~~template management UI~~. **3b complete.**
 - **3c — Design system + restructure.** Tailwind migration, Zustand stores, component
   decomposition. This is the "rewrite" part — do it last when the new screens are proven.
 
