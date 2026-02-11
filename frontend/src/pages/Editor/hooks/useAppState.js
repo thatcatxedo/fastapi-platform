@@ -531,14 +531,17 @@ function useAppState(appId) {
           body.mode = 'multi'
           if (framework) body.framework = framework
           body.entrypoint = entrypoint
-          body.database_id = databaseId  // Include database selection
         }
       } else {
         body.code = code
         if (!isEditing) {
           body.mode = 'single'
-          body.database_id = databaseId  // Include database selection
         }
+      }
+
+      // Always include database_id (backend supports it on both create and update)
+      if (databaseId) {
+        body.database_id = databaseId
       }
 
       const response = await fetch(url, {

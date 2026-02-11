@@ -4,12 +4,12 @@ import { useParams, useNavigate } from 'react-router-dom'
 // Hooks
 import useAppState from './hooks/useAppState'
 import useTemplates from './hooks/useTemplates'
+import useDatabases from './hooks/useDatabases'
 
 // Components
 import EditorHeader from './components/EditorHeader'
 import NotificationsPanel from './components/NotificationsPanel'
-import EnvVarsPanel from './components/EnvVarsPanel'
-import DatabaseSelector from './components/DatabaseSelector'
+import SettingsDrawer from './components/SettingsDrawer'
 import CodeEditor from './components/CodeEditor'
 import MultiFileEditor from './components/MultiFileEditor'
 import ChatSidebar from './components/ChatSidebar'
@@ -17,6 +17,7 @@ import TestPanel from './components/TestPanel'
 import TemplatesModal from './components/TemplatesModal'
 import VersionHistoryModal from './components/VersionHistoryModal'
 import SaveAsTemplateModal from './components/SaveAsTemplateModal'
+import EditTemplateModal from './components/EditTemplateModal'
 import WelcomeScreen from './components/WelcomeScreen'
 import ConfirmModal from '../../components/ConfirmModal'
 import { useToast } from '../../components/Toast'
@@ -80,10 +81,18 @@ function EditorPage({ user }) {
   } = useAppState(appId)
 
   // Templates - always fetch for welcome screen template count
-  const { templates, loadingTemplates, fetchTemplates, deleteTemplate } = useTemplates(true)
+  const { templates, loadingTemplates, fetchTemplates, deleteTemplate, hideTemplate } = useTemplates(true)
+  const [editingTemplate, setEditingTemplate] = useState(null)
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false)
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false)
-  const [envVarsExpanded, setEnvVarsExpanded] = useState(envVars.length > 0)
+  const [settingsExpanded, setSettingsExpanded] = useState(envVars.length > 0)
+
+  // Database list (shared between badge and settings drawer)
+  const { databases, loading: loadingDatabases } = useDatabases()
+
+  // Detect if current code uses MongoDB
+  const allCode = mode === 'multi' ? Object.values(files || {}).join('\n') : code
+  const codeUsesMongo = /MongoClient|PLATFORM_MONGO_URI|from\s+pymongo|import\s+pymongo/.test(allCode)
 
   // Welcome screen state - show for new apps until user makes a choice
   const [showWelcome, setShowWelcome] = useState(!appId)
@@ -258,7 +267,10 @@ function EditorPage({ user }) {
             setShowWelcome(false)
           }}
           onDeleteTemplate={deleteTemplate}
+          onEditTemplate={setEditingTemplate}
+          onHideTemplate={hideTemplate}
           onRefresh={fetchTemplates}
+          user={user}
         />
       </>
     )
@@ -310,6 +322,20 @@ function EditorPage({ user }) {
               required
               className={styles.appNameInput}
             />
+            {!loadingDatabases && databases.length > 0 && (() => {
+              const db = databases.find(d => d.id === databaseId)
+              const label = db ? db.name : 'default'
+              const isWarning = codeUsesMongo && !databaseId
+              return (
+                <span
+                  className={`${styles.databaseBadge} ${isWarning ? styles.databaseBadgeWarning : ''}`}
+                  onClick={() => setSettingsExpanded(true)}
+                  title="Click to change database"
+                >
+                  DB: {label}
+                </span>
+              )
+            })()}
           </div>
 
           {/* Mode selector - only for new apps */}
@@ -365,37 +391,17 @@ function EditorPage({ user }) {
           )}
         </div>
 
-        {/* Database selector - only for new apps */}
-        {!isEditing && (
-          <DatabaseSelector
-            value={databaseId}
-            onChange={setDatabaseId}
-            disabled={loading}
-            autoSelectDefault={templateRequiresDb}
-          />
-        )}
-
-        {/* Warning banner when code uses MongoDB but no database is selected */}
-        {!isEditing && !databaseId && (
-          (() => {
-            const allCode = mode === 'multi' ? Object.values(files).join('\n') : code
-            const usesMongo = /MongoClient|PLATFORM_MONGO_URI|from\s+pymongo|import\s+pymongo/.test(allCode)
-            return usesMongo ? (
-              <div className={styles.warningBanner}>
-                <span>This code uses MongoDB but no database is connected.</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Select a database above, or the default database will be used.
-                </span>
-              </div>
-            ) : null
-          })()
-        )}
-
-        <EnvVarsPanel
+        <SettingsDrawer
+          databaseId={databaseId}
+          onDatabaseChange={setDatabaseId}
+          databases={databases}
+          autoSelectDefault={templateRequiresDb}
+          disabled={loading}
           envVars={envVars}
-          onChange={setEnvVars}
-          expanded={envVarsExpanded}
-          onToggleExpanded={() => setEnvVarsExpanded(!envVarsExpanded)}
+          onEnvVarsChange={setEnvVars}
+          expanded={settingsExpanded}
+          onToggleExpanded={() => setSettingsExpanded(!settingsExpanded)}
+          codeUsesMongo={codeUsesMongo}
         />
 
         {mode === 'multi' ? (
@@ -442,7 +448,22 @@ function EditorPage({ user }) {
         loading={loadingTemplates}
         onSelectTemplate={handleUseTemplate}
         onDeleteTemplate={deleteTemplate}
+        onEditTemplate={setEditingTemplate}
+        onHideTemplate={hideTemplate}
         onRefresh={fetchTemplates}
+        user={user}
+      />
+
+      <EditTemplateModal
+        isOpen={!!editingTemplate}
+        onClose={() => setEditingTemplate(null)}
+        template={editingTemplate}
+        isAdmin={user?.is_admin}
+        onSuccess={(updated) => {
+          setEditingTemplate(null)
+          fetchTemplates()
+          setSuccess(`Template "${updated.name}" updated!`)
+        }}
       />
 
       <SaveAsTemplateModal

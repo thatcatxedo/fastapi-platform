@@ -158,6 +158,8 @@ class TemplateResponse(BaseModel):
     user_id: Optional[str] = None
     # Database requirement indicator
     requires_database: bool = False
+    # Visibility
+    is_hidden: bool = False
 
 
 class TemplateCreate(BaseModel):
@@ -184,6 +186,11 @@ class TemplateUpdate(BaseModel):
     files: Optional[Dict[str, str]] = None
     complexity: Optional[str] = None
     tags: Optional[List[str]] = None
+
+
+class AdminTemplateUpdate(TemplateUpdate):
+    """Update a template (admin version) — adds visibility toggle"""
+    is_hidden: Optional[bool] = None
 
 
 class ViewerResponse(BaseModel):

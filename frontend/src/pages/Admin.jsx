@@ -15,11 +15,14 @@ function Admin({ user }) {
   const [allowedImportsText, setAllowedImportsText] = useState('')
   const [allowedImportsSaving, setAllowedImportsSaving] = useState(false)
   const [allowedImportsError, setAllowedImportsError] = useState('')
+  const [adminTemplates, setAdminTemplates] = useState([])
+  const [templatesLoading, setTemplatesLoading] = useState(true)
 
   useEffect(() => {
     fetchStats()
     fetchUsers()
     fetchSettings()
+    fetchAdminTemplates()
   }, [])
 
   const fetchStats = async () => {
@@ -67,6 +70,50 @@ function Admin({ user }) {
       }
     } catch (err) {
       console.error('Failed to fetch settings:', err)
+    }
+  }
+
+  const fetchAdminTemplates = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}/api/admin/templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        setAdminTemplates(await response.json())
+      }
+    } catch (err) {
+      console.error('Failed to fetch templates:', err)
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  const handleToggleTemplateVisibility = async (template) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API_URL}/api/admin/templates/${template.id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ is_hidden: !template.is_hidden })
+    })
+    if (response.ok) {
+      fetchAdminTemplates()
+    }
+  }
+
+  const handleDeleteTemplate = async (template) => {
+    if (!confirm(`Delete template "${template.name}"? This cannot be undone.`)) return
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API_URL}/api/admin/templates/${template.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (response.ok) {
+      fetchAdminTemplates()
+      fetchStats()
     }
   }
 
@@ -473,6 +520,102 @@ function Admin({ user }) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Templates Management */}
+      <div className="card" style={{ padding: '1rem', marginTop: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '500' }}>
+            Templates ({adminTemplates.length})
+          </h2>
+        </div>
+
+        {templatesLoading ? (
+          <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)' }}>Loading templates...</div>
+        ) : adminTemplates.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)' }}>No templates found.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                  <th style={{ textAlign: 'left', padding: '0.5rem', fontWeight: '600' }}>Name</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}>Type</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}>Mode</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}>Complexity</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}>Visible</th>
+                  <th style={{ textAlign: 'center', padding: '0.5rem', fontWeight: '600' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {adminTemplates.map((t) => (
+                  <tr key={t.id} style={{ borderBottom: '1px solid var(--border)', opacity: t.is_hidden ? 0.5 : 1 }}>
+                    <td style={{ padding: '0.5rem' }}>
+                      <div style={{ fontWeight: '500' }}>{t.name}</div>
+                      {t.description && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.description}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '0.25rem',
+                        background: t.is_global ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-light)',
+                        color: t.is_global ? '#3b82f6' : 'var(--text-muted)',
+                        border: `1px solid ${t.is_global ? 'rgba(59, 130, 246, 0.3)' : 'var(--border)'}`
+                      }}>
+                        {t.is_global ? 'Global' : 'User'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {t.mode === 'multi' ? `Multi (${t.framework || '?'})` : 'Single'}
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '0.25rem',
+                        background: t.complexity === 'simple' ? '#10b981' : t.complexity === 'medium' ? '#f59e0b' : '#ef4444',
+                        color: 'white'
+                      }}>
+                        {t.complexity}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleToggleTemplateVisibility(t)}
+                        style={{
+                          background: 'none',
+                          border: '1px solid var(--border)',
+                          borderRadius: '0',
+                          padding: '0.15rem 0.5rem',
+                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          color: t.is_hidden ? 'var(--error)' : 'var(--success)'
+                        }}
+                        title={t.is_hidden ? 'Show template' : 'Hide template'}
+                      >
+                        {t.is_hidden ? 'Hidden' : 'Visible'}
+                      </button>
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleDeleteTemplate(t)}
+                        title="Delete template"
+                        style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

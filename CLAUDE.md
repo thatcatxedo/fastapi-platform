@@ -49,6 +49,22 @@ cd runner
 docker build -t fastapi-platform-runner:latest .
 ```
 
+### Local k3d Cluster (build → import → restart)
+```bash
+# Build all three images
+docker build -t ghcr.io/thatcatxedo/fastapi-platform-backend:dev backend/
+docker build -t ghcr.io/thatcatxedo/fastapi-platform-frontend:dev frontend/
+docker build -t ghcr.io/thatcatxedo/fastapi-platform-runner:dev runner/
+
+# Import into k3d and restart
+k3d image import ghcr.io/thatcatxedo/fastapi-platform-{backend,frontend,runner}:dev -c fastapi-platform-dev
+kubectl rollout restart deployment/backend deployment/frontend -n fastapi-platform
+```
+
+Key details: Use `:dev` tag (not `:latest`) so k8s doesn't try to pull from GHCR.
+Deployments use `imagePullPolicy: Never`. See `docs/LOCAL_DEV_CLUSTER.md` for full
+dev workflow, common issues, and troubleshooting.
+
 ## Architecture
 
 ### Components

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 
-function TemplatesModal({ isOpen, onClose, templates, loading, onSelectTemplate, onDeleteTemplate, onRefresh }) {
+function TemplatesModal({ isOpen, onClose, templates, loading, onSelectTemplate, onDeleteTemplate, onEditTemplate, onHideTemplate, onRefresh, user }) {
   const [selectedComplexity, setSelectedComplexity] = useState('all')
   const [selectedTab, setSelectedTab] = useState('all') // 'all', 'my', 'global'
   const [deletingId, setDeletingId] = useState(null)
+  const [hidingId, setHidingId] = useState(null)
 
   if (!isOpen) return null
 
@@ -39,6 +40,25 @@ function TemplatesModal({ isOpen, onClose, templates, loading, onSelectTemplate,
     } finally {
       setDeletingId(null)
     }
+  }
+
+  const handleHide = async (template, e) => {
+    e.stopPropagation()
+    if (!onHideTemplate) return
+
+    setHidingId(template.id)
+    try {
+      await onHideTemplate(template.id)
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setHidingId(null)
+    }
+  }
+
+  const canEdit = (template) => {
+    if (!template.is_global) return true
+    return user?.is_admin
   }
 
   return (
@@ -303,6 +323,35 @@ function TemplatesModal({ isOpen, onClose, templates, loading, onSelectTemplate,
                     >
                       Load Template
                     </button>
+                    {/* Edit button */}
+                    {canEdit(template) && onEditTemplate && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEditTemplate(template) }}
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '0.625rem 0.75rem',
+                          fontSize: '0.875rem'
+                        }}
+                        title="Edit template"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {/* Hide button */}
+                    {onHideTemplate && (
+                      <button
+                        onClick={(e) => handleHide(template, e)}
+                        disabled={hidingId === template.id}
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '0.625rem 0.75rem',
+                          fontSize: '0.875rem'
+                        }}
+                        title="Hide template"
+                      >
+                        {hidingId === template.id ? '...' : 'Hide'}
+                      </button>
+                    )}
                     {/* Delete button for user templates */}
                     {!template.is_global && onDeleteTemplate && (
                       <button

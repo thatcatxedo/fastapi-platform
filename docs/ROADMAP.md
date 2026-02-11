@@ -215,10 +215,14 @@ experience that makes the platform feel like a different product.
   - File list sidebar replacing hardcoded tabs (flat list, 180px sidebar)
   - "+" dropdown to add files (7 templates), inline rename/delete buttons
   - Entrypoint (`app.py`) protected from rename/delete
-- [ ] Database shown as a binding indicator, not a separate panel
-  - Small badge showing which database is attached
-  - Click to change, but it's not in the way
-- [ ] Env vars in a collapsible settings drawer
+- [x] Database shown as a binding indicator, not a separate panel
+  - Compact "DB: name" badge inline in the app name row
+  - Click badge to expand settings drawer; orange warning when code uses MongoDB
+  - Database selector available for both new and existing apps (was new-only)
+- [x] Env vars in a collapsible settings drawer
+  - Single "Settings" drawer combines database selector + env vars
+  - Header shows summary even when collapsed (env var count, DB name)
+  - Replaces standalone DatabaseSelector, EnvVarsPanel, and MongoDB warning banner
 - [x] Deployment progress with real K8s event streaming
   - "Validating... Creating resources... Starting... Ready!" — not a spinner
 - [ ] Chat sidebar carries forward from current implementation
@@ -621,8 +625,8 @@ multi-month rewrite that blocks everything behind it.
   DB stats. Request logging and WebSocket streaming are done. These are independently
   useful and unblock Phase 4 work in parallel.
 - **3b — Editor improvements.** ~~Single deploy button~~, ~~inline test panel~~, ~~static assets +
-  file list view~~, template management UI. Deploy button, test panel, and static assets/file
-  management are done. Remaining: database badge, env vars drawer, deploy progress, templates.
+  file list view~~, ~~database badge~~, ~~env vars drawer~~, template management UI. Core editor
+  improvements done. Remaining: template management UI.
 - **3c — Design system + restructure.** Tailwind migration, Zustand stores, component
   decomposition. This is the "rewrite" part — do it last when the new screens are proven.
 

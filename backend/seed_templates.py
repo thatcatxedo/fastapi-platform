@@ -87,7 +87,8 @@ async def seed_templates(client=None, force_update=False):
         update_doc = {
             "$set": set_fields,
             "$setOnInsert": {
-                "created_at": datetime.utcnow()
+                "created_at": datetime.utcnow(),
+                "is_hidden": False,
             }
         }
 

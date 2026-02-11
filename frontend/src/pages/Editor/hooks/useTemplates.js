@@ -82,6 +82,32 @@ function useTemplates(shouldFetch = true) {
     return true
   }
 
+  const hideTemplate = async (templateId) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API_URL}/api/templates/${templateId}/hide`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Failed to hide template')
+    }
+    await fetchTemplates()
+  }
+
+  const unhideTemplate = async (templateId) => {
+    const token = localStorage.getItem('token')
+    const response = await fetch(`${API_URL}/api/templates/${templateId}/unhide`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Failed to unhide template')
+    }
+    await fetchTemplates()
+  }
+
   // Separate global and user templates
   const globalTemplates = templates.filter(t => t.is_global)
   const userTemplates = templates.filter(t => !t.is_global)
@@ -94,7 +120,9 @@ function useTemplates(shouldFetch = true) {
     fetchTemplates,
     createTemplate,
     updateTemplate,
-    deleteTemplate
+    deleteTemplate,
+    hideTemplate,
+    unhideTemplate
   }
 }
 

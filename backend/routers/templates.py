@@ -78,6 +78,26 @@ async def create_template(template_data: TemplateCreate, user: dict = Depends(ge
         raise handle_service_error(e)
 
 
+@router.post("/{template_id}/hide")
+async def hide_template(template_id: str, user: dict = Depends(get_current_user)):
+    """Hide a template for the current user."""
+    try:
+        await template_service.hide_for_user(template_id, user)
+        return {"success": True}
+    except TemplateServiceError as e:
+        raise handle_service_error(e)
+
+
+@router.post("/{template_id}/unhide")
+async def unhide_template(template_id: str, user: dict = Depends(get_current_user)):
+    """Unhide a template for the current user."""
+    try:
+        await template_service.unhide_for_user(template_id, user)
+        return {"success": True}
+    except TemplateServiceError as e:
+        raise handle_service_error(e)
+
+
 @router.put("/{template_id}", response_model=TemplateResponse)
 async def update_template(
     template_id: str,

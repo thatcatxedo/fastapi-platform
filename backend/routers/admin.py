@@ -7,7 +7,11 @@ for all business logic.
 from fastapi import APIRouter, HTTPException, Depends
 import logging
 
-from models import AdminSettingsUpdate, AdminStatusUpdate, UserSignup, UserResponse
+from typing import List
+from models import (
+    AdminSettingsUpdate, AdminStatusUpdate, UserSignup, UserResponse,
+    TemplateResponse, AdminTemplateUpdate
+)
 from auth import require_admin
 from routers.auth import build_user_response
 from utils import error_payload
@@ -21,6 +25,11 @@ from services.admin_service import (
     InvalidSettingsError,
     UserExistsError
 )
+from services.template_service import (
+    template_service,
+    TemplateServiceError
+)
+from routers.templates import handle_service_error as handle_template_error
 
 logger = logging.getLogger(__name__)
 
@@ -123,3 +132,39 @@ async def admin_delete_user(
 async def get_platform_stats(admin: dict = Depends(require_admin)):
     """Get platform statistics."""
     return await admin_service.get_platform_stats()
+
+
+# =============================================================================
+# Template Management
+# =============================================================================
+
+@router.get("/templates", response_model=List[TemplateResponse])
+async def admin_list_templates(admin: dict = Depends(require_admin)):
+    """List all templates (admin view, no filtering)."""
+    return await template_service.list_all()
+
+
+@router.put("/templates/{template_id}", response_model=TemplateResponse)
+async def admin_update_template(
+    template_id: str,
+    data: AdminTemplateUpdate,
+    admin: dict = Depends(require_admin)
+):
+    """Update any template (admin can edit global templates and toggle visibility)."""
+    try:
+        return await template_service.update(template_id, data, admin, is_admin=True)
+    except TemplateServiceError as e:
+        raise handle_template_error(e)
+
+
+@router.delete("/templates/{template_id}")
+async def admin_delete_template(
+    template_id: str,
+    admin: dict = Depends(require_admin)
+):
+    """Delete any template (admin can delete global templates)."""
+    try:
+        await template_service.delete(template_id, admin, is_admin=True)
+        return {"success": True, "deleted_id": template_id}
+    except TemplateServiceError as e:
+        raise handle_template_error(e)

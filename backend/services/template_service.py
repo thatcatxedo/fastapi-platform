@@ -107,7 +107,8 @@ class TemplateService:
             created_at=t["created_at"].isoformat() if isinstance(t.get("created_at"), datetime) else t.get("created_at", ""),
             tags=t.get("tags", []),
             user_id=str(t["user_id"]) if t.get("user_id") else None,
-            requires_database=t.get("requires_database", False)
+            requires_database=t.get("requires_database", False),
+            is_hidden=t.get("is_hidden", False)
         )
 
     # =========================================================================
@@ -157,6 +158,7 @@ class TemplateService:
     async def list_for_user(self, user: dict) -> List[TemplateResponse]:
         """
         List all templates accessible to a user (global + user's own).
+        Filters out admin-hidden templates and per-user hidden templates.
 
         Args:
             user: User document
@@ -164,16 +166,33 @@ class TemplateService:
         Returns:
             List of TemplateResponse
         """
-        # Get global templates
-        global_templates = await self.templates.find({"is_global": True}).to_list(length=100)
+        # Build exclusion list from user's hidden preferences
+        hidden_ids = user.get("hidden_templates", [])
+        hidden_oids = []
+        for tid in hidden_ids:
+            try:
+                hidden_oids.append(ObjectId(tid))
+            except Exception:
+                pass
 
-        # Get user's templates
-        user_templates = await self.templates.find({
-            "is_global": False,
-            "user_id": user["_id"]
-        }).to_list(length=100)
+        # Get global templates (exclude admin-hidden and user-hidden)
+        global_query = {"is_global": True, "is_hidden": {"$ne": True}}
+        if hidden_oids:
+            global_query["_id"] = {"$nin": hidden_oids}
+        global_templates = await self.templates.find(global_query).to_list(length=100)
+
+        # Get user's templates (exclude user-hidden)
+        user_query = {"is_global": False, "user_id": user["_id"]}
+        if hidden_oids:
+            user_query["_id"] = {"$nin": hidden_oids}
+        user_templates = await self.templates.find(user_query).to_list(length=100)
 
         all_templates = global_templates + user_templates
+        return [self.to_response(t) for t in all_templates]
+
+    async def list_all(self) -> List[TemplateResponse]:
+        """List ALL templates (admin view, no filtering)."""
+        all_templates = await self.templates.find().sort("created_at", -1).to_list(length=500)
         return [self.to_response(t) for t in all_templates]
 
     async def get_by_id(self, template_id: str, user: dict) -> dict:
@@ -265,7 +284,7 @@ class TemplateService:
 
         return self.to_response(template_doc)
 
-    async def update(self, template_id: str, data: TemplateUpdate, user: dict) -> TemplateResponse:
+    async def update(self, template_id: str, data: TemplateUpdate, user: dict, is_admin: bool = False) -> TemplateResponse:
         """
         Update an existing user template.
 
@@ -297,12 +316,18 @@ class TemplateService:
 
         # Check ownership
         if template.get("is_global"):
-            raise CannotEditGlobalError()
-        if str(template.get("user_id")) != str(user["_id"]):
-            raise AccessDeniedError()
+            if not is_admin:
+                raise CannotEditGlobalError()
+        else:
+            if str(template.get("user_id")) != str(user["_id"]) and not is_admin:
+                raise AccessDeniedError()
 
         # Build update fields
         update_fields = {}
+
+        # Handle is_hidden (admin only, from AdminTemplateUpdate)
+        if hasattr(data, 'is_hidden') and data.is_hidden is not None:
+            update_fields["is_hidden"] = data.is_hidden
 
         if data.name is not None:
             if not data.name.strip():
@@ -362,13 +387,14 @@ class TemplateService:
         updated = await self.templates.find_one({"_id": ObjectId(template_id)})
         return self.to_response(updated)
 
-    async def delete(self, template_id: str, user: dict) -> bool:
+    async def delete(self, template_id: str, user: dict, is_admin: bool = False) -> bool:
         """
-        Delete a user template.
+        Delete a template.
 
         Args:
             template_id: Template identifier
             user: User document
+            is_admin: If True, bypass global/ownership checks
 
         Returns:
             True if deleted
@@ -388,12 +414,41 @@ class TemplateService:
 
         # Check ownership
         if template.get("is_global"):
-            raise CannotDeleteGlobalError()
-        if str(template.get("user_id")) != str(user["_id"]):
-            raise AccessDeniedError()
+            if not is_admin:
+                raise CannotDeleteGlobalError()
+        else:
+            if str(template.get("user_id")) != str(user["_id"]) and not is_admin:
+                raise AccessDeniedError()
 
         await self.templates.delete_one({"_id": ObjectId(template_id)})
         return True
+
+    # =========================================================================
+    # User Hiding
+    # =========================================================================
+
+    async def hide_for_user(self, template_id: str, user: dict) -> None:
+        """Add template to user's hidden list."""
+        from database import users_collection
+        try:
+            template = await self.templates.find_one({"_id": ObjectId(template_id)})
+        except Exception:
+            raise TemplateNotFoundError(template_id)
+        if not template:
+            raise TemplateNotFoundError(template_id)
+
+        await users_collection.update_one(
+            {"_id": user["_id"]},
+            {"$addToSet": {"hidden_templates": template_id}}
+        )
+
+    async def unhide_for_user(self, template_id: str, user: dict) -> None:
+        """Remove template from user's hidden list."""
+        from database import users_collection
+        await users_collection.update_one(
+            {"_id": user["_id"]},
+            {"$pull": {"hidden_templates": template_id}}
+        )
 
 
 # Singleton instance for production use
