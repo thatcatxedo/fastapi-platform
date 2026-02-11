@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { API_URL } from '../../../App'
+import { API_URL } from '../../../config'
 
 const DEFAULT_TEMPLATE = `from fastapi import FastAPI
 from pydantic import BaseModel

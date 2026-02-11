@@ -17,8 +17,9 @@ function EditorHeader({
   onBrowseTemplates,
   onOpenHistory,
   onSaveAsTemplate,
-  chatSidebarOpen,
-  onToggleChatSidebar
+  sidebarOpen,
+  sidebarTab,
+  onToggleSidebar
 }) {
   const isDeploying = deploymentStatus && deploymentStatus.status === 'deploying'
 
@@ -112,13 +113,22 @@ function EditorHeader({
           )}
         </button>
         {isEditing && (
-          <button
-            className={`btn btn-secondary ${chatSidebarOpen ? 'btn-active' : ''}`}
-            onClick={onToggleChatSidebar}
-            title={chatSidebarOpen ? 'Close chat' : 'Open chat'}
-          >
-            💬 Chat
-          </button>
+          <>
+            <button
+              className={`btn btn-secondary ${sidebarOpen && sidebarTab === 'test' ? 'btn-active' : ''}`}
+              onClick={() => onToggleSidebar('test')}
+              title="Test API"
+            >
+              Test
+            </button>
+            <button
+              className={`btn btn-secondary ${sidebarOpen && sidebarTab === 'chat' ? 'btn-active' : ''}`}
+              onClick={() => onToggleSidebar('chat')}
+              title="AI Chat"
+            >
+              Chat
+            </button>
+          </>
         )}
         <DropdownMenu
           trigger={<>More <span style={{ fontSize: '0.7rem' }}>▼</span></>}

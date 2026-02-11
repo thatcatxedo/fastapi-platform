@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 import { useToast } from '../components/Toast'
 
 // Helper to get app URL using subdomain routing

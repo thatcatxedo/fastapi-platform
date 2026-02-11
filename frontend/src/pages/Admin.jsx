@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 
 function Admin({ user }) {
   const [stats, setStats] = useState(null)

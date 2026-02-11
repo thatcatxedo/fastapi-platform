@@ -1,0 +1,414 @@
+/* Test Panel Sidebar for Editor */
+.testPanel {
+  width: 400px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Header */
+.header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  flex: 1;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.headerBtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  border-radius: 0;
+  transition: all 0.15s;
+}
+
+.headerBtn:hover {
+  background: var(--bg-light);
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.headerBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.closeBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  border-radius: 0;
+}
+
+.closeBtn:hover {
+  color: var(--text);
+}
+
+/* Request Builder */
+.requestSection {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.methodAndPath {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.methodSelect {
+  width: 100px;
+  padding: 0.5rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.8rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.methodSelect:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.pathInput {
+  flex: 1;
+  padding: 0.5rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.8rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 0;
+}
+
+.pathInput:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.sendButton {
+  width: 100%;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.sendButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sendSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Collapsible sections */
+.sectionToggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem 0;
+  font-size: 0.75rem;
+  text-align: left;
+  width: 100%;
+}
+
+.sectionToggle:hover {
+  color: var(--text);
+}
+
+/* Headers editor */
+.headersSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.headerRow {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.headerKeyInput,
+.headerValueInput {
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 0;
+}
+
+.headerKeyInput:focus,
+.headerValueInput:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.removeBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.removeBtn:hover {
+  color: var(--error);
+}
+
+.addBtn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 0;
+  width: 100%;
+}
+
+.addBtn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Body editor */
+.bodySection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.bodyLabel {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.bodyInput {
+  width: 100%;
+  min-height: 80px;
+  max-height: 150px;
+  padding: 0.5rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 0;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.bodyInput:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* Response Area */
+.responseSection {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.responseMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.statusBadge {
+  padding: 0.2rem 0.5rem;
+  font-weight: 600;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.8rem;
+}
+
+.statusSuccess {
+  color: var(--success);
+  background: rgba(29, 129, 2, 0.1);
+}
+
+.statusRedirect {
+  color: var(--primary);
+  background: rgba(0, 115, 187, 0.1);
+}
+
+.statusClientError {
+  color: var(--warning);
+  background: rgba(255, 153, 0, 0.1);
+}
+
+.statusServerError {
+  color: var(--error);
+  background: rgba(209, 50, 18, 0.1);
+}
+
+.latency {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.responseUrl {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.responseBody {
+  flex: 1;
+  padding: 0.75rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--bg-light);
+  color: var(--text);
+  margin: 0;
+  overflow-y: auto;
+}
+
+/* Empty state */
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-muted);
+}
+
+.emptyText {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 280px;
+}
+
+/* Error display */
+.errorDisplay {
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid var(--error);
+  color: var(--error);
+  padding: 0.75rem;
+  margin: 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* History section */
+.historySection {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.historyList {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.historyItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.historyItem:hover {
+  background: var(--bg-light);
+}
+
+.historyMethod {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-weight: 600;
+  font-size: 0.65rem;
+  min-width: 40px;
+  text-align: center;
+  padding: 0.1rem 0.25rem;
+  color: var(--primary);
+}
+
+.historyPath {
+  flex: 1;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.historyStatus {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-weight: 500;
+}
+
+.historyLatency {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}

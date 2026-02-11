@@ -10,13 +10,8 @@ import Admin from './pages/Admin'
 import Sidebar from './components/Sidebar'
 import { ToastProvider } from './components/Toast'
 import { AppsProvider } from './context/AppsContext'
+import { API_URL } from './config'
 import './index.css'
-
-const API_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:8000' 
-  : ''
-
-export { API_URL }
 
 function App() {
   const [user, setUser] = useState(null)

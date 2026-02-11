@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 
 const PHASE_LABELS = {
   pending: 'Waiting to be scheduled',

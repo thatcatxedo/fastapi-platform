@@ -12,7 +12,8 @@ import logging
 from models import (
     AppCreate, AppUpdate, AppResponse, AppDetailResponse, AppStatusResponse,
     AppDeployStatusResponse, ValidateRequest, AppLogsResponse, AppEventsResponse,
-    LogLine, K8sEvent, DraftUpdate, VersionEntry, VersionHistoryResponse
+    LogLine, K8sEvent, DraftUpdate, VersionEntry, VersionHistoryResponse,
+    ProxyRequest, ProxyResponse
 )
 from auth import get_current_user
 from utils import error_payload
@@ -472,6 +473,97 @@ async def stream_app_logs(websocket: WebSocket, app_id: str):
             await websocket.close()
         except Exception:
             pass
+
+
+# =============================================================================
+# Test Panel Proxy
+# =============================================================================
+
+@router.post("/{app_id}/proxy")
+async def proxy_request(
+    app_id: str,
+    proxy_req: ProxyRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Proxy an HTTP request to a deployed user app.
+
+    Used by the frontend test panel to send requests without CORS issues.
+    Forwards the request via internal cluster DNS for speed and reliability.
+    """
+    import time
+    import httpx
+    from config import PLATFORM_NAMESPACE, APP_DOMAIN
+
+    try:
+        app = await app_service.get_by_app_id(app_id, user)
+    except AppServiceError as e:
+        raise handle_service_error(e)
+
+    if app.get("status") != "running":
+        raise HTTPException(
+            status_code=400,
+            detail=error_payload(
+                "APP_NOT_RUNNING",
+                f"App is not running (status: {app.get('status')}). Deploy it first."
+            )
+        )
+
+    # Build URL via internal cluster service for speed (avoids TLS/ingress)
+    path = proxy_req.path if proxy_req.path.startswith("/") else f"/{proxy_req.path}"
+    base_url = f"http://app-{app_id}.{PLATFORM_NAMESPACE}.svc.cluster.local"
+    url = f"{base_url}{path}"
+    if proxy_req.query_string:
+        url = f"{url}?{proxy_req.query_string}"
+
+    # Build request kwargs
+    req_headers = {"Accept": "application/json", **(proxy_req.headers or {})}
+    request_kwargs = {
+        "method": proxy_req.method.upper(),
+        "url": url,
+        "headers": req_headers,
+    }
+    if proxy_req.body is not None and proxy_req.method.upper() in ("POST", "PUT", "PATCH"):
+        if isinstance(proxy_req.body, dict):
+            request_kwargs["json"] = proxy_req.body
+        else:
+            request_kwargs["content"] = str(proxy_req.body)
+            if "Content-Type" not in req_headers:
+                request_kwargs["headers"]["Content-Type"] = "application/json"
+
+    try:
+        start = time.monotonic()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(**request_kwargs)
+        latency_ms = (time.monotonic() - start) * 1000
+
+        # Parse response body
+        try:
+            body = response.json()
+        except Exception:
+            body = response.text[:10240]
+
+        # Show external URL to user (not internal cluster URL)
+        external_url = f"https://app-{app_id}.{APP_DOMAIN}{path}"
+        if proxy_req.query_string:
+            external_url = f"{external_url}?{proxy_req.query_string}"
+
+        return ProxyResponse(
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            body=body,
+            latency_ms=round(latency_ms, 2),
+            url=external_url
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail=error_payload("PROXY_TIMEOUT", "Request timed out after 30 seconds")
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=error_payload("PROXY_ERROR", f"Failed to connect to app: {str(e)}")
+        )
 
 
 # =============================================================================

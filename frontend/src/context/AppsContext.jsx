@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 
 const AppsContext = createContext(null)
 

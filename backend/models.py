@@ -2,7 +2,7 @@
 Pydantic models for FastAPI Platform API
 """
 from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional, Dict
+from typing import Any, List, Optional, Dict
 from datetime import datetime
 
 
@@ -333,3 +333,21 @@ class AppWithMetrics(AppResponse):
     """Extended AppResponse with metrics summary for Dashboard"""
     metrics: Optional[AppMetricsResponse] = None
     health_status: Optional[str] = None  # "healthy", "degraded", "unhealthy", "unknown"
+
+
+class ProxyRequest(BaseModel):
+    """Request payload for the test panel proxy endpoint."""
+    method: str = "GET"
+    path: str = "/"
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[Any] = None
+    query_string: Optional[str] = None
+
+
+class ProxyResponse(BaseModel):
+    """Response from the test panel proxy endpoint."""
+    status_code: int
+    headers: Dict[str, str]
+    body: Any
+    latency_ms: float
+    url: str

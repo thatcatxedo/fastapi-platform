@@ -13,6 +13,7 @@ import DatabaseSelector from './components/DatabaseSelector'
 import CodeEditor from './components/CodeEditor'
 import MultiFileEditor from './components/MultiFileEditor'
 import ChatSidebar from './components/ChatSidebar'
+import TestPanel from './components/TestPanel'
 import TemplatesModal from './components/TemplatesModal'
 import VersionHistoryModal from './components/VersionHistoryModal'
 import SaveAsTemplateModal from './components/SaveAsTemplateModal'
@@ -112,24 +113,47 @@ function EditorPage({ user }) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  // Chat sidebar state
-  const [chatSidebarOpen, setChatSidebarOpen] = useState(false)
+  // Sidebar state (shared between Test and Chat panels)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarTab, setSidebarTab] = useState('test')
 
-  // Load chat sidebar state from localStorage when appId changes
+  // Load sidebar state from localStorage when appId changes
   useEffect(() => {
     if (appId) {
-      const stored = localStorage.getItem(`chatSidebarOpen_${appId}`)
-      setChatSidebarOpen(stored === 'true')
+      // Migrate from old chatSidebarOpen key if present
+      const oldKey = localStorage.getItem(`chatSidebarOpen_${appId}`)
+      const storedOpen = localStorage.getItem(`sidebarOpen_${appId}`)
+      const storedTab = localStorage.getItem(`sidebarTab_${appId}`)
+
+      if (storedOpen !== null) {
+        setSidebarOpen(storedOpen === 'true')
+      } else if (oldKey !== null) {
+        setSidebarOpen(oldKey === 'true')
+        setSidebarTab('chat')
+        localStorage.setItem(`sidebarOpen_${appId}`, oldKey)
+        localStorage.setItem(`sidebarTab_${appId}`, 'chat')
+        localStorage.removeItem(`chatSidebarOpen_${appId}`)
+      } else {
+        setSidebarOpen(false)
+      }
+
+      if (storedTab) setSidebarTab(storedTab)
     } else {
-      setChatSidebarOpen(false)
+      setSidebarOpen(false)
     }
   }, [appId])
 
-  const toggleChatSidebar = () => {
-    const newState = !chatSidebarOpen
-    setChatSidebarOpen(newState)
-    if (appId) {
-      localStorage.setItem(`chatSidebarOpen_${appId}`, String(newState))
+  const toggleSidebar = (tab) => {
+    if (sidebarOpen && sidebarTab === tab) {
+      setSidebarOpen(false)
+      if (appId) localStorage.setItem(`sidebarOpen_${appId}`, 'false')
+    } else {
+      setSidebarOpen(true)
+      setSidebarTab(tab)
+      if (appId) {
+        localStorage.setItem(`sidebarOpen_${appId}`, 'true')
+        localStorage.setItem(`sidebarTab_${appId}`, tab)
+      }
     }
   }
 
@@ -274,8 +298,9 @@ function EditorPage({ user }) {
         onBrowseTemplates={() => setTemplatesModalOpen(true)}
         onOpenHistory={() => setHistoryModalOpen(true)}
         onSaveAsTemplate={() => setSaveTemplateModalOpen(true)}
-        chatSidebarOpen={chatSidebarOpen}
-        onToggleChatSidebar={toggleChatSidebar}
+        sidebarOpen={sidebarOpen}
+        sidebarTab={sidebarTab}
+        onToggleSidebar={toggleSidebar}
       />
 
       <NotificationsPanel
@@ -411,12 +436,20 @@ function EditorPage({ user }) {
         )}
         </div>
 
-        {/* Chat Sidebar */}
-        {appId && chatSidebarOpen && (
-          <ChatSidebar
-            appId={appId}
-            onClose={() => setChatSidebarOpen(false)}
-          />
+        {/* Sidebar: Test or Chat */}
+        {appId && sidebarOpen && (
+          sidebarTab === 'test' ? (
+            <TestPanel
+              appId={appId}
+              deploymentStatus={deploymentStatus}
+              onClose={() => { setSidebarOpen(false); if (appId) localStorage.setItem(`sidebarOpen_${appId}`, 'false') }}
+            />
+          ) : (
+            <ChatSidebar
+              appId={appId}
+              onClose={() => { setSidebarOpen(false); if (appId) localStorage.setItem(`sidebarOpen_${appId}`, 'false') }}
+            />
+          )
         )}
       </div>
 

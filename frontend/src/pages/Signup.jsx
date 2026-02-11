@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 
 function Signup({ onSignup }) {
   const [username, setUsername] = useState('')

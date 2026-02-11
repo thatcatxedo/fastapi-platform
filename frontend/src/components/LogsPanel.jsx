@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 
 // Derive WebSocket URL from API_URL
 const WS_URL = API_URL

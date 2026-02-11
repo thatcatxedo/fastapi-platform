@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 
 /**
  * Hook for managing chat conversations and SSE streaming

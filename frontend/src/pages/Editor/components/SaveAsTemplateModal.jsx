@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { API_URL } from '../../../App'
+import { API_URL } from '../../../config'
 
 function SaveAsTemplateModal({ isOpen, onClose, code, files, mode, framework, onSuccess }) {
   const [name, setName] = useState('')

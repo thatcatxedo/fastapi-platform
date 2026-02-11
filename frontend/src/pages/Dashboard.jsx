@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { API_URL } from '../App'
+import { API_URL } from '../config'
 import { useApps } from '../context/AppsContext'
 import LogsPanel from '../components/LogsPanel'
 import ErrorsPanel from '../components/ErrorsPanel'

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { API_URL } from '../../../App'
+import { API_URL } from '../../../config'
 
 function DatabaseSelector({ value, onChange, disabled, autoSelectDefault }) {
   const [databases, setDatabases] = useState([])
