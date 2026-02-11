@@ -1,10 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { API_URL } from '../config'
 import { useApps } from '../context/AppsContext'
 import LogsPanel from '../components/LogsPanel'
 import ErrorsPanel from '../components/ErrorsPanel'
-import { useToast } from '../components/Toast'
+
+function timeAgo(dateStr) {
+  if (!dateStr) return null
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
+
+const STATUS_PRIORITY = { running: 0, deploying: 1, error: 2 }
 
 function Dashboard({ user }) {
   const { apps, loading, stats, fetchApps } = useApps()
@@ -12,7 +22,8 @@ function Dashboard({ user }) {
   const [errorsAppId, setErrorsAppId] = useState(null)
   const [appMetrics, setAppMetrics] = useState({})
   const [loadingMetrics, setLoadingMetrics] = useState(false)
-  const toast = useToast()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
 
   // Fetch metrics for running apps
   useEffect(() => {
@@ -33,7 +44,7 @@ function Dashboard({ user }) {
           }).then(r => r.ok ? r.json() : null).catch(() => null)
         )
       )
-      
+
       const newMetrics = {}
       runningApps.forEach((app, i) => {
         if (results[i]) {
@@ -48,24 +59,42 @@ function Dashboard({ user }) {
     }
   }
 
-  // Calculate aggregate metrics
+  // Aggregate metrics
   const totalRequests = Object.values(appMetrics).reduce((sum, m) => sum + (m?.request_count || 0), 0)
   const totalErrors = Object.values(appMetrics).reduce((sum, m) => sum + (m?.error_count || 0), 0)
   const avgResponseTime = Object.values(appMetrics).length > 0
     ? Math.round(Object.values(appMetrics).reduce((sum, m) => sum + (m?.avg_response_time_ms || 0), 0) / Object.values(appMetrics).length)
     : 0
 
-  const runningApps = apps.filter(app => app.status === 'running')
+  // Filter and sort apps
+  const filteredApps = useMemo(() => {
+    return apps
+      .filter(app => statusFilter === 'all' || app.status === statusFilter)
+      .filter(app => !searchQuery || app.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => {
+        const pa = STATUS_PRIORITY[a.status] ?? 3
+        const pb = STATUS_PRIORITY[b.status] ?? 3
+        if (pa !== pb) return pa - pb
+        // Within same status, sort by last_activity descending
+        const ta = a.last_activity ? new Date(a.last_activity).getTime() : 0
+        const tb = b.last_activity ? new Date(b.last_activity).getTime() : 0
+        return tb - ta
+      })
+  }, [apps, statusFilter, searchQuery])
+
+  const handleStatClick = (status) => {
+    setStatusFilter(prev => prev === status ? 'all' : status)
+  }
 
   if (loading) {
     return (
       <div>
         <h1 style={{ marginBottom: '1.5rem' }}>Dashboard</h1>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+        <div className="stats-row">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="card" style={{ padding: '1.25rem' }}>
-              <div style={{ height: '1rem', width: '60%', background: 'var(--bg-light)', borderRadius: '0', marginBottom: '0.5rem' }} />
-              <div style={{ height: '2rem', width: '40%', background: 'var(--bg-light)', borderRadius: '0' }} />
+            <div key={i} className="card stat-card" style={{ padding: '1rem' }}>
+              <div style={{ height: '0.75rem', width: '60%', background: 'var(--bg-light)', marginBottom: '0.5rem' }} />
+              <div style={{ height: '1.5rem', width: '40%', background: 'var(--bg-light)' }} />
             </div>
           ))}
         </div>
@@ -75,10 +104,10 @@ function Dashboard({ user }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <h1>Dashboard</h1>
-        <button 
-          className="btn btn-secondary" 
+        <button
+          className="btn btn-secondary"
           onClick={fetchApps}
           style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
         >
@@ -86,153 +115,158 @@ function Dashboard({ user }) {
         </button>
       </div>
 
-      {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
-            Total Apps
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: '500', color: 'var(--text)' }}>
-            {stats.total}
-          </div>
+      {/* Stats Row */}
+      <div className="stats-row">
+        <div
+          className={`card stat-card stat-card-clickable ${statusFilter === 'all' ? 'stat-card-active' : ''}`}
+          onClick={() => handleStatClick('all')}
+        >
+          <div className="stat-label">Total Apps</div>
+          <div className="stat-value">{stats.total}</div>
+        </div>
+        <div
+          className={`card stat-card stat-card-clickable ${statusFilter === 'running' ? 'stat-card-active' : ''}`}
+          onClick={() => handleStatClick('running')}
+        >
+          <div className="stat-label">Running</div>
+          <div className="stat-value" style={{ color: 'var(--success)' }}>{stats.running}</div>
+        </div>
+        <div
+          className={`card stat-card stat-card-clickable ${statusFilter === 'deploying' ? 'stat-card-active' : ''}`}
+          onClick={() => handleStatClick('deploying')}
+        >
+          <div className="stat-label">Deploying</div>
+          <div className="stat-value" style={{ color: 'var(--warning)' }}>{stats.deploying}</div>
+        </div>
+        <div
+          className={`card stat-card stat-card-clickable ${statusFilter === 'error' ? 'stat-card-active' : ''}`}
+          onClick={() => handleStatClick('error')}
+        >
+          <div className="stat-label">Errors</div>
+          <div className="stat-value" style={{ color: stats.error > 0 ? 'var(--error)' : 'var(--text)' }}>{stats.error}</div>
         </div>
 
-        <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
-            Running
+        {/* Inline aggregate metrics */}
+        {stats.running > 0 && (
+          <div className="stat-card stat-card-metrics">
+            <div className="stat-label">24h</div>
+            <div className="stat-metrics-row">
+              <span>{loadingMetrics ? '...' : totalRequests.toLocaleString()} reqs</span>
+              <span className="stat-metrics-sep">&middot;</span>
+              <span style={{ color: totalErrors > 0 ? 'var(--error)' : undefined }}>{loadingMetrics ? '...' : `${totalErrors} errors (${totalRequests > 0 ? ((totalErrors / totalRequests) * 100).toFixed(1) : '0.0'}%)`}</span>
+              <span className="stat-metrics-sep">&middot;</span>
+              <span>{loadingMetrics ? '...' : `${avgResponseTime}ms`} avg</span>
+            </div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: '500', color: 'var(--success)' }}>
-            {stats.running}
-          </div>
-        </div>
+        )}
+      </div>
 
-        <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
-            Deploying
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: '500', color: 'var(--warning)' }}>
-            {stats.deploying}
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: '1.25rem' }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-            Errors
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: '600', color: stats.error > 0 ? 'var(--error)' : 'var(--text)' }}>
-            {stats.error}
-          </div>
+      {/* Search and Filter Bar */}
+      <div className="filter-bar">
+        <input
+          type="text"
+          placeholder="Search apps..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="filter-search"
+        />
+        <div className="filter-pills">
+          {['all', 'running', 'deploying', 'error'].map(status => (
+            <button
+              key={status}
+              className={`filter-pill ${statusFilter === status ? 'filter-pill-active' : ''}`}
+              onClick={() => setStatusFilter(status)}
+            >
+              {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+              {status !== 'all' && (
+                <span className="filter-pill-count">
+                  {status === 'running' ? stats.running : status === 'deploying' ? stats.deploying : stats.error}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Metrics Summary */}
-      {stats.running > 0 && (
-        <div className="card" style={{ padding: '1.25rem', marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text)', fontWeight: '500' }}>
-            Aggregate Metrics (24h)
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem' }}>
-            <div>
-              <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
-                Total Requests
-              </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '500', color: 'var(--text)' }}>
-                {loadingMetrics ? '...' : totalRequests.toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
-                Total Errors
-              </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '500', color: totalErrors > 0 ? 'var(--error)' : 'var(--text)' }}>
-                {loadingMetrics ? '...' : totalErrors.toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.75rem', textTransform: 'none', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: '400' }}>
-                Avg Response Time
-              </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '500', color: 'var(--text)' }}>
-                {loadingMetrics ? '...' : `${avgResponseTime}ms`}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* App List */}
+      {filteredApps.length > 0 ? (
+        <div className="app-list">
+          {filteredApps.map(app => {
+            const metrics = appMetrics[app.app_id]
+            const isRunning = app.status === 'running'
+            const isError = app.status === 'error'
+            const isDeploying = app.status === 'deploying'
+            const activity = timeAgo(app.last_activity)
 
-      {/* Running Apps Table */}
-      {runningApps.length > 0 ? (
-        <div>
-          <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text)', fontWeight: '500' }}>
-            Running Apps
-          </h2>
-          <div className="table-container">
-            <table className="apps-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>URL</th>
-                  <th>Requests</th>
-                  <th>Errors</th>
-                  <th>Response Time</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runningApps.map(app => (
-                  <tr key={app.app_id}>
-                    <td>
-                      <div>
-                        <Link 
-                          to={`/editor/${app.app_id}`}
-                          style={{ 
-                            fontWeight: '500', 
-                            color: 'var(--text)', 
-                            textDecoration: 'none',
-                            display: 'block'
-                          }}
-                        >
-                          {app.name}
-                        </Link>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                          {app.app_id}
+            return (
+              <div key={app.app_id} className="app-row">
+                <div className="app-row-header">
+                  <div className="app-row-name-group">
+                    <Link to={`/editor/${app.app_id}`} className="app-row-name">
+                      {app.name}
+                    </Link>
+                    <span className={`status-badge status-${app.status}`}>
+                      {app.status === 'running' && '\u25CF '}
+                      {app.status === 'deploying' && '\u25CB '}
+                      {app.status === 'error' && '\u25CF '}
+                      {app.status}
+                    </span>
+                  </div>
+                  {isRunning && app.deployment_url && (
+                    <a
+                      href={app.deployment_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="app-row-url"
+                    >
+                      {app.deployment_url.replace(/^https?:\/\//, '')}
+                    </a>
+                  )}
+                </div>
+
+                <div className="app-row-meta">
+                  <div className="app-row-meta-left">
+                    {activity && (
+                      <span className="app-row-activity">Active {activity}</span>
+                    )}
+                    {isRunning && metrics && (() => {
+                      const errorRate = metrics.request_count > 0
+                        ? ((metrics.error_count / metrics.request_count) * 100).toFixed(1)
+                        : '0.0'
+                      return (
+                        <span className="app-row-metrics">
+                          {metrics.request_count.toLocaleString()} reqs
+                          <span className="stat-metrics-sep">&middot;</span>
+                          <span style={{ color: metrics.error_count > 0 ? 'var(--error)' : undefined }}>
+                            {metrics.error_count} errors ({errorRate}%)
+                          </span>
+                          <span className="stat-metrics-sep">&middot;</span>
+                          {metrics.avg_response_time_ms}ms
                         </span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="status-badge status-running">● running</span>
-                    </td>
-                    <td>
-                      <a
-                        href={app.deployment_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.875rem' }}
-                      >
-                        {app.deployment_url}
-                      </a>
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                      {appMetrics[app.app_id] ? appMetrics[app.app_id].request_count.toLocaleString() : '-'}
-                    </td>
-                    <td style={{ 
-                      color: appMetrics[app.app_id]?.error_count > 0 ? 'var(--error)' : 'var(--text-muted)',
-                      fontSize: '0.875rem'
-                    }}>
-                      {appMetrics[app.app_id] ? appMetrics[app.app_id].error_count : '-'}
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                      {appMetrics[app.app_id] ? `${appMetrics[app.app_id].avg_response_time_ms}ms` : '-'}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      )
+                    })()}
+                    {isError && app.error_message && (
+                      <span className="app-row-error">{app.error_message}</span>
+                    )}
+                    {isDeploying && app.deploy_stage && (
+                      <span className="app-row-deploying">{app.deploy_stage}...</span>
+                    )}
+                  </div>
+
+                  <div className="app-row-actions">
+                    <Link
+                      to={`/editor/${app.app_id}`}
+                      className="btn btn-secondary app-row-btn"
+                    >
+                      Edit
+                    </Link>
+                    {isRunning && app.deployment_url && (
+                      <>
                         <a
                           href={app.deployment_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="btn btn-secondary"
-                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                          className="btn btn-secondary app-row-btn"
                         >
                           Open
                         </a>
@@ -240,40 +274,35 @@ function Dashboard({ user }) {
                           href={`${app.deployment_url}/docs`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="btn btn-secondary"
-                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                          className="btn btn-secondary app-row-btn"
                         >
                           Docs
                         </a>
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => setLogsAppId(app.app_id)}
-                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                        >
-                          Logs
-                        </button>
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => setErrorsAppId(app.app_id)}
-                          style={{ 
-                            padding: '0.25rem 0.5rem', 
-                            fontSize: '0.75rem',
-                            color: appMetrics[app.app_id]?.error_count > 0 ? 'var(--error)' : undefined
-                          }}
-                        >
-                          Errors
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </>
+                    )}
+                    <button
+                      className="btn btn-secondary app-row-btn"
+                      onClick={() => setLogsAppId(app.app_id)}
+                    >
+                      Logs
+                    </button>
+                    {isRunning && (
+                      <button
+                        className="btn btn-secondary app-row-btn"
+                        onClick={() => setErrorsAppId(app.app_id)}
+                        style={{ color: metrics?.error_count > 0 ? 'var(--error)' : undefined }}
+                      >
+                        Errors
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       ) : stats.total === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: '1rem', opacity: 0.3 }}>🚀</div>
           <h2 style={{ marginBottom: '0.5rem', color: 'var(--text)' }}>No Apps Yet</h2>
           <p style={{ marginBottom: '1.5rem', color: 'var(--text-muted)' }}>
             Create your first app to get started!
@@ -284,8 +313,8 @@ function Dashboard({ user }) {
         </div>
       ) : (
         <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
-          <p style={{ color: 'var(--text-muted)' }}>
-            No apps currently running. Select an app from the sidebar to deploy it.
+          <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+            No apps match{searchQuery ? ` "${searchQuery}"` : ''}{statusFilter !== 'all' ? ` with status "${statusFilter}"` : ''}.
           </p>
         </div>
       )}

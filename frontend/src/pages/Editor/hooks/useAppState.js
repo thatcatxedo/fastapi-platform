@@ -572,6 +572,9 @@ function useAppState(appId) {
         throw new Error(message)
       }
 
+      // API returned success — validation passed, resources are being created
+      setDeployStage('creating_resources')
+      setDeploymentStatus({ status: 'deploying', deploy_phase: 'creating_resources', events: [] })
       setDeployingAppId(data.app_id)
       pollDeploymentStatus(data.app_id)
     } catch (err) {

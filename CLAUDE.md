@@ -71,6 +71,7 @@ dev workflow, common issues, and troubleshooting.
 - **backend/**: FastAPI API that handles auth, app CRUD, and dynamically creates K8s resources
 - **frontend/**: React + Monaco Editor for code editing, deployed via nginx
 - **runner/**: Pre-built container that executes user code from ConfigMap
+- **cli/**: `fp` CLI tool for local development and deployment (Python, Typer + Rich + httpx)
 
 ### Key Backend Structure
 ```
@@ -114,6 +115,63 @@ When user deploys code:
 5. Wraps with `/health` endpoint for K8s probes
 6. Patches Swagger UI for relative OpenAPI paths
 7. Starts uvicorn server
+
+### CLI (`fp`)
+
+The `fp` CLI lets developers work locally and deploy to the platform from the terminal.
+Lives in `cli/`, installable as a Python package.
+
+```bash
+cd cli
+uv venv && uv pip install -e .  # or: pip install -e .
+
+# Authenticate
+fp auth login https://platform.gatorlunch.com
+
+# Scaffold + deploy
+mkdir my-api && cd my-api
+fp init                    # creates app.py + .fp.yaml
+fp dev                     # local uvicorn with hot reload
+fp deploy                  # deploy to platform
+
+# Manage apps
+fp list                    # table of all apps
+fp status                  # app status (reads .fp.yaml)
+fp logs                    # real-time log streaming
+fp logs --no-follow        # fetch recent logs
+fp pull <app-name>         # pull app code to local directory
+fp push                    # save draft without deploying
+fp validate                # offline code validation
+fp open                    # open app URL in browser
+fp delete <app-name>       # delete an app
+```
+
+**Key files:**
+```
+cli/
+├── pyproject.toml              # Package config, entry point: fp = fp_cli.main:app
+├── src/fp_cli/
+│   ├── main.py                 # Typer app, registers all commands
+│   ├── config.py               # ~/.fp/config.toml management
+│   ├── project.py              # .fp.yaml read/write, file collection
+│   ├── validation.py           # Vendored from backend/validation.py
+│   ├── api/client.py           # httpx-based PlatformClient
+│   └── commands/               # One file per command group
+│       ├── auth.py             # auth login, whoami, logout
+│       ├── init.py             # init (scaffold projects)
+│       ├── deploy.py           # deploy (with Rich progress polling)
+│       ├── apps.py             # list, status, open, delete
+│       ├── logs.py             # logs (WebSocket + HTTP fallback)
+│       ├── validate.py         # offline validation
+│       ├── dev.py              # local dev server
+│       ├── pull.py             # pull code from platform
+│       └── push.py             # push draft to platform
+```
+
+**Config:** `~/.fp/config.toml` stores platform URL + JWT token per platform.
+**Project:** `.fp.yaml` in project root with `name` and `entrypoint` fields.
+**Validation:** `cli/src/fp_cli/validation.py` is vendored from `backend/validation.py`.
+When updating backend validation rules, copy the file to keep them in sync.
 
 ## Cluster Requirements
 

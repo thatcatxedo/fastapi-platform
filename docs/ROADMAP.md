@@ -256,11 +256,14 @@ experience that makes the platform feel like a different product.
   - Replaces the standalone Database page and separate viewer pod deployment
   - Embedded data inspector for simple read operations
 
-#### Screen 3: Apps List (simplified)
+#### Screen 3: Apps List (complete)
 
-- [ ] Cards or rows: name, status (running/sleeping/error), URL, last request time
-- [ ] Search and filter (by status, by name)
-- [ ] No separate Dashboard page — this IS the dashboard
+- [x] App rows: name, status badge, URL, last activity time, inline metrics
+- [x] Search by name, filter by status (All/Running/Deploying/Error pills)
+- [x] Clickable stats cards double as status filters
+- [x] Aggregate 24h metrics inline with stats row
+- [x] Contextual actions per status (Edit/Open/Docs/Logs/Errors for running, Edit/Logs for error)
+- [x] Replaces Dashboard page in-place — same route, same nav link
 
 #### Template Management
 
@@ -426,98 +429,112 @@ The platform API is the same for both. An app created in the browser can be pull
 down with `fp pull` and developed locally. An app deployed via CLI can be edited in
 the browser. No lock-in to either workflow.
 
+#### Implementation
+
+Built in Python (Typer + Rich + httpx). Lives in `cli/` directory, installable via
+`pip install fp-cli` or `uv tool install fp-cli`. Validation logic vendored from
+`backend/validation.py` for offline checks with zero drift.
+
 #### Authentication and platform registration
 
-- [ ] `fp auth <platform-url>` — register the CLI with a platform deployment
-  - Stores platform URL + credentials in `~/.fp/config.yaml`
-  - Browser-based OAuth flow: opens login page, receives token callback
-  - Fallback: `fp auth --token <token>` for headless/CI environments
-  - Token refresh handled automatically on subsequent commands
-- [ ] Multiple platform support
-  - `fp auth` can store multiple platform registrations
-  - `fp auth --switch <name>` to switch active platform
+- [x] `fp auth login <platform-url>` — register the CLI with a platform deployment
+  - Stores platform URL + token + username in `~/.fp/config.toml`
+  - Interactive: prompts for username/password
+  - Headless: `fp auth login <url> --token <token>` for CI environments
+- [x] Multiple platform support
+  - `fp auth` stores multiple platform registrations in config.toml
+  - `--name` flag to manage named platform configs
   - Per-project override via `platform` field in `.fp.yaml`
-  - Default: most recently authenticated platform
-- [ ] `fp whoami` — show current user and platform
-  - Prints username, platform URL, token expiry
-  - Quick sanity check before deploying
+- [x] `fp auth whoami` — show current user, email, platform, admin status
+- [x] `fp auth logout` — remove stored credentials
 
 #### Scaffolding and project structure
 
-- [ ] `fp init` — scaffold a new project in the current directory
-  - Creates `app.py` with a working hello world (FastAPI or FastHTML, user picks)
-  - Creates `.fp.yaml` with app name derived from directory name
+- [x] `fp init` — scaffold a new project in the current directory
+  - Interactive framework choice (FastAPI or FastHTML)
+  - Creates `app.py` with working hello world + `.fp.yaml` config
   - `fp init --template <name>` — scaffold from a platform template
-  - Templates fetched from the platform API (same gallery as the browser editor)
-  - Result: a working app the user can `fp dev` immediately
-- [ ] Project manifest (`.fp.yaml`)
+  - App name derived from directory name (overridable with `--name`)
+- [x] Project manifest (`.fp.yaml`)
   ```yaml
   name: my-api
   entrypoint: app.py
   ```
-  Two required fields. That's it for the common case. Optional fields:
+  Two required fields. Optional fields:
   ```yaml
   platform: platform.gatorlunch.com  # override default platform
   env:
     SOME_API_KEY: "${SOME_API_KEY}"   # pulled from local env
   database: true                       # opt into MongoDB binding
   ```
-  No Dockerfile. No docker-compose. No Kubernetes manifests.
 
 #### Local development
 
-- [ ] `fp dev` — run the app locally with production parity
-  - **With Docker (recommended):** Runs the actual platform runner image with code
-    mounted. Same Python version, same packages, same entrypoint behavior as prod.
-  - **Without Docker (fallback):** Runs with local Python + uvicorn. Warns that
-    behavior may differ. Zero setup friction for users without Docker.
-  - Hot reload on file changes in both modes
-- [ ] `fp dev` MongoDB handling
-  - Default: point `PLATFORM_MONGO_URI` at `localhost:27017` if MongoDB detected
-  - `fp dev --remote-db`: use actual platform MongoDB with user credentials
-    (for testing against real data)
-  - Stretch: auto-start a temporary MongoDB container if Docker is available
+- [x] `fp dev` — run the app locally with uvicorn + hot reload
+  - Reads `.fp.yaml` for entrypoint and env vars
+  - Injects `PLATFORM_MONGO_URI=mongodb://localhost:27017` if `database: true`
+  - `--port` flag (default 8000)
+- [ ] `fp dev --docker` — run inside the actual platform runner image
+  - Same Python version, same packages, same entrypoint behavior as prod
+  - Not yet implemented; current mode uses local Python
+- [ ] `fp dev --remote-db` — use actual platform MongoDB with user credentials
 
 #### Deploy and operate
 
-- [ ] `fp deploy` — one command deploy
+- [x] `fp deploy` — one command deploy
   - Reads `.fp.yaml` for app name and entrypoint
-  - Runs local validation (same checks as platform — catches errors before upload)
-  - Tars project files (respects `.fpignore`)
-  - POSTs to platform API, streams deploy status
-  - Prints live URL on success
-  - If app exists (same name, same user): updates. If new: creates. User doesn't
-    think about create vs update.
-- [ ] `fp logs` — tail logs from deployed app
-  - `fp logs --since 1h` for time-scoped logs
-  - Uses the WebSocket log streaming endpoint (same as browser UI)
-- [ ] `fp status` — one-line status (running / sleeping / error)
-- [ ] `fp open` — open app URL in browser
+  - Collects all files (`.py`, `.css`, `.js`, `.svg`, `.html`, `.json`, `.txt`)
+  - Auto-detects mode (single vs multi) from file count
+  - If app exists (same name): updates. If new: creates.
+  - Polls deploy status with Rich spinner, prints URL on success
+  - Resolves env vars from `.fp.yaml` (`${VAR}` syntax from local env)
+- [x] `fp logs` — tail logs from deployed app
+  - Default: real-time streaming via WebSocket
+  - `--no-follow`: fetch recent logs and exit
+  - `--since 1h` / `--since 30m` / `--since 5s`: time-scoped
+  - Falls back to HTTP if WebSocket fails
+- [x] `fp list` — Rich table of all apps (name, status, URL, last deploy)
+- [x] `fp status [app-name]` — detailed single-app status (reads `.fp.yaml` if no name)
+- [x] `fp open [app-name]` — open app URL in browser
+- [x] `fp delete <app-name>` — delete with confirmation (`--yes` to skip)
 
 #### Bridging browser and local workflows
 
-- [ ] `fp pull <app-name>` — pull existing app code to local directory
+- [x] `fp pull <app-name>` — pull existing app code to local directory
   - Creates `.fp.yaml` + all app files locally
+  - Prefers deployed code over draft code
   - Works for apps created in the browser — start there, continue locally
-- [ ] `fp push` — push local edits back to platform without deploying
+- [x] `fp push` — push local edits back to platform without deploying
   - Updates the saved code on the platform (like "Save Draft" in the browser)
   - `fp deploy` to actually deploy the changes
 
 #### Validation and safety
 
-- [ ] `fp validate` — run platform validation checks locally
+- [x] `fp validate` — run platform validation checks locally
   - AST parsing for syntax errors
   - Import whitelist checking
   - Blocked pattern scanning
-  - Entrypoint verification
-  - Catches problems before the deploy round-trip
-  - Shared validation library between CLI and backend (same rules, same code)
+  - Entrypoint verification (app instance required)
+  - Validation logic vendored from `backend/validation.py` — same rules offline
+  - Rich-formatted output with file names and line numbers on errors
 
 #### Distribution
 
-- [ ] `pip install fp-cli` — meets Python developers where they are
-  - Minimal dependencies (thin HTTP client, no K8s or Docker SDKs)
-  - Optional: single binary via PyInstaller for users who don't want pip
+- [x] `pip install fp-cli` / `uv tool install fp-cli`
+  - Python package with Typer, httpx, websockets, PyYAML, watchfiles
+  - Entry point: `fp` command via `[project.scripts]`
+  - Requires Python >= 3.10
+
+#### Remaining (Phase 5b)
+
+- [ ] Browser-based OAuth flow (instead of username/password prompt)
+- [ ] `fp dev --docker` — run inside runner image for full parity
+- [ ] `fp dev --remote-db` — use platform MongoDB credentials locally
+- [ ] `.fpignore` file support (gitignore-style file exclusion)
+- [ ] `fp env` — manage environment variables from CLI
+- [ ] `fp db` — browse databases from CLI
+- [ ] Shell completion installation command
+- [ ] Pre-deploy local validation (run `fp validate` automatically before upload)
 
 ### Phase 6 — Async Invocation & Triggers
 
@@ -652,7 +669,9 @@ Notes on phase ordering, scope risks, and dependencies.
 ### Phase ordering is sound
 
 Phase 3 (Frontend) → 4 (Scale-to-Zero) → 5 (CLI) → 6 (Async) → 7 (Dependencies) → 8
-(Monetization) follows a logical progression. The frontend overhaul gives you the
+(Monetization) follows a logical progression. Phase 5a (CLI MVP) was pulled forward
+and shipped alongside Phase 3 since the CLI is backend-only and doesn't depend on the
+frontend overhaul. The frontend overhaul gives you the
 dashboard where scale-to-zero status is visible. Scale-to-zero is the core serverless
 differentiator. CLI opens a second entry point. Async/triggers add depth for power users.
 Dependencies unlock real-world use cases. Monetization comes last because it needs a
