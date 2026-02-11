@@ -533,6 +533,11 @@ Built in Python (Typer + Rich + httpx). Lives in `cli/` directory, installable v
 - [ ] `.fpignore` file support (gitignore-style file exclusion)
 - [ ] `fp env` — manage environment variables from CLI
 - [ ] `fp db` — browse databases from CLI
+- [ ] `fp export [app-name]` — download app as a ZIP file
+  - Exports all app files (code, static assets) + `.fp.yaml` manifest
+  - If no name given, uses current project's `.fp.yaml`
+  - Useful for backups, sharing apps, or migrating between platform instances
+  - Backend endpoint: `GET /api/apps/{app_id}/export` returns ZIP
 - [ ] Shell completion installation command
 - [ ] Pre-deploy local validation (run `fp validate` automatically before upload)
 
@@ -641,7 +646,7 @@ Infrastructure-level improvements that can be shipped alongside or between phase
 - [ ] **Show available packages in editor UI**
 - [ ] **HTMX-aware logging** (HX-* headers in log viewer)
 - [ ] **Container Image Automation** (Flux ImagePolicy or CI webhook for rollouts)
-- [ ] **App export/import** (download as ZIP, upload to recreate)
+- [ ] **App export/import** (download as ZIP via `fp export` or browser, upload to recreate)
 
 ---
 

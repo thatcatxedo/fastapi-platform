@@ -1,0 +1,152 @@
+name: "Emoji API (Multi-File)"
+description: "A multi-file emoji API with categorized emojis, separate routes, data module, and styled HTML page. Shows how to organize a FastAPI app across multiple files."
+complexity: medium
+tags:
+  - multifile
+  - fastapi
+  - html
+  - fun
+  - organized
+mode: multi
+framework: fastapi
+entrypoint: app.py
+files:
+  app.py: |
+    """Emoji API — multi-file version."""
+    from fastapi import FastAPI
+    from fastapi.responses import HTMLResponse
+
+    from routes import router
+    from page import render_home
+
+    app = FastAPI(title="Emoji API", version="1.0.0")
+    app.include_router(router)
+
+
+    @app.get("/", response_class=HTMLResponse)
+    def home():
+        return render_home()
+  emojis.py: |
+    """Emoji data and utilities."""
+    import random
+
+    EMOJIS = {
+        "animals": ["🐱", "🐶", "🦊", "🐸", "🐧", "🦋", "🦑", "🐙", "🦈", "🐋", "🦩", "🦜"],
+        "food": ["🍕", "🍉", "🥑", "🌮", "🍔", "🍣", "🧁", "🍿", "🥐", "🍩"],
+        "nature": ["🌈", "🌻", "🌵", "🍄", "🌊", "🏔️", "⚡", "🔥", "❄️", "🌙"],
+        "objects": ["🚀", "🛸", "🎸", "🎲", "💎", "🧪", "🎯", "🎃", "👾", "🤖"],
+        "faces": ["😀", "😎", "🥳", "🤩", "😴", "🤔", "👻", "💀", "🤠", "🥶"],
+    }
+
+    ALL_EMOJIS = [e for group in EMOJIS.values() for e in group]
+    CATEGORIES = list(EMOJIS.keys())
+
+
+    def random_emoji(category=None):
+        if category and category in EMOJIS:
+            return random.choice(EMOJIS[category])
+        return random.choice(ALL_EMOJIS)
+
+
+    def random_emojis(count=5, category=None):
+        source = EMOJIS.get(category, ALL_EMOJIS) if category else ALL_EMOJIS
+        return [random.choice(source) for _ in range(count)]
+  routes.py: |
+    """API routes for emoji service."""
+    from fastapi import APIRouter, Query
+    from typing import Optional
+    from emojis import random_emoji, random_emojis, CATEGORIES, EMOJIS
+
+    router = APIRouter()
+
+
+    @router.get("/emoji")
+    def get_emoji(category: Optional[str] = Query(None, description="Emoji category")):
+        return {"emoji": random_emoji(category)}
+
+
+    @router.get("/emojis")
+    def get_emojis(
+        count: int = Query(5, ge=1, le=20, description="Number of emojis"),
+        category: Optional[str] = Query(None, description="Emoji category"),
+    ):
+        return {"emojis": random_emojis(count, category)}
+
+
+    @router.get("/categories")
+    def get_categories():
+        return {"categories": {cat: len(emojis) for cat, emojis in EMOJIS.items()}}
+  page.py: |
+    """HTML page renderer."""
+    from emojis import random_emojis, CATEGORIES
+
+
+    def render_home():
+        grid = random_emojis(12)
+        cat_links = "".join(
+            f'<a href="?category={c}" class="cat">{c}</a>' for c in CATEGORIES
+        )
+        grid_html = "".join(f'<span class="cell">{e}</span>' for e in grid)
+
+        return f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <title>Emoji API</title>
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{
+                min-height: 100vh;
+                display: flex; flex-direction: column;
+                align-items: center; justify-content: center;
+                background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+                font-family: -apple-system, sans-serif;
+                color: #e0e0e0;
+                padding: 2rem;
+            }}
+            h1 {{ font-size: 2rem; font-weight: 300; letter-spacing: 0.1em; margin-bottom: 1rem; }}
+            .grid {{
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 1rem;
+                margin: 1.5rem 0;
+            }}
+            .cell {{
+                font-size: 3rem;
+                padding: 0.5rem;
+                text-align: center;
+                background: rgba(255,255,255,0.05);
+                border-radius: 12px;
+                cursor: pointer;
+                transition: transform 0.2s;
+            }}
+            .cell:hover {{ transform: scale(1.3); }}
+            .cats {{ display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin: 1rem 0; }}
+            .cat {{
+                color: #a78bfa;
+                text-decoration: none;
+                padding: 0.3rem 0.8rem;
+                border: 1px solid rgba(167,139,250,0.3);
+                border-radius: 999px;
+                font-size: 0.85rem;
+            }}
+            .cat:hover {{ background: rgba(167,139,250,0.15); }}
+            .links {{ margin-top: 1.5rem; opacity: 0.5; font-size: 0.85rem; }}
+            .links a {{ color: #a78bfa; text-decoration: none; }}
+            .links a:hover {{ text-decoration: underline; }}
+            .reload {{ margin-top: 1rem; color: #a78bfa; cursor: pointer; border: none; background: none; font-size: 0.9rem; }}
+            .reload:hover {{ text-decoration: underline; }}
+        </style>
+    </head>
+    <body>
+        <h1>Emoji API</h1>
+        <div class="cats">{cat_links}</div>
+        <div class="grid">{grid_html}</div>
+        <button class="reload" onclick="location.reload()">shuffle</button>
+        <div class="links">
+            <a href="/emoji">/emoji</a> &middot;
+            <a href="/emojis?count=5">/emojis</a> &middot;
+            <a href="/categories">/categories</a> &middot;
+            <a href="/docs">/docs</a>
+        </div>
+    </body>
+    </html>"""
