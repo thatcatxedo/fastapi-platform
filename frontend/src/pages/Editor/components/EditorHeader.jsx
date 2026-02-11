@@ -3,13 +3,11 @@ import DropdownMenu from '../../../components/DropdownMenu'
 function EditorHeader({
   isEditing,
   loading,
-  validating,
   deploymentStatus,
   hasUnpublishedChanges,
   hasLocalChanges,
   savingDraft,
   draftSaved,
-  onValidate,
   onDeploy,
   onSaveDraft,
   onCancel,
@@ -65,7 +63,7 @@ function EditorHeader({
       onClick: onDelete,
       danger: true,
       show: isEditing,
-      disabled: loading || validating
+      disabled: loading
     }
   ]
 
@@ -92,16 +90,9 @@ function EditorHeader({
           </button>
         )}
         <button
-          className="btn btn-secondary"
-          onClick={onValidate}
-          disabled={validating || loading}
-        >
-          {validating ? 'Validating...' : 'Validate'}
-        </button>
-        <button
           className="btn btn-primary"
           onClick={onDeploy}
-          disabled={loading || validating || isDeploying}
+          disabled={loading || isDeploying}
         >
           {loading || isDeploying ? (
             <>

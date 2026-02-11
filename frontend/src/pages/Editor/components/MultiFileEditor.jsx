@@ -1,12 +1,58 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
+import styles from './MultiFileEditor.module.css'
 
 const FASTAPI_FILES = ['app.py', 'routes.py', 'models.py', 'services.py', 'helpers.py']
 const FASTHTML_FILES = ['app.py', 'routes.py', 'models.py', 'services.py', 'components.py']
 
+const EXTENSION_TO_LANGUAGE = {
+  '.py': 'python',
+  '.css': 'css',
+  '.js': 'javascript',
+  '.html': 'html',
+  '.json': 'json',
+  '.txt': 'plaintext',
+  '.svg': 'xml'
+}
+
+const ADD_FILE_TEMPLATES = [
+  { label: 'Python', ext: '.py', defaultName: 'module.py', content: '# ' },
+  { label: 'CSS', ext: '.css', defaultName: 'static/styles.css', content: '/*  */' },
+  { label: 'JavaScript', ext: '.js', defaultName: 'static/script.js', content: '// ' },
+  { label: 'HTML', ext: '.html', defaultName: 'static/index.html', content: '<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8"><title></title></head>\n<body></body>\n</html>' },
+  { label: 'JSON', ext: '.json', defaultName: 'static/data.json', content: '{}' },
+  { label: 'SVG', ext: '.svg', defaultName: 'static/icon.svg', content: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>' },
+  { label: 'Text', ext: '.txt', defaultName: 'static/readme.txt', content: '' }
+]
+
+function getLanguage(filename) {
+  const ext = filename.includes('.') ? '.' + filename.split('.').pop().toLowerCase() : ''
+  return EXTENSION_TO_LANGUAGE[ext] || 'plaintext'
+}
+
+function getUniqueFilename(files, baseName) {
+  if (!files || !(baseName in files)) return baseName
+  const lastDot = baseName.lastIndexOf('.')
+  const base = lastDot >= 0 ? baseName.slice(0, lastDot) : baseName
+  const ext = lastDot >= 0 ? baseName.slice(lastDot) : '.py'
+  let i = 1
+  while (`${base}${i}${ext}` in files) i++
+  return `${base}${i}${ext}`
+}
+
+function sortFileList(files, entrypoint) {
+  const keys = Object.keys(files || {})
+  return [...keys].sort((a, b) => {
+    if (a === entrypoint) return -1
+    if (b === entrypoint) return 1
+    return a.localeCompare(b)
+  })
+}
+
 export default function MultiFileEditor({
   files,
   framework = 'fastapi',
+  entrypoint = 'app.py',
   onChange,
   onMount,
   readOnly = false,
@@ -14,59 +60,68 @@ export default function MultiFileEditor({
   errorFile = null
 }) {
   const [activeFile, setActiveFile] = useState('app.py')
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const [editingRename, setEditingRename] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
   const editorRef = useRef(null)
   const monacoRef = useRef(null)
   const decorationsRef = useRef([])
   const containerRef = useRef(null)
+  const addMenuRef = useRef(null)
   const [editorHeight, setEditorHeight] = useState(400)
 
-  const fileOrder = framework === 'fasthtml' ? FASTHTML_FILES : FASTAPI_FILES
+  const fileList = sortFileList(files, entrypoint)
+
+  // Ensure activeFile exists when files change
+  useEffect(() => {
+    if (files && !(activeFile in files) && fileList.length > 0) {
+      setActiveFile(fileList[0])
+    }
+  }, [files, activeFile, fileList])
 
   // Calculate editor height based on container
   useEffect(() => {
     if (!containerRef.current) return
-
     const updateHeight = () => {
       const containerRect = containerRef.current.getBoundingClientRect()
       const availableHeight = window.innerHeight - containerRect.top - 20
       setEditorHeight(Math.max(300, availableHeight))
     }
-
     updateHeight()
     const resizeObserver = new ResizeObserver(updateHeight)
     resizeObserver.observe(containerRef.current)
     window.addEventListener('resize', updateHeight)
-
     return () => {
       resizeObserver.disconnect()
       window.removeEventListener('resize', updateHeight)
     }
   }, [])
 
+  // Close add menu on outside click
+  useEffect(() => {
+    if (!showAddMenu) return
+    const handleClick = (e) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target)) {
+        setShowAddMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showAddMenu])
+
   // Handle error highlighting
   useEffect(() => {
     if (!editorRef.current || !monacoRef.current) return
-
-    // Clear existing decorations
-    decorationsRef.current = editorRef.current.deltaDecorations(
-      decorationsRef.current,
-      []
-    )
-
-    // Add error decoration if on active file
+    decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, [])
     if (errorLine && errorFile === activeFile) {
-      decorationsRef.current = editorRef.current.deltaDecorations(
-        [],
-        [{
-          range: new monacoRef.current.Range(errorLine, 1, errorLine, 1),
-          options: {
-            isWholeLine: true,
-            glyphMarginClassName: 'error-glyph-margin',
-            className: 'error-line-highlight'
-          }
-        }]
-      )
-      // Scroll to error line
+      decorationsRef.current = editorRef.current.deltaDecorations([], [{
+        range: new monacoRef.current.Range(errorLine, 1, errorLine, 1),
+        options: {
+          isWholeLine: true,
+          glyphMarginClassName: styles.errorGlyphMargin,
+          className: styles.errorLineHighlight
+        }
+      }])
       editorRef.current.revealLineInCenter(errorLine)
     }
   }, [errorLine, errorFile, activeFile])
@@ -74,29 +129,61 @@ export default function MultiFileEditor({
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor
     monacoRef.current = monaco
-
-    // Forward refs to parent
-    if (onMount) {
-      onMount({ editorRef, monacoRef, decorationsRef })
-    }
+    if (onMount) onMount({ editorRef, monacoRef, decorationsRef })
   }, [onMount])
 
   const handleFileChange = useCallback((value) => {
     if (onChange && files) {
-      onChange({
-        ...files,
-        [activeFile]: value || ''
-      })
+      onChange({ ...files, [activeFile]: value || '' })
     }
   }, [onChange, files, activeFile])
 
-  const handleTabClick = (filename) => {
-    setActiveFile(filename)
+  const handleAddFile = (template) => {
+    if (!onChange || !files) return
+    const newName = getUniqueFilename(files, template.defaultName)
+    onChange({ ...files, [newName]: template.content })
+    setActiveFile(newName)
+    setShowAddMenu(false)
   }
 
-  // Handle keyboard shortcuts
+  const handleRename = (oldName) => {
+    setEditingRename(oldName)
+    setRenameValue(oldName)
+  }
+
+  const handleRenameSubmit = () => {
+    if (!onChange || !files || !editingRename) return
+    if (editingRename === entrypoint) return
+    const trimmed = renameValue.trim()
+    if (!trimmed || trimmed === editingRename) {
+      setEditingRename(null)
+      return
+    }
+    if (trimmed in files) {
+      setEditingRename(null)
+      return
+    }
+    const newFiles = { ...files }
+    newFiles[trimmed] = newFiles[editingRename]
+    delete newFiles[editingRename]
+    onChange(newFiles)
+    if (activeFile === editingRename) setActiveFile(trimmed)
+    setEditingRename(null)
+  }
+
+  const handleDelete = (filename) => {
+    if (!onChange || !files || filename === entrypoint) return
+    const newFiles = { ...files }
+    delete newFiles[filename]
+    onChange(newFiles)
+    if (activeFile === filename && fileList.length > 1) {
+      const idx = fileList.indexOf(filename)
+      const next = idx > 0 ? fileList[idx - 1] : fileList[idx + 1]
+      setActiveFile(next)
+    }
+  }
+
   const handleKeyDown = useCallback((e) => {
-    // Forward Ctrl+S, Ctrl+Enter, Ctrl+Shift+V to parent via custom events
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 's') {
         e.preventDefault()
@@ -111,126 +198,128 @@ export default function MultiFileEditor({
     }
   }, [])
 
+  const handleRenameKeyDown = (e) => {
+    if (e.key === 'Enter') handleRenameSubmit()
+    if (e.key === 'Escape') setEditingRename(null)
+  }
+
   return (
-    <div className="multifile-editor" ref={containerRef}>
-      {/* File tabs */}
-      <div className="file-tabs">
-        {fileOrder.map(filename => (
-          <button
-            key={filename}
-            className={`file-tab ${activeFile === filename ? 'active' : ''} ${errorFile === filename ? 'has-error' : ''}`}
-            onClick={() => handleTabClick(filename)}
-          >
-            {filename}
-            {errorFile === filename && <span className="error-indicator">!</span>}
-          </button>
-        ))}
+    <div className={styles.multifileEditor} ref={containerRef}>
+      <div className={styles.fileListSidebar}>
+        <div className={styles.fileListHeader}>
+          <span className={styles.fileListTitle}>Files</span>
+          <div className={styles.addFileDropdown} ref={addMenuRef}>
+            <button
+              type="button"
+              className={styles.addFileBtn}
+              onClick={() => setShowAddMenu(!showAddMenu)}
+              disabled={readOnly}
+              title="Add file"
+            >
+              + Add
+            </button>
+            {showAddMenu && (
+              <div className={styles.addFileMenu}>
+                {ADD_FILE_TEMPLATES.map((t) => (
+                  <button
+                    key={t.ext}
+                    type="button"
+                    className={styles.addFileMenuItem}
+                    onClick={() => handleAddFile(t)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className={styles.fileList}>
+          {fileList.map((filename) => {
+            const isEntrypoint = filename === entrypoint
+            const isActive = activeFile === filename
+            const hasError = errorFile === filename
+
+            if (editingRename === filename) {
+              return (
+                <div key={filename} className={styles.fileItem} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                  <input
+                    type="text"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={handleRenameKeyDown}
+                    onBlur={handleRenameSubmit}
+                    autoFocus
+                    className={styles.fileItemName}
+                    style={{ background: '#2d2d2d', border: '1px solid #444', color: '#fff', padding: '4px' }}
+                  />
+                </div>
+              )
+            }
+
+            return (
+              <div
+                key={filename}
+                className={`${styles.fileItem} ${isActive ? styles.active : ''} ${hasError ? styles.hasError : ''}`}
+                onClick={() => setActiveFile(filename)}
+              >
+                <span className={styles.fileItemName} title={filename}>
+                  {isEntrypoint && <span className={styles.entrypointBadge}>app</span>}
+                  {filename}
+                </span>
+                {hasError && <span className={styles.errorIndicator}>!</span>}
+                <div className={styles.fileItemActions} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className={styles.fileActionBtn}
+                    onClick={() => handleRename(filename)}
+                    disabled={isEntrypoint}
+                    title="Rename"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.fileActionBtn}
+                    onClick={() => handleDelete(filename)}
+                    disabled={isEntrypoint}
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
-
-      {/* Monaco Editor */}
-      <div
-        className="editor-container"
-        onKeyDown={handleKeyDown}
-        style={{ height: editorHeight }}
-      >
-        <Editor
-          height="100%"
-          language="python"
-          theme="vs-dark"
-          value={files?.[activeFile] || ''}
-          onChange={handleFileChange}
-          onMount={handleEditorMount}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 14,
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            readOnly: readOnly,
-            glyphMargin: true,
-            folding: true,
-            automaticLayout: true
-          }}
-        />
+      <div className={styles.editorWrapper}>
+        <div
+          className={styles.editorContainer}
+          onKeyDown={handleKeyDown}
+          style={{ height: editorHeight }}
+        >
+          <Editor
+            height="100%"
+            language={getLanguage(activeFile)}
+            theme="vs-dark"
+            value={files?.[activeFile] ?? ''}
+            onChange={handleFileChange}
+            onMount={handleEditorMount}
+            options={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              lineNumbers: 'on',
+              scrollBeyondLastLine: false,
+              wordWrap: 'on',
+              readOnly: readOnly,
+              glyphMargin: true,
+              folding: true,
+              automaticLayout: true
+            }}
+          />
+        </div>
       </div>
-
-      <style>{`
-        .multifile-editor {
-          display: flex;
-          flex-direction: column;
-          height: 100%;
-        }
-
-        .file-tabs {
-          display: flex;
-          gap: 2px;
-          padding: 8px 8px 0;
-          background: #1e1e1e;
-          border-bottom: 1px solid #333;
-          overflow-x: auto;
-        }
-
-        .file-tab {
-          padding: 8px 16px;
-          background: #2d2d2d;
-          border: none;
-          border-radius: 4px 4px 0 0;
-          color: #888;
-          font-size: 13px;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          position: relative;
-          white-space: nowrap;
-        }
-
-        .file-tab:hover {
-          background: #3d3d3d;
-          color: #ccc;
-        }
-
-        .file-tab.active {
-          background: #1e1e1e;
-          color: #fff;
-          border-bottom: 2px solid #007acc;
-        }
-
-        .file-tab.has-error {
-          color: #f48771;
-        }
-
-        .file-tab.has-error.active {
-          border-bottom-color: #f48771;
-        }
-
-        .error-indicator {
-          display: inline-block;
-          margin-left: 6px;
-          width: 16px;
-          height: 16px;
-          line-height: 16px;
-          text-align: center;
-          background: #f48771;
-          color: #1e1e1e;
-          border-radius: 50%;
-          font-size: 11px;
-          font-weight: bold;
-        }
-
-        .editor-container {
-          flex: 1;
-          min-height: 300px;
-        }
-
-        .error-glyph-margin {
-          background: #f48771;
-          width: 4px !important;
-          margin-left: 3px;
-        }
-
-        .error-line-highlight {
-          background: rgba(244, 135, 113, 0.15);
-        }
-      `}</style>
     </div>
   )
 }

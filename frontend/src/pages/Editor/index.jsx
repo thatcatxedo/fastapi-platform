@@ -108,8 +108,7 @@ function EditorPage({ user }) {
   // Version history modal
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
 
-  // Confirmation modals
-  const [deployModalOpen, setDeployModalOpen] = useState(false)
+  // Confirmation modal
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -155,20 +154,6 @@ function EditorPage({ user }) {
         localStorage.setItem(`sidebarTab_${appId}`, tab)
       }
     }
-  }
-
-  // Wrapped handlers with confirmation modals
-  const requestDeploy = () => {
-    if (!name.trim()) {
-      setError('App name is required')
-      return
-    }
-    setDeployModalOpen(true)
-  }
-
-  const confirmDeploy = () => {
-    setDeployModalOpen(false)
-    handleDeploy()
   }
 
   const requestDelete = () => {
@@ -284,14 +269,12 @@ function EditorPage({ user }) {
       <EditorHeader
         isEditing={isEditing}
         loading={loading}
-        validating={validating}
         deploymentStatus={deploymentStatus}
         hasUnpublishedChanges={hasUnpublishedChanges}
         hasLocalChanges={hasLocalChanges}
         savingDraft={savingDraft}
         draftSaved={draftSaved}
-        onValidate={handleValidate}
-        onDeploy={requestDeploy}
+        onDeploy={handleDeploy}
         onSaveDraft={handleSaveDraft}
         onCancel={() => navigate('/editor')}
         onDelete={requestDelete}
@@ -429,8 +412,7 @@ function EditorPage({ user }) {
             code={code}
             onChange={handleCodeChange}
             onMount={setEditorRefs}
-            onDeploy={requestDeploy}
-            onValidate={handleValidate}
+            onDeploy={handleDeploy}
             onSaveDraft={handleSaveDraft}
           />
         )}
@@ -488,16 +470,6 @@ function EditorPage({ user }) {
           }}
         />
       )}
-
-      <ConfirmModal
-        isOpen={deployModalOpen}
-        title={isEditing ? 'Update Application' : 'Deploy Application'}
-        message={`Deploy "${name.trim()}" now? This will ${isEditing ? 'update your running application' : 'create a new deployed application'}.`}
-        confirmText={isEditing ? 'Update' : 'Deploy'}
-        confirmStyle="primary"
-        onConfirm={confirmDeploy}
-        onCancel={() => setDeployModalOpen(false)}
-      />
 
       <ConfirmModal
         isOpen={deleteModalOpen}

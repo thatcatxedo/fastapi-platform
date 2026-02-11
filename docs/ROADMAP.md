@@ -198,19 +198,23 @@ experience that makes the platform feel like a different product.
 
 #### Screen 1: Editor (rethought)
 
-- [ ] Code on the left, **test panel on the right**
-  - Pick method (GET/POST/PUT/DELETE), enter path, add headers/body
-  - Send request to deployed app, see response inline
-  - Show status code, response body, latency
-  - Like Postman built into the editor — no need to open new tabs or use curl
-- [ ] Single deploy button (validates automatically, shows inline errors on failure)
-  - Remove the separate "Validate" button — deploy should validate first
-  - Validation errors show as inline squiggly underlines in Monaco
-- [ ] Dynamic file management
+- [x] Code on the left, **test panel on the right**
+  - Backend proxy endpoint `POST /api/apps/{app_id}/proxy` (solves CORS)
+  - Method picker, path input, headers/body editors, response viewer
+  - Status code, response body, latency — with request history
+  - Test and Chat share the sidebar slot via header toggle buttons
+- [x] Single deploy button (validates automatically, shows inline errors on failure)
+  - Removed separate "Validate" button and deploy confirmation modal
+  - Backend validates during deploy; errors highlight the error line in Monaco
+  - Ctrl+Enter keyboard shortcut deploys directly
+- [ ] Static assets + dynamic file management
   - Start every new app as a single file — no mode/framework choice upfront (done)
   - Framework auto-detected from code (done; uses AST app creation pattern)
-  - "+" button to add files, right-click to rename/delete (3b)
-  - File tree or tabs that grow naturally as project grows (3b)
+  - Allow non-`.py` files (CSS, JS, SVG, HTML) in multi-file validation
+  - Runner auto-mounts static files via Starlette `StaticFiles`
+  - File list view replacing hardcoded tabs (flat list, not nested tree)
+  - "+" button to add files, right-click to rename/delete
+  - Files grow naturally as project grows
 - [ ] Database shown as a binding indicator, not a separate panel
   - Small badge showing which database is attached
   - Click to change, but it's not in the way
@@ -237,6 +241,23 @@ experience that makes the platform feel like a different product.
 - [ ] Cards or rows: name, status (running/sleeping/error), URL, last request time
 - [ ] Search and filter (by status, by name)
 - [ ] No separate Dashboard page — this IS the dashboard
+
+#### Template Management
+
+- [ ] Edit existing templates from the template gallery
+  - Backend `PUT` endpoint exists but no UI calls it
+  - Inline edit or modal for name, description, complexity, tags, code
+  - Users can edit their own templates; admins can edit global templates
+- [ ] Hide/show templates
+  - `is_hidden` field on template documents (per-user preference or admin toggle)
+  - Users can hide default templates they don't use from the gallery
+  - Admins can hide global templates from all users without deleting them
+  - Hidden templates still accessible via direct API if needed
+- [ ] Admin template management
+  - View all templates (global + all users') in the admin dashboard
+  - Create, edit, and delete global templates from the UI (currently YAML-only)
+  - Toggle global template visibility
+  - See template usage stats (how many apps were created from each template)
 
 #### What gets removed or folded in
 
@@ -305,8 +326,42 @@ inactivity deletion — apps stay deployed but scale to zero replicas instead.
 
 ### Phase 5 — CLI Tool (`fp`)
 
-**Goal:** Let developers with local workflows deploy without the browser. The browser
-editor and CLI are complementary — not competing — entry points to the same platform.
+**Goal:** Make the platform accessible to developers who work locally. The browser
+editor gets people started; the CLI is what makes them stay.
+
+The browser editor is great for first impressions, quick edits, and templates. But
+developers with real workflows edit code in VS Code, Neovim, or their IDE of choice.
+If the only way to use the platform is through the browser, you lose every developer
+who has an established local workflow. The CLI is the adoption multiplier — it turns
+the platform from a toy into a tool.
+
+**The core flow:**
+
+```bash
+pip install fp-cli
+
+# Register with a platform deployment (one-time)
+fp auth https://platform.gatorlunch.com
+# Opens browser for login, stores token + platform URL
+# "Authenticated as dude on platform.gatorlunch.com"
+
+# Scaffold a new project
+mkdir my-api && cd my-api
+fp init
+# Creates app.py with hello world starter + .fp.yaml config
+
+# Develop locally with hot reload
+fp dev
+# Runs at localhost:8000 using the actual runner image
+# PLATFORM_MONGO_URI injected automatically
+
+# Deploy with one command
+fp deploy
+# Validates → uploads → deploys → prints URL
+# "Deployed to https://app-abc123.gatorlunch.com"
+```
+
+No Docker knowledge. No Kubernetes. No YAML beyond two lines. No git hooks.
 
 | Moment                          | Best tool      |
 |---------------------------------|----------------|
@@ -317,33 +372,102 @@ editor and CLI are complementary — not competing — entry points to the same 
 | CI/CD pipeline deploy           | CLI            |
 | Teaching/demos                  | Browser editor |
 
-- [ ] Core commands
-  - `fp login <platform-url>` — authenticate, store token
-  - `fp init` — scaffold `app.py` + `.fp.yaml` in current directory
-  - `fp dev` — run app locally using runner image (Docker) or uvicorn (fallback)
-  - `fp deploy` — validate locally, upload files, deploy, print URL
-  - `fp logs` — tail logs from deployed app
-  - `fp status` — one-line status (running / sleeping / error)
-  - `fp open` — open app URL in browser
+The platform API is the same for both. An app created in the browser can be pulled
+down with `fp pull` and developed locally. An app deployed via CLI can be edited in
+the browser. No lock-in to either workflow.
+
+#### Authentication and platform registration
+
+- [ ] `fp auth <platform-url>` — register the CLI with a platform deployment
+  - Stores platform URL + credentials in `~/.fp/config.yaml`
+  - Browser-based OAuth flow: opens login page, receives token callback
+  - Fallback: `fp auth --token <token>` for headless/CI environments
+  - Token refresh handled automatically on subsequent commands
+- [ ] Multiple platform support
+  - `fp auth` can store multiple platform registrations
+  - `fp auth --switch <name>` to switch active platform
+  - Per-project override via `platform` field in `.fp.yaml`
+  - Default: most recently authenticated platform
+- [ ] `fp whoami` — show current user and platform
+  - Prints username, platform URL, token expiry
+  - Quick sanity check before deploying
+
+#### Scaffolding and project structure
+
+- [ ] `fp init` — scaffold a new project in the current directory
+  - Creates `app.py` with a working hello world (FastAPI or FastHTML, user picks)
+  - Creates `.fp.yaml` with app name derived from directory name
+  - `fp init --template <name>` — scaffold from a platform template
+  - Templates fetched from the platform API (same gallery as the browser editor)
+  - Result: a working app the user can `fp dev` immediately
 - [ ] Project manifest (`.fp.yaml`)
   ```yaml
   name: my-api
   entrypoint: app.py
   ```
-  Minimal by default. Optional fields: `env`, `database: true`.
-- [ ] `fp pull` / `fp push` — bridge browser editor and local workflow
-  - Pull existing app code to local directory
-  - Push local edits back to platform
-- [ ] Local validation
-  - Same AST parsing, import checking, blocked pattern scanning as backend
-  - Catches errors before the deploy round-trip
-  - Shared validation library between CLI and backend
+  Two required fields. That's it for the common case. Optional fields:
+  ```yaml
+  platform: platform.gatorlunch.com  # override default platform
+  env:
+    SOME_API_KEY: "${SOME_API_KEY}"   # pulled from local env
+  database: true                       # opt into MongoDB binding
+  ```
+  No Dockerfile. No docker-compose. No Kubernetes manifests.
+
+#### Local development
+
+- [ ] `fp dev` — run the app locally with production parity
+  - **With Docker (recommended):** Runs the actual platform runner image with code
+    mounted. Same Python version, same packages, same entrypoint behavior as prod.
+  - **Without Docker (fallback):** Runs with local Python + uvicorn. Warns that
+    behavior may differ. Zero setup friction for users without Docker.
+  - Hot reload on file changes in both modes
 - [ ] `fp dev` MongoDB handling
   - Default: point `PLATFORM_MONGO_URI` at `localhost:27017` if MongoDB detected
   - `fp dev --remote-db`: use actual platform MongoDB with user credentials
-- [ ] Distribution
-  - `pip install fp-cli` (meets Python developers where they are)
-  - Optional: single binary via PyInstaller or Go rewrite later
+    (for testing against real data)
+  - Stretch: auto-start a temporary MongoDB container if Docker is available
+
+#### Deploy and operate
+
+- [ ] `fp deploy` — one command deploy
+  - Reads `.fp.yaml` for app name and entrypoint
+  - Runs local validation (same checks as platform — catches errors before upload)
+  - Tars project files (respects `.fpignore`)
+  - POSTs to platform API, streams deploy status
+  - Prints live URL on success
+  - If app exists (same name, same user): updates. If new: creates. User doesn't
+    think about create vs update.
+- [ ] `fp logs` — tail logs from deployed app
+  - `fp logs --since 1h` for time-scoped logs
+  - Uses the WebSocket log streaming endpoint (same as browser UI)
+- [ ] `fp status` — one-line status (running / sleeping / error)
+- [ ] `fp open` — open app URL in browser
+
+#### Bridging browser and local workflows
+
+- [ ] `fp pull <app-name>` — pull existing app code to local directory
+  - Creates `.fp.yaml` + all app files locally
+  - Works for apps created in the browser — start there, continue locally
+- [ ] `fp push` — push local edits back to platform without deploying
+  - Updates the saved code on the platform (like "Save Draft" in the browser)
+  - `fp deploy` to actually deploy the changes
+
+#### Validation and safety
+
+- [ ] `fp validate` — run platform validation checks locally
+  - AST parsing for syntax errors
+  - Import whitelist checking
+  - Blocked pattern scanning
+  - Entrypoint verification
+  - Catches problems before the deploy round-trip
+  - Shared validation library between CLI and backend (same rules, same code)
+
+#### Distribution
+
+- [ ] `pip install fp-cli` — meets Python developers where they are
+  - Minimal dependencies (thin HTTP client, no K8s or Docker SDKs)
+  - Optional: single binary via PyInstaller for users who don't want pip
 
 ### Phase 6 — Async Invocation & Triggers
 
@@ -416,11 +540,7 @@ Infrastructure-level improvements that can be shipped alongside or between phase
 
 ### High Priority
 
-- [ ] **Static assets support for FastHTML apps**
-  - Current limitation: `validate_multifile()` only allows `.py` files
-  - Phased: text assets first (CSS, JS, SVG), binary later (base64)
-  - Runner: auto-mount `/code/static` as Starlette `StaticFiles` if exists
-  - Keep within 500KB total limit (safe for ConfigMaps)
+- ~~Static assets support for FastHTML apps~~ — moved into Phase 3b (coupled with file management)
 
 - [ ] **Network egress controls (NetworkPolicy)**
   - Default deny egress for user app pods
@@ -492,16 +612,17 @@ product worth paying for first.
 
 Phase 3 is the largest phase by far: Tailwind migration, Zustand state rewrite, three new
 screens, request logging middleware, WebSocket log streaming, auto-detection refactor,
-embedded database browsing. This could easily become a multi-month rewrite that blocks
-everything behind it.
+embedded database browsing, and template management. This could easily become a
+multi-month rewrite that blocks everything behind it.
 
 **Mitigation:** Consider splitting Phase 3 into incremental deliverables:
 
 - **3a — Backend APIs first.** ~~Request logging middleware, WebSocket log endpoint,~~ embedded
   DB stats. Request logging and WebSocket streaming are done. These are independently
   useful and unblock Phase 4 work in parallel.
-- **3b — Editor improvements.** Single deploy button, inline test panel, dynamic file
-  management. These improve the core loop without a full rewrite.
+- **3b — Editor improvements.** ~~Single deploy button~~, ~~inline test panel~~, dynamic file
+  management + static assets, template management UI. Deploy button and test panel are done.
+  Static assets + file list view in progress. These improve the core loop without a full rewrite.
 - **3c — Design system + restructure.** Tailwind migration, Zustand stores, component
   decomposition. This is the "rewrite" part — do it last when the new screens are proven.
 

@@ -476,6 +476,9 @@ function useAppState(appId) {
     setDeployStage('deploying')
     setValidationMessage('')
     setDeployDuration(null)
+    setErrorLine(null)
+    setErrorFile(null)
+    clearErrorHighlight()
 
     try {
       const token = localStorage.getItem('token')
@@ -525,12 +528,25 @@ function useAppState(appId) {
 
       if (!response.ok) {
         const message = parseApiError(data, 'Deployment failed')
+
+        // Extract validation error line/file for inline highlighting
+        const details = data?.detail?.details
+        if (details?.line) {
+          setErrorLine(details.line)
+          if (mode === 'multi' && details.file) {
+            setErrorFile(details.file)
+          } else {
+            highlightErrorLine(details.line)
+          }
+        }
+
         throw new Error(message)
       }
 
       setDeployingAppId(data.app_id)
       pollDeploymentStatus(data.app_id)
     } catch (err) {
+      setDeployStage('error')
       setError(err.message)
       setLoading(false)
       setDeploymentStatus(null)

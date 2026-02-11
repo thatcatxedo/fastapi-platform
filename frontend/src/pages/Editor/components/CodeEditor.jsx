@@ -6,7 +6,6 @@ function CodeEditor({
   onChange,
   onMount,
   onDeploy,
-  onValidate,
   onSaveDraft
 }) {
   const [editorHeight, setEditorHeight] = useState(500)
@@ -51,12 +50,6 @@ function CodeEditor({
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       onDeploy()
     })
-
-    // Ctrl/Cmd + Shift + V = Validate
-    editor.addCommand(
-      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyV,
-      () => onValidate()
-    )
 
     // Pass refs to parent
     if (onMount) {
@@ -112,8 +105,6 @@ function CodeEditor({
         <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+S</kbd> Save Draft
         {' • '}
         <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+Enter</kbd> Deploy
-        {' • '}
-        <kbd style={{ padding: '0.1rem 0.3rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '0.2rem' }}>Ctrl+Shift+V</kbd> Validate
       </div>
     </div>
   )

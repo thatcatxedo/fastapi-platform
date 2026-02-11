@@ -260,6 +260,14 @@ def main():
     print("Executing user code...")
     app = execute_code(code)
 
+    # Mount /code/static at /static if directory exists (ConfigMap keys like static/styles.css create it)
+    code_dir = Path(CODE_PATH).parent
+    static_dir = code_dir / "static"
+    if static_dir.is_dir():
+        from starlette.staticfiles import StaticFiles
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        logger.info("Static files mounted at /static")
+
     if hasattr(app, "docs_url") and hasattr(app, "add_middleware"):
         if app.docs_url is None:
             app.docs_url = "/docs"

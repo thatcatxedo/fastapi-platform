@@ -3,8 +3,12 @@ Code validation module for FastAPI Platform
 Validates user-submitted Python code for syntax and security
 """
 import ast
+import os
 import re
 from typing import Optional, Dict, Tuple, Iterable, Set
+
+# Allowed static file extensions (text-based only)
+STATIC_EXTENSIONS = frozenset({'.css', '.js', '.svg', '.html', '.json', '.txt'})
 
 ALLOWED_IMPORTS = {
     'fastapi', 'pydantic', 'typing', 'datetime', 'json', 'math',
@@ -331,6 +335,9 @@ def validate_multifile(
     if entrypoint not in files:
         return False, f"Entrypoint '{entrypoint}' not found in files", None, None
 
+    if not entrypoint.endswith('.py'):
+        return False, f"Entrypoint must be a Python file (.py), got: {entrypoint}", None, None
+
     # Build set of local module names (file names without .py extension)
     # This allows imports between files in the same multi-file app
     local_modules = {
@@ -341,28 +348,39 @@ def validate_multifile(
 
     # Validate each file
     for filename, content in files.items():
-        if not filename.endswith('.py'):
-            return False, f"Only .py files allowed: {filename}", None, filename
+        ext = os.path.splitext(filename)[1].lower()
 
-        if len(content) > MAX_FILE_SIZE:
-            return False, f"File too large: {filename} (max {MAX_FILE_SIZE // 1024}KB)", None, filename
+        if ext == '.py':
+            if len(content) > MAX_FILE_SIZE:
+                return False, f"File too large: {filename} (max {MAX_FILE_SIZE // 1024}KB)", None, filename
 
-        if filename == entrypoint:
-            # Entrypoint must define an app
-            is_valid, error_msg, error_line = validate_code(
-                content,
-                local_modules,
-                allowed_imports_override
-            )
+            if filename == entrypoint:
+                # Entrypoint must define an app
+                is_valid, error_msg, error_line = validate_code(
+                    content,
+                    local_modules,
+                    allowed_imports_override
+                )
+            else:
+                # Other Python files: syntax and security only, no app required
+                is_valid, error_msg, error_line = validate_code_syntax_only(
+                    content,
+                    local_modules,
+                    allowed_imports_override
+                )
+
+            if not is_valid:
+                return False, error_msg, error_line, filename
+
+        elif ext in STATIC_EXTENSIONS:
+            # Static files: size only, no AST validation
+            if len(content) > MAX_FILE_SIZE:
+                return False, f"File too large: {filename} (max {MAX_FILE_SIZE // 1024}KB)", None, filename
+
         else:
-            # Other files: syntax and security only, no app required
-            is_valid, error_msg, error_line = validate_code_syntax_only(
-                content,
-                local_modules,
-                allowed_imports_override
-            )
-
-        if not is_valid:
-            return False, error_msg, error_line, filename
+            return False, (
+                f"File type not allowed: {filename}. "
+                f"Allowed: .py, .css, .js, .svg, .html, .json, .txt"
+            ), None, filename
 
     return True, "", None, None
