@@ -4,7 +4,7 @@ import { API_URL } from '../config'
 // Derive WebSocket URL from API_URL
 const WS_URL = API_URL
   ? API_URL.replace(/^http/, 'ws')
-  : `ws://${window.location.host}`
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
 
 function LogsPanel({ appId, isOpen, onClose }) {
   const [logs, setLogs] = useState([])
@@ -48,9 +48,16 @@ function LogsPanel({ appId, isOpen, onClose }) {
       return
     }
 
-    const ws = new WebSocket(
-      `${WS_URL}/api/apps/${appId}/logs/stream?token=${token}`
-    )
+    let ws
+    try {
+      ws = new WebSocket(
+        `${WS_URL}/api/apps/${appId}/logs/stream?token=${token}`
+      )
+    } catch {
+      // WebSocket construction can throw (e.g. mixed content)
+      startPolling()
+      return
+    }
     wsRef.current = ws
 
     ws.onopen = () => {
