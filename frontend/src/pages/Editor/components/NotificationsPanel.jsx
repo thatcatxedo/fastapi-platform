@@ -136,32 +136,10 @@ function NotificationsPanel({
           <strong>Validation:</strong> {validationMessage}
         </div>
       )}
-      {isDeploying && (
-        <div style={{
-          background: 'rgba(245, 158, 11, 0.1)',
-          border: '1px solid var(--warning)',
-          color: 'var(--warning)',
-          padding: '0.75rem',
-          borderRadius: '0.5rem',
-          marginBottom: '0.5rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          fontSize: '0.875rem'
-        }}>
-          <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>○</span>
-          <span>Deploying your app... This may take a minute.</span>
-          {deploymentStatus.pod_status && (
-            <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>
-              (Pod: {deploymentStatus.pod_status})
-            </span>
-          )}
-        </div>
-      )}
-      {deployingAppId && (loading || isDeploying) && (
+      {(loading || isDeploying) && deploymentStatus?.deploy_phase && (
         <EventsTimeline
-          appId={deployingAppId}
-          isDeploying={true}
+          events={deploymentStatus?.events || []}
+          phase={deploymentStatus?.deploy_phase || 'validating'}
         />
       )}
     </div>

@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react'
-import { API_URL } from '../config'
-
 const PHASE_LABELS = {
+  validating: 'Validating...',
+  creating_resources: 'Creating resources...',
   pending: 'Waiting to be scheduled',
   scheduled: 'Pod scheduled',
   pulling: 'Pulling container image',
@@ -13,39 +12,9 @@ const PHASE_LABELS = {
   unknown: 'Checking status...'
 }
 
-const PHASES_ORDER = ['pending', 'scheduled', 'pulling', 'pulled', 'creating', 'starting', 'ready']
+const PHASES_ORDER = ['validating', 'creating_resources', 'pending', 'scheduled', 'pulling', 'pulled', 'creating', 'starting', 'ready']
 
-function EventsTimeline({ appId, isDeploying }) {
-  const [events, setEvents] = useState([])
-  const [phase, setPhase] = useState('pending')
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (appId && isDeploying) {
-      fetchEvents()
-      const interval = setInterval(fetchEvents, 2000)
-      return () => clearInterval(interval)
-    }
-  }, [appId, isDeploying])
-
-  const fetchEvents = async () => {
-    try {
-      const token = localStorage.getItem('token')
-      const response = await fetch(
-        `${API_URL}/api/apps/${appId}/events`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      )
-      if (response.ok) {
-        const data = await response.json()
-        setEvents(data.events || [])
-        setPhase(data.deployment_phase || 'pending')
-      }
-    } catch (err) {
-      console.error('Failed to fetch events:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+function EventsTimeline({ events = [], phase = 'pending' }) {
 
   const getProgressWidth = () => {
     if (phase === 'error') return '100%'
@@ -60,8 +29,6 @@ function EventsTimeline({ appId, isDeploying }) {
     if (phase === 'ready') return 'var(--success)'
     return 'var(--warning)'
   }
-
-  if (!appId) return null
 
   return (
     <div className="events-timeline">
@@ -84,13 +51,9 @@ function EventsTimeline({ appId, isDeploying }) {
       </div>
 
       {/* Recent events */}
-      {loading ? (
+      {events.length === 0 ? (
         <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.5rem 0' }}>
-          Loading events...
-        </div>
-      ) : events.length === 0 ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.5rem 0' }}>
-          Waiting for events...
+          {phase === 'validating' ? 'Validating code...' : phase === 'creating_resources' ? 'Creating Kubernetes resources...' : 'Waiting for events...'}
         </div>
       ) : (
         <div className="events-list">

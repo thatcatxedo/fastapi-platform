@@ -173,6 +173,65 @@ class DatabaseService:
                 "total_size_mb": 0
             }
 
+    async def get_collection_stats(self, user_id: str, database_id: str) -> Optional[dict]:
+        """
+        Get per-collection stats for a user database (for app detail embedding).
+
+        Returns:
+            Dict with collections list, total_collections, total_documents, total_size_mb,
+            or None on error (caller should omit database_stats from response).
+        """
+        db_name = self.get_mongo_db_name(user_id, database_id)
+        user_db = self.client[db_name]
+
+        try:
+            collection_names = await user_db.list_collection_names()
+        except Exception as e:
+            logger.warning(f"Error listing collections for {db_name}: {e}")
+            return None
+
+        collections = []
+        total_documents = 0
+        total_size = 0
+
+        for coll_name in collection_names:
+            try:
+                stats = await user_db.command("collStats", coll_name)
+                doc_count = stats.get("count", 0)
+                size = stats.get("size", 0)
+                avg_size = stats.get("avgObjSize", 0)
+                collections.append({
+                    "name": coll_name,
+                    "document_count": doc_count,
+                    "size_bytes": size,
+                    "avg_doc_size": int(avg_size) if avg_size else None
+                })
+                total_documents += doc_count
+                total_size += size
+            except Exception as coll_err:
+                logger.warning(f"Error getting stats for collection {coll_name}: {coll_err}")
+                collections.append({
+                    "name": coll_name,
+                    "document_count": 0,
+                    "size_bytes": 0,
+                    "avg_doc_size": None
+                })
+
+        collections.sort(key=lambda c: c["document_count"], reverse=True)
+
+        try:
+            db_stats = await user_db.command("dbStats")
+            total_size_bytes = db_stats.get("dataSize", total_size)
+        except Exception:
+            total_size_bytes = total_size
+
+        return {
+            "collections": collections,
+            "total_collections": len(collection_names),
+            "total_documents": total_documents,
+            "total_size_mb": round(total_size_bytes / (1024 * 1024), 2)
+        }
+
     # =========================================================================
     # Response Builders
     # =========================================================================

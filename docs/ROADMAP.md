@@ -207,19 +207,19 @@ experience that makes the platform feel like a different product.
   - Removed separate "Validate" button and deploy confirmation modal
   - Backend validates during deploy; errors highlight the error line in Monaco
   - Ctrl+Enter keyboard shortcut deploys directly
-- [ ] Static assets + dynamic file management
-  - Start every new app as a single file — no mode/framework choice upfront (done)
-  - Framework auto-detected from code (done; uses AST app creation pattern)
-  - Allow non-`.py` files (CSS, JS, SVG, HTML) in multi-file validation
-  - Runner auto-mounts static files via Starlette `StaticFiles`
-  - File list view replacing hardcoded tabs (flat list, not nested tree)
-  - "+" button to add files, right-click to rename/delete
-  - Files grow naturally as project grows
+- [x] Static assets + dynamic file management
+  - Start every new app as a single file — no mode/framework choice upfront
+  - Framework auto-detected from code (AST app creation pattern)
+  - Non-`.py` files (CSS, JS, SVG, HTML, JSON, TXT) allowed with size-only validation
+  - Runner auto-mounts `static/` directory via Starlette `StaticFiles`
+  - File list sidebar replacing hardcoded tabs (flat list, 180px sidebar)
+  - "+" dropdown to add files (7 templates), inline rename/delete buttons
+  - Entrypoint (`app.py`) protected from rename/delete
 - [ ] Database shown as a binding indicator, not a separate panel
   - Small badge showing which database is attached
   - Click to change, but it's not in the way
 - [ ] Env vars in a collapsible settings drawer
-- [ ] Deployment progress with real K8s event streaming
+- [x] Deployment progress with real K8s event streaming
   - "Validating... Creating resources... Starting... Ready!" — not a spinner
 - [ ] Chat sidebar carries forward from current implementation
 
@@ -282,7 +282,7 @@ experience that makes the platform feel like a different product.
   - Auto-detect framework from AST (FastAPI vs FastHTML app creation pattern)
   - Mode inferred from request shape (files present → multi, else single)
   - WelcomeScreen simplified to single "Start from scratch" card
-- [ ] Embed database stats in app detail response
+- [x] Embed database stats in app detail response
   - Include collection list and document counts in `GET /api/apps/{app_id}`
   - No separate viewer deployment needed for basic data browsing
 
@@ -620,9 +620,9 @@ multi-month rewrite that blocks everything behind it.
 - **3a — Backend APIs first.** ~~Request logging middleware, WebSocket log endpoint,~~ embedded
   DB stats. Request logging and WebSocket streaming are done. These are independently
   useful and unblock Phase 4 work in parallel.
-- **3b — Editor improvements.** ~~Single deploy button~~, ~~inline test panel~~, dynamic file
-  management + static assets, template management UI. Deploy button and test panel are done.
-  Static assets + file list view in progress. These improve the core loop without a full rewrite.
+- **3b — Editor improvements.** ~~Single deploy button~~, ~~inline test panel~~, ~~static assets +
+  file list view~~, template management UI. Deploy button, test panel, and static assets/file
+  management are done. Remaining: database badge, env vars drawer, deploy progress, templates.
 - **3c — Design system + restructure.** Tailwind migration, Zustand stores, component
   decomposition. This is the "rewrite" part — do it last when the new screens are proven.
 

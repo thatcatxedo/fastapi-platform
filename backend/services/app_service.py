@@ -219,13 +219,16 @@ class AppService:
             last_deploy_at=app.get("last_deploy_at").isoformat() if app.get("last_deploy_at") else None
         )
 
-    def to_detail_response(self, app: dict, has_unpublished_changes: bool) -> AppDetailResponse:
+    def to_detail_response(
+        self, app: dict, has_unpublished_changes: bool, database_stats: dict = None
+    ) -> AppDetailResponse:
         """
         Build an AppDetailResponse from an app document.
 
         Args:
             app: App document from MongoDB
             has_unpublished_changes: Whether draft differs from deployed
+            database_stats: Optional embedded DB stats (collections, totals)
 
         Returns:
             AppDetailResponse model instance
@@ -259,7 +262,8 @@ class AppService:
             env_vars=app.get("env_vars"),
             deployed_at=app.get("deployed_at").isoformat() if app.get("deployed_at") else None,
             has_unpublished_changes=has_unpublished_changes,
-            database_id=app.get("database_id")
+            database_id=app.get("database_id"),
+            database_stats=database_stats
         )
 
     # =========================================================================

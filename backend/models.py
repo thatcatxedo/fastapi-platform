@@ -98,6 +98,8 @@ class AppDetailResponse(AppResponse):
     has_unpublished_changes: bool = False
     # Database selection
     database_id: Optional[str] = None  # Which database this app uses
+    # Database stats (embedded for App Dashboard)
+    database_stats: Optional["DatabaseStatsEmbedded"] = None
 
 
 class VersionEntry(BaseModel):
@@ -235,6 +237,14 @@ class CollectionStats(BaseModel):
     avg_doc_size: Optional[int] = None
 
 
+class DatabaseStatsEmbedded(BaseModel):
+    """Embedded database stats for app detail (collection list + totals)."""
+    collections: List[CollectionStats]
+    total_collections: int
+    total_documents: int
+    total_size_mb: float
+
+
 class DatabaseStatsResponse(BaseModel):
     database_name: str
     total_collections: int
@@ -351,3 +361,7 @@ class ProxyResponse(BaseModel):
     body: Any
     latency_ms: float
     url: str
+
+
+# Resolve forward references (DatabaseStatsEmbedded in AppDetailResponse)
+AppDetailResponse.model_rebuild()

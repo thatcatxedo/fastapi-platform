@@ -397,6 +397,8 @@ body {
   font-weight: 500;
 }
 
+.events-phase-validating,
+.events-phase-creating_resources,
 .events-phase-pending,
 .events-phase-scheduled,
 .events-phase-pulling,

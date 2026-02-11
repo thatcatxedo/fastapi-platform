@@ -27,6 +27,7 @@ from services.app_service import (
     DeploymentError,
     InvalidVersionError
 )
+from services.database_service import database_service
 from deployment import get_deployment_status, get_pod_logs, get_app_events
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,11 @@ async def get_app(app_id: str, user: dict = Depends(get_current_user)):
     """Get detailed information about an app."""
     try:
         app, has_unpublished_changes = await app_service.get_with_changes_flag(app_id, user)
-        return app_service.to_detail_response(app, has_unpublished_changes)
+        database_stats = None
+        database_id = app.get("database_id") or user.get("default_database_id", "default")
+        if database_id and user.get("databases"):
+            database_stats = await database_service.get_collection_stats(str(user["_id"]), database_id)
+        return app_service.to_detail_response(app, has_unpublished_changes, database_stats)
     except AppServiceError as e:
         raise handle_service_error(e)
 
@@ -125,7 +130,11 @@ async def save_draft(app_id: str, draft: DraftUpdate, user: dict = Depends(get_c
     """Save draft code/files without deploying."""
     try:
         app, has_unpublished_changes = await app_service.save_draft(app_id, draft, user)
-        return app_service.to_detail_response(app, has_unpublished_changes)
+        database_stats = None
+        database_id = app.get("database_id") or user.get("default_database_id", "default")
+        if database_id and user.get("databases"):
+            database_stats = await database_service.get_collection_stats(str(user["_id"]), database_id)
+        return app_service.to_detail_response(app, has_unpublished_changes, database_stats)
     except AppServiceError as e:
         raise handle_service_error(e)
 

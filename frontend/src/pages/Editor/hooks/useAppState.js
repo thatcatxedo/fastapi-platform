@@ -345,40 +345,65 @@ function useAppState(appId) {
     const checkStatus = async () => {
       try {
         const token = localStorage.getItem('token')
-        const response = await fetch(`${API_URL}/api/apps/${targetAppId}/deploy-status`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
+        const headers = { 'Authorization': `Bearer ${token}` }
 
-        if (response.ok) {
-          const status = await response.json()
-          setDeploymentStatus(status)
-          setDeployStage(status.deploy_stage || status.status || 'deploying')
+        // Fetch deploy-status and events in parallel
+        const [statusRes, eventsRes] = await Promise.all([
+          fetch(`${API_URL}/api/apps/${targetAppId}/deploy-status`, { headers }),
+          fetch(`${API_URL}/api/apps/${targetAppId}/events?limit=50`, { headers })
+        ])
 
-          if (status.status === 'running' && status.deployment_ready) {
-            // Calculate deploy duration
-            if (deployStartTime) {
-              const duration = ((Date.now() - deployStartTime) / 1000).toFixed(1)
-              setDeployDuration(duration)
-            }
-            // Reset change tracking after successful deploy
-            if (mode === 'multi') {
-              setDeployedFiles(files)
-              setLastSavedFiles(files)
-            } else {
-              setDeployedCode(code)
-              setLastSavedCode(code)
-            }
-            setHasUnpublishedChanges(false)
+        const status = statusRes.ok ? await statusRes.json() : null
+        const eventsData = eventsRes.ok ? await eventsRes.json() : { events: [], deployment_phase: 'unknown' }
+
+        if (!status) {
+          attempts++
+          if (attempts < maxAttempts) setTimeout(checkStatus, 2000)
+          else {
+            setError('Deployment is taking longer than expected. Check the dashboard for status.')
             setLoading(false)
-
-            setSuccess('App deployed successfully!')
-            // No auto-redirect - let the user choose what to do next
-            return true
-          } else if (status.status === 'error') {
-            setError(status.last_error || status.error_message || 'Deployment failed')
-            setLoading(false)
-            return true
           }
+          return
+        }
+
+        // Compute effective phase: ready from deployment_ready, error from status, else from events, else creating_resources
+        let deployPhase = 'creating_resources'
+        if (status.status === 'running' && status.deployment_ready) {
+          deployPhase = 'ready'
+        } else if (status.status === 'error') {
+          deployPhase = 'error'
+        } else if (eventsData.events?.length > 0 && eventsData.deployment_phase) {
+          deployPhase = eventsData.deployment_phase
+        }
+
+        const merged = {
+          ...status,
+          events: eventsData.events || [],
+          deploy_phase: deployPhase
+        }
+        setDeploymentStatus(merged)
+        setDeployStage(deployPhase)
+
+        if (deployPhase === 'ready') {
+          if (deployStartTime) {
+            const duration = ((Date.now() - deployStartTime) / 1000).toFixed(1)
+            setDeployDuration(duration)
+          }
+          if (mode === 'multi') {
+            setDeployedFiles(files)
+            setLastSavedFiles(files)
+          } else {
+            setDeployedCode(code)
+            setLastSavedCode(code)
+          }
+          setHasUnpublishedChanges(false)
+          setLoading(false)
+          setSuccess('App deployed successfully!')
+          return true
+        } else if (deployPhase === 'error') {
+          setError(status.last_error || status.error_message || 'Deployment failed')
+          setLoading(false)
+          return true
         }
       } catch (err) {
         console.error('Error checking status:', err)
@@ -395,7 +420,7 @@ function useAppState(appId) {
     }
 
     checkStatus()
-  }, [deployStartTime, navigate, code, files, mode])
+  }, [deployStartTime, code, files, mode])
 
   const handleValidate = async () => {
     if (!name.trim()) {
@@ -473,7 +498,8 @@ function useAppState(appId) {
     setError('')
     setSuccess('')
     setLoading(true)
-    setDeployStage('deploying')
+    setDeployStage('validating')
+    setDeploymentStatus({ status: 'deploying', deploy_phase: 'validating', events: [] })
     setValidationMessage('')
     setDeployDuration(null)
     setErrorLine(null)
