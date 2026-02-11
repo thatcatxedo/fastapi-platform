@@ -6,7 +6,7 @@ const WS_URL = API_URL
   ? API_URL.replace(/^http/, 'ws')
   : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
 
-function LogsPanel({ appId, isOpen, onClose }) {
+function LogsPanel({ appId, isOpen, onClose, embedded = false }) {
   const [logs, setLogs] = useState([])
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -129,7 +129,7 @@ function LogsPanel({ appId, isOpen, onClose }) {
   if (!isOpen) return null
 
   return (
-    <div className="logs-panel">
+    <div className={`logs-panel ${embedded ? 'logs-panel-embedded' : ''}`}>
       {/* Header */}
       <div className="logs-panel-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -161,9 +161,11 @@ function LogsPanel({ appId, isOpen, onClose }) {
           <button onClick={fetchLogs} className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
             Refresh
           </button>
-          <button onClick={onClose} className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
-            Close
-          </button>
+          {!embedded && (
+            <button onClick={onClose} className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
+              Close
+            </button>
+          )}
         </div>
       </div>
 

@@ -331,6 +331,20 @@ body {
   animation: panel-slide-up 0.25s ease-out;
 }
 
+/* Embedded variant: in-flow card with bounded height and scroll */
+.logs-panel-embedded {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  height: auto;
+  min-height: 200px;
+  max-height: 300px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.5rem);
+  animation: none;
+}
+
 @keyframes panel-slide-up {
   from {
     opacity: 0;
@@ -1230,4 +1244,11 @@ body {
 .app-row-btn {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
+}
+
+/* App Dashboard grid - stack on small screens */
+@media (max-width: 900px) {
+  .app-dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
 }

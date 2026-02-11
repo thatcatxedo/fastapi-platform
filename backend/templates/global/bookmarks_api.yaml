@@ -1,0 +1,122 @@
+name: "Bookmarks API"
+description: "A CRUD bookmarks app with MongoDB persistence. Styled HTML page at / shows saved bookmarks, REST API at /bookmarks for create, read, filter by tag, and delete."
+requires_database: true
+complexity: simple
+tags:
+  - mongodb
+  - crud
+  - html
+  - beginner
+mode: single
+framework: fastapi
+code: |
+  from fastapi import FastAPI, HTTPException
+  from fastapi.responses import HTMLResponse
+  from pydantic import BaseModel
+  from typing import Optional
+  from pymongo import MongoClient
+  from bson import ObjectId
+  import os
+  import datetime
+
+  app = FastAPI(title="Bookmarks API")
+
+  # Connect to platform-provided MongoDB
+  client = MongoClient(os.environ.get("PLATFORM_MONGO_URI", "mongodb://localhost:27017/test"))
+  db = client.get_default_database()
+  bookmarks = db.bookmarks
+
+
+  class BookmarkCreate(BaseModel):
+      url: str
+      title: str
+      tags: Optional[list[str]] = []
+
+
+  class BookmarkUpdate(BaseModel):
+      url: Optional[str] = None
+      title: Optional[str] = None
+      tags: Optional[list[str]] = None
+
+
+  def serialize(doc):
+      doc["id"] = str(doc.pop("_id"))
+      return doc
+
+
+  @app.get("/", response_class=HTMLResponse)
+  def home():
+      items = list(bookmarks.find().sort("created_at", -1).limit(50))
+      rows = ""
+      for b in items:
+          tags = ", ".join(b.get("tags", []))
+          rows += f"""<tr>
+              <td><a href="{b['url']}" target="_blank">{b['title']}</a></td>
+              <td>{tags}</td>
+              <td>{b.get('created_at', ''):%Y-%m-%d %H:%M}</td>
+          </tr>"""
+
+      return f"""<!DOCTYPE html>
+  <html>
+  <head>
+      <title>Bookmarks</title>
+      <style>
+          * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+          body {{
+              font-family: -apple-system, sans-serif;
+              background: #1a1a2e; color: #e0e0e0;
+              padding: 2rem; max-width: 800px; margin: 0 auto;
+          }}
+          h1 {{ font-weight: 300; margin-bottom: 1.5rem; }}
+          table {{ width: 100%; border-collapse: collapse; }}
+          th, td {{ padding: 0.6rem; text-align: left; border-bottom: 1px solid #333; }}
+          th {{ color: #a78bfa; font-size: 0.85rem; text-transform: uppercase; }}
+          a {{ color: #60a5fa; text-decoration: none; }}
+          a:hover {{ text-decoration: underline; }}
+          .empty {{ color: #666; padding: 2rem; text-align: center; }}
+          .links {{ margin-top: 2rem; font-size: 0.85rem; color: #666; }}
+          .links a {{ color: #a78bfa; }}
+      </style>
+  </head>
+  <body>
+      <h1>Bookmarks</h1>
+      {"<table><tr><th>Title</th><th>Tags</th><th>Added</th></tr>" + rows + "</table>" if rows else '<div class="empty">No bookmarks yet. POST to /bookmarks to add one.</div>'}
+      <div class="links">
+          API: <a href="/bookmarks">/bookmarks</a> |
+          <a href="/docs">/docs</a>
+      </div>
+  </body>
+  </html>"""
+
+
+  @app.get("/bookmarks")
+  def list_bookmarks(tag: Optional[str] = None, limit: int = 50):
+      query = {"tags": tag} if tag else {}
+      items = list(bookmarks.find(query).sort("created_at", -1).limit(limit))
+      return [serialize(b) for b in items]
+
+
+  @app.post("/bookmarks", status_code=201)
+  def create_bookmark(bookmark: BookmarkCreate):
+      doc = bookmark.model_dump()
+      doc["created_at"] = datetime.datetime.utcnow()
+      result = bookmarks.insert_one(doc)
+      doc["id"] = str(result.inserted_id)
+      del doc["_id"]
+      return doc
+
+
+  @app.get("/bookmarks/{bookmark_id}")
+  def get_bookmark(bookmark_id: str):
+      doc = bookmarks.find_one({"_id": ObjectId(bookmark_id)})
+      if not doc:
+          raise HTTPException(404, "Bookmark not found")
+      return serialize(doc)
+
+
+  @app.delete("/bookmarks/{bookmark_id}")
+  def delete_bookmark(bookmark_id: str):
+      result = bookmarks.delete_one({"_id": ObjectId(bookmark_id)})
+      if result.deleted_count == 0:
+          raise HTTPException(404, "Bookmark not found")
+      return {"deleted": True}

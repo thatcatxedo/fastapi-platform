@@ -77,6 +77,8 @@ async def lifespan(app: FastAPI):
     try:
         from background.cleanup import run_cleanup_loop
         from background.health_checks import run_health_check_loop
+        from background.metrics_aggregation import run_metrics_aggregation_loop
+        from background.error_extraction import run_error_extraction_loop
         from log_parser import run_log_parser_loop
         
         startup_logger.info("Starting background tasks...")
@@ -88,6 +90,14 @@ async def lifespan(app: FastAPI):
         health_task = asyncio.create_task(run_health_check_loop())
         background_tasks.append(health_task)
         startup_logger.info("Health check task started")
+        
+        metrics_task = asyncio.create_task(run_metrics_aggregation_loop())
+        background_tasks.append(metrics_task)
+        startup_logger.info("Metrics aggregation task started")
+        
+        errors_task = asyncio.create_task(run_error_extraction_loop())
+        background_tasks.append(errors_task)
+        startup_logger.info("Error extraction task started")
         
         log_parser_task = asyncio.create_task(run_log_parser_loop())
         background_tasks.append(log_parser_task)

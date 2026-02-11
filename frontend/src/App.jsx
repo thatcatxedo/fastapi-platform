@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
+import AppDashboard from './pages/AppDashboard'
 import Database from './pages/Database'
 import Editor from './pages/Editor/index'
 import AppView from './pages/AppView'
@@ -75,6 +76,7 @@ function App() {
                   <Route path="/editor" element={<Editor user={user} />} />
                   <Route path="/editor/:appId" element={<Editor user={user} />} />
                   <Route path="/dashboard" element={<Dashboard user={user} />} />
+                  <Route path="/dashboard/apps/:appId" element={<AppDashboard user={user} />} />
                   <Route path="/database" element={<Database user={user} />} />
                   <Route path="/app/:appId" element={<AppView user={user} />} />
                   <Route path="/admin" element={user.is_admin ? <Admin user={user} /> : <Navigate to="/editor" replace />} />

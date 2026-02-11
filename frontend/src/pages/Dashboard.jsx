@@ -202,7 +202,7 @@ function Dashboard({ user }) {
               <div key={app.app_id} className="app-row">
                 <div className="app-row-header">
                   <div className="app-row-name-group">
-                    <Link to={`/editor/${app.app_id}`} className="app-row-name">
+                    <Link to={`/dashboard/apps/${app.app_id}`} className="app-row-name">
                       {app.name}
                     </Link>
                     <span className={`status-badge status-${app.status}`}>
