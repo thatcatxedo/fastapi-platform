@@ -129,7 +129,7 @@ export default function MultiFileEditor({
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor
     monacoRef.current = monaco
-    if (onMount) onMount({ editorRef, monacoRef, decorationsRef })
+    if (onMount) onMount(editor, monaco)
   }, [onMount])
 
   const handleFileChange = useCallback((value) => {

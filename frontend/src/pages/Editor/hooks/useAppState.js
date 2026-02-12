@@ -677,6 +677,7 @@ function useAppState(appId) {
   // Editor helpers
   const highlightErrorLine = (lineNumber) => {
     if (!editorRef.current || !monacoRef.current || !lineNumber) return
+    if (typeof editorRef.current.deltaDecorations !== 'function') return
 
     decorationsRef.current = editorRef.current.deltaDecorations(
       decorationsRef.current,
@@ -694,7 +695,7 @@ function useAppState(appId) {
   }
 
   const clearErrorHighlight = () => {
-    if (editorRef.current) {
+    if (editorRef.current && typeof editorRef.current.deltaDecorations === 'function') {
       decorationsRef.current = editorRef.current.deltaDecorations(
         decorationsRef.current,
         []
