@@ -1,7 +1,0 @@
-/* Members page styles - using global styles from index.css */
-
-.form-input {
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.875rem;
-}

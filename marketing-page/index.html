@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FastAPI Platform | Ship Python APIs Fast</title>
+    <meta
+      name="description"
+      content="Build and deploy isolated FastAPI and FastHTML apps on Kubernetes in minutes."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container nav">
+        <a class="brand" href="#top">
+          <span class="brand-mark">FP</span>
+          <span class="brand-text">FastAPI Platform</span>
+        </a>
+        <nav class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How it Works</a>
+          <a href="#developer-flow">Developer Flow</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <a class="btn btn-outline" href="#cta">Get Started</a>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <p class="eyebrow">Deploy in minutes</p>
+            <h1>Ship FastAPI apps without platform overhead.</h1>
+            <p class="lead">
+              Write code, click deploy, get a live subdomain. Each app runs isolated on Kubernetes.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="#cta">Get Started</a>
+              <a class="btn btn-ghost" href="#how-it-works">See Architecture</a>
+            </div>
+            <div class="hero-meta">
+              <span>FastAPI + FastHTML</span>
+              <span>Single-file + multi-file</span>
+              <span>Kubernetes-native runtime</span>
+            </div>
+          </div>
+          <aside class="hero-card">
+            <p class="label">Live URL pattern</p>
+            <code>https://app-&lt;app_id&gt;.&lt;your-domain&gt;</code>
+            <p class="label">Deploy flow</p>
+            <ul>
+              <li>Validate code</li>
+              <li>Create K8s resources</li>
+              <li>Serve on its own subdomain</li>
+            </ul>
+          </aside>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="container">
+          <p class="eyebrow">Why teams choose it</p>
+          <h2>Fast for developers. Safe for ops.</h2>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>Isolated App Runtime</h3>
+              <p>Each app runs in its own pod with clear limits.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Secure-by-default Validation</h3>
+              <p>AST checks and safe-import rules block risky code early.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Editor and CLI Workflow</h3>
+              <p>Use the web editor or <code>fp</code> CLI.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Multi-file Projects</h3>
+              <p>Start with one file, then scale to modules.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Template-driven Onboarding</h3>
+              <p>Templates help teams ship new services quickly.</p>
+            </article>
+            <article class="feature-card">
+              <h3>Production-ready Routing</h3>
+              <p>Clean subdomain routing with Traefik.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="section section-dark">
+        <div class="container">
+          <p class="eyebrow">How it works</p>
+          <h2>From code to live URL in 4 steps.</h2>
+          <div class="steps">
+            <article>
+              <span>01</span>
+              <h3>Write</h3>
+              <p>Build in the editor or locally via CLI.</p>
+            </article>
+            <article>
+              <span>02</span>
+              <h3>Validate</h3>
+              <p>Run syntax and safety checks.</p>
+            </article>
+            <article>
+              <span>03</span>
+              <h3>Deploy</h3>
+              <p>Create ConfigMap, Deployment, Service, and IngressRoute.</p>
+            </article>
+            <article>
+              <span>04</span>
+              <h3>Run</h3>
+              <p>Open the app on its own subdomain.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="developer-flow" class="section">
+        <div class="container">
+          <p class="eyebrow">Developer experience</p>
+          <h2>Ship your way.</h2>
+          <div class="flow-grid">
+            <article class="flow-card">
+              <h3>Browser-first workflow</h3>
+              <p>Code and deploy from the browser.</p>
+            </article>
+            <article class="flow-card">
+              <h3>CLI workflow</h3>
+              <p><code>fp init</code> -> <code>fp dev</code> -> <code>fp deploy</code>.</p>
+            </article>
+            <article class="flow-card">
+              <h3>Operational visibility</h3>
+              <p>Track status, deploy stage, and app lifecycle.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="faq" class="section">
+        <div class="container">
+          <p class="eyebrow">FAQ</p>
+          <h2>Common questions.</h2>
+          <div class="faq-list">
+            <details>
+              <summary>Is this only for FastAPI?</summary>
+              <p>No. It supports FastAPI and FastHTML.</p>
+            </details>
+            <details>
+              <summary>How are apps isolated?</summary>
+              <p>Each app gets its own pod and code mount.</p>
+            </details>
+            <details>
+              <summary>Can we use this with GitOps?</summary>
+              <p>Yes. It is Kubernetes-native and GitOps-friendly.</p>
+            </details>
+            <details>
+              <summary>What does the CLI provide?</summary>
+              <p>Local dev, deploy, logs, status, pull, and push.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section id="cta" class="section cta">
+        <div class="container cta-wrap">
+          <h2>Launch your next Python service faster.</h2>
+          <p>
+            From prototype to isolated production deploys in minutes.
+          </p>
+          <div class="cta-actions">
+            <a class="btn btn-primary" href="#">Request a Demo</a>
+            <a class="btn btn-outline" href="#">Read Documentation</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-wrap">
+        <p>FastAPI Platform</p>
+        <p>FastAPI and FastHTML deployments, simplified.</p>
+      </div>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

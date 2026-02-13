@@ -25,3 +25,7 @@ dist/
 
 # Environment files with secrets
 .env
+
+# Go CLI binary
+cli-go/fp
+cli-go/fp-*
