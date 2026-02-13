@@ -188,18 +188,11 @@
 
 /* Starter Cards */
 .starterCards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  justify-content: center;
   gap: 1.25rem;
   max-width: 900px;
   width: 100%;
-}
-
-@media (max-width: 800px) {
-  .starterCards {
-    grid-template-columns: 1fr;
-    max-width: 400px;
-  }
 }
 
 .starterCard {
@@ -213,6 +206,8 @@
   cursor: pointer;
   transition: border-color 0.2s ease, background-color 0.2s ease;
   text-align: center;
+  max-width: 280px;
+  width: 100%;
 }
 
 .starterCard:hover {
