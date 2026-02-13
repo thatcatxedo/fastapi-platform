@@ -15,9 +15,8 @@ function EditorHeader({
   onBrowseTemplates,
   onOpenHistory,
   onSaveAsTemplate,
-  sidebarOpen,
-  sidebarTab,
-  onToggleSidebar
+  testPanelOpen,
+  onToggleTestPanel
 }) {
   const isDeploying = deploymentStatus && deploymentStatus.status === 'deploying'
 
@@ -104,22 +103,13 @@ function EditorHeader({
           )}
         </button>
         {isEditing && (
-          <>
-            <button
-              className={`btn btn-secondary ${sidebarOpen && sidebarTab === 'test' ? 'btn-active' : ''}`}
-              onClick={() => onToggleSidebar('test')}
-              title="Test API"
-            >
-              Test
-            </button>
-            <button
-              className={`btn btn-secondary ${sidebarOpen && sidebarTab === 'chat' ? 'btn-active' : ''}`}
-              onClick={() => onToggleSidebar('chat')}
-              title="AI Chat"
-            >
-              Chat
-            </button>
-          </>
+          <button
+            className={`btn btn-secondary ${testPanelOpen ? 'btn-active' : ''}`}
+            onClick={onToggleTestPanel}
+            title="Test API"
+          >
+            Test
+          </button>
         )}
         <DropdownMenu
           trigger={<>More <span style={{ fontSize: '0.7rem' }}>▼</span></>}

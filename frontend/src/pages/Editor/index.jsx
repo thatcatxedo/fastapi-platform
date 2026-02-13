@@ -12,7 +12,6 @@ import NotificationsPanel from './components/NotificationsPanel'
 import SettingsDrawer from './components/SettingsDrawer'
 import CodeEditor from './components/CodeEditor'
 import MultiFileEditor from './components/MultiFileEditor'
-import ChatSidebar from './components/ChatSidebar'
 import TestPanel from './components/TestPanel'
 import TemplatesModal from './components/TemplatesModal'
 import VersionHistoryModal from './components/VersionHistoryModal'
@@ -121,48 +120,27 @@ function EditorPage({ user }) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  // Sidebar state (shared between Test and Chat panels)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState('test')
+  // Test panel sidebar state
+  const [testPanelOpen, setTestPanelOpen] = useState(false)
 
   // Load sidebar state from localStorage when appId changes
   useEffect(() => {
     if (appId) {
-      // Migrate from old chatSidebarOpen key if present
-      const oldKey = localStorage.getItem(`chatSidebarOpen_${appId}`)
-      const storedOpen = localStorage.getItem(`sidebarOpen_${appId}`)
-      const storedTab = localStorage.getItem(`sidebarTab_${appId}`)
-
+      const storedOpen = localStorage.getItem(`testPanelOpen_${appId}`)
       if (storedOpen !== null) {
-        setSidebarOpen(storedOpen === 'true')
-      } else if (oldKey !== null) {
-        setSidebarOpen(oldKey === 'true')
-        setSidebarTab('chat')
-        localStorage.setItem(`sidebarOpen_${appId}`, oldKey)
-        localStorage.setItem(`sidebarTab_${appId}`, 'chat')
-        localStorage.removeItem(`chatSidebarOpen_${appId}`)
+        setTestPanelOpen(storedOpen === 'true')
       } else {
-        setSidebarOpen(false)
+        setTestPanelOpen(false)
       }
-
-      if (storedTab) setSidebarTab(storedTab)
     } else {
-      setSidebarOpen(false)
+      setTestPanelOpen(false)
     }
   }, [appId])
 
-  const toggleSidebar = (tab) => {
-    if (sidebarOpen && sidebarTab === tab) {
-      setSidebarOpen(false)
-      if (appId) localStorage.setItem(`sidebarOpen_${appId}`, 'false')
-    } else {
-      setSidebarOpen(true)
-      setSidebarTab(tab)
-      if (appId) {
-        localStorage.setItem(`sidebarOpen_${appId}`, 'true')
-        localStorage.setItem(`sidebarTab_${appId}`, tab)
-      }
-    }
+  const toggleTestPanel = () => {
+    const newState = !testPanelOpen
+    setTestPanelOpen(newState)
+    if (appId) localStorage.setItem(`testPanelOpen_${appId}`, String(newState))
   }
 
   const requestDelete = () => {
@@ -293,9 +271,8 @@ function EditorPage({ user }) {
         onBrowseTemplates={() => setTemplatesModalOpen(true)}
         onOpenHistory={() => setHistoryModalOpen(true)}
         onSaveAsTemplate={() => setSaveTemplateModalOpen(true)}
-        sidebarOpen={sidebarOpen}
-        sidebarTab={sidebarTab}
-        onToggleSidebar={toggleSidebar}
+        testPanelOpen={testPanelOpen}
+        onToggleTestPanel={toggleTestPanel}
       />
 
       <NotificationsPanel
@@ -424,20 +401,13 @@ function EditorPage({ user }) {
         )}
         </div>
 
-        {/* Sidebar: Test or Chat */}
-        {appId && sidebarOpen && (
-          sidebarTab === 'test' ? (
-            <TestPanel
-              appId={appId}
-              deploymentStatus={deploymentStatus}
-              onClose={() => { setSidebarOpen(false); if (appId) localStorage.setItem(`sidebarOpen_${appId}`, 'false') }}
-            />
-          ) : (
-            <ChatSidebar
-              appId={appId}
-              onClose={() => { setSidebarOpen(false); if (appId) localStorage.setItem(`sidebarOpen_${appId}`, 'false') }}
-            />
-          )
+        {/* Test Panel Sidebar */}
+        {appId && testPanelOpen && (
+          <TestPanel
+            appId={appId}
+            deploymentStatus={deploymentStatus}
+            onClose={() => { setTestPanelOpen(false); if (appId) localStorage.setItem(`testPanelOpen_${appId}`, 'false') }}
+          />
         )}
       </div>
 

@@ -166,28 +166,6 @@ configured. The backend APIs exist and will be resurfaced in Phase 3.
 - [x] Size limits (50 files, 100KB/file, 500KB total)
 - [x] Template system refactor (individual YAML files, Pydantic validation)
 
-### LLM Assistant (in progress, cross-cutting)
-
-**Goal:** AI-assisted code authoring and debugging.
-
-Completed:
-- [x] Backend chat infrastructure (`backend/chat/`, SSE streaming)
-- [x] Chat tools: `create_app`, `update_app`, `get_app`, `get_app_logs`,
-  `list_apps`, `delete_app`, `list_databases`
-- [x] Agent tools: `list_templates`, `get_template_code`, `validate_code_only`,
-  `test_endpoint`, `diagnose_app`
-- [x] Agentic loop (multi-step tool use, 10-iteration safety limit)
-- [x] Platform-aware system prompts
-- [x] Frontend chat sidebar in editor
-
-Remaining:
-- [ ] BYOK (users provide their own API keys)
-- [ ] AI-generated code validation before showing to user
-- [ ] Diff view for suggested changes with accept/reject
-
-The chat sidebar will be carried forward into the new frontend (Phase 3). It stays
-in the editor as a tool, not a standalone page.
-
 ---
 
 ## Future Phases
@@ -218,7 +196,6 @@ experience that makes the platform feel like a different product.
   - Backend proxy endpoint `POST /api/apps/{app_id}/proxy` (solves CORS)
   - Method picker, path input, headers/body editors, response viewer
   - Status code, response body, latency — with request history
-  - Test and Chat share the sidebar slot via header toggle buttons
 - [x] Single deploy button (validates automatically, shows inline errors on failure)
   - Removed separate "Validate" button and deploy confirmation modal
   - Backend validates during deploy; errors highlight the error line in Monaco
@@ -241,7 +218,6 @@ experience that makes the platform feel like a different product.
   - Replaces standalone DatabaseSelector, EnvVarsPanel, and MongoDB warning banner
 - [x] Deployment progress with real K8s event streaming
   - "Validating... Creating resources... Starting... Ready!" — not a spinner
-- [ ] Chat sidebar carries forward from current implementation
 
 #### Screen 2: App Dashboard (new)
 

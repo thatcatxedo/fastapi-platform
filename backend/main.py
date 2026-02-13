@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from lifespan import lifespan
 from database import client, templates_collection
-from routers import auth, apps, viewer, database, databases, templates, admin, metrics, chat
+from routers import auth, apps, viewer, database, databases, templates, admin, metrics
 
 app = FastAPI(title="FastAPI Learning Platform API", lifespan=lifespan)
 
@@ -29,7 +29,6 @@ app.include_router(databases.router)
 app.include_router(templates.router)
 app.include_router(admin.router)
 app.include_router(metrics.router)
-app.include_router(chat.router)
 
 
 @app.get("/")

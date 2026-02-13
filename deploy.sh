@@ -183,37 +183,6 @@ kubectl create secret generic platform-secrets \
 log_success "platform-secrets created"
 
 # ------------------------------------------------------------------------------
-# Step 7b: Create n8n-secrets (for AI chat)
-# ------------------------------------------------------------------------------
-log_info "Creating n8n-secrets..."
-
-# Get API keys from environment or prompt
-ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
-OPENAI_API_KEY="${OPENAI_API_KEY:-}"
-N8N_LICENSE_ACTIVATION_KEY="${N8N_LICENSE_ACTIVATION_KEY:-}"
-
-if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ]; then
-    log_warn "No LLM API keys configured (ANTHROPIC_API_KEY or OPENAI_API_KEY)"
-    log_warn "Chat feature will not work without an API key"
-    log_info "You can add keys later: kubectl create secret generic n8n-secrets --from-literal=ANTHROPIC_API_KEY=your-key -n ${NAMESPACE}"
-    # Create empty secret so deployment doesn't fail
-    kubectl create secret generic n8n-secrets \
-        --namespace="${NAMESPACE}" \
-        --from-literal=ANTHROPIC_API_KEY="" \
-        --from-literal=OPENAI_API_KEY="" \
-        --from-literal=N8N_LICENSE_ACTIVATION_KEY="${N8N_LICENSE_ACTIVATION_KEY}" \
-        --dry-run=client -o yaml | kubectl apply -f -
-else
-    kubectl create secret generic n8n-secrets \
-        --namespace="${NAMESPACE}" \
-        --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-        --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
-        --from-literal=N8N_LICENSE_ACTIVATION_KEY="${N8N_LICENSE_ACTIVATION_KEY}" \
-        --dry-run=client -o yaml | kubectl apply -f -
-    log_success "n8n-secrets created with API keys"
-fi
-
-# ------------------------------------------------------------------------------
 # Step 8: Create GHCR auth secret
 # ------------------------------------------------------------------------------
 log_info "Creating GHCR authentication secret..."
@@ -292,17 +261,8 @@ else
     exit 1
 fi
 
-# Wait for n8n (optional - don't fail if it doesn't start)
-log_info "Waiting for n8n deployment..."
-if kubectl rollout status deployment/n8n -n "${NAMESPACE}" --timeout=120s 2>/dev/null; then
-    log_success "n8n is ready (workflow auto-imports on startup)"
-else
-    log_warn "n8n deployment not ready (chat feature may not work)"
-    log_warn "Check: kubectl logs -n ${NAMESPACE} deployment/n8n"
-fi
-
 # ------------------------------------------------------------------------------
-# Step 11: Validate and show status
+# Step 10: Validate and show status
 # ------------------------------------------------------------------------------
 log_info "Validating deployment..."
 
@@ -319,7 +279,7 @@ log_info "IngressRoutes:"
 kubectl get ingressroutes -n "${NAMESPACE}" 2>/dev/null || log_warn "No IngressRoutes found"
 
 # ------------------------------------------------------------------------------
-# Step 12: Print access information
+# Step 11: Print access information
 # ------------------------------------------------------------------------------
 echo ""
 log_success "========================================"
@@ -342,7 +302,3 @@ log_info "Useful commands:"
 log_info "  kubectl get pods -n ${NAMESPACE}"
 log_info "  kubectl logs -n ${NAMESPACE} deployment/backend"
 log_info "  kubectl logs -n ${NAMESPACE} deployment/frontend"
-log_info "  kubectl logs -n ${NAMESPACE} deployment/n8n"
-echo ""
-log_info "To enable chat feature (if not already configured):"
-log_info "  kubectl create secret generic n8n-secrets --from-literal=ANTHROPIC_API_KEY=your-key -n ${NAMESPACE}"

@@ -24,11 +24,6 @@ app_metrics_collection = db.app_metrics
 app_errors_collection = db.app_errors
 app_health_checks_collection = db.app_health_checks
 
-# Chat collections
-conversations_collection = db.conversations
-messages_collection = db.messages
-rate_limits_collection = db.rate_limits
-
 
 async def setup_ttl_indexes():
     """
@@ -70,17 +65,6 @@ async def setup_ttl_indexes():
             [("app_id", 1), ("timestamp", -1)],
             background=True
         )
-
-        # TTL index on rate_limits - expire after 2 hours
-        await rate_limits_collection.create_index(
-            "updated_at",
-            expireAfterSeconds=7200,
-            background=True
-        )
-        logger.info("Created TTL index on rate_limits.updated_at")
-
-        # Index for rate limit lookups by user
-        await rate_limits_collection.create_index("user_id", background=True)
 
         logger.info("All TTL indexes setup complete")
     except Exception as e:

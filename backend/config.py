@@ -23,17 +23,6 @@ PLATFORM_NAMESPACE = os.getenv("PLATFORM_NAMESPACE", "fastapi-platform")
 RUNNER_IMAGE = os.getenv("RUNNER_IMAGE", "ghcr.io/thatcatxedo/fastapi-platform-runner:latest")
 INACTIVITY_THRESHOLD_HOURS = int(os.getenv("INACTIVITY_THRESHOLD_HOURS", "24"))
 
-# n8n webhook settings for AI chat
-N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://n8n:5678/webhook")
-
-# Chat/AI Configuration
-CHAT_MODEL = os.getenv("CHAT_MODEL", "claude-3-5-haiku-20241022")  # Default to Haiku (fast & cheap)
-CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "4096"))
-CHAT_RATE_LIMIT_PER_MINUTE = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "10"))
-CHAT_RATE_LIMIT_PER_HOUR = int(os.getenv("CHAT_RATE_LIMIT_PER_HOUR", "100"))
-CHAT_MAX_MESSAGE_LENGTH = int(os.getenv("CHAT_MAX_MESSAGE_LENGTH", "50000"))  # 50KB
-CHAT_MAX_CONCURRENT_STREAMS = int(os.getenv("CHAT_MAX_CONCURRENT_STREAMS", "1"))
-
 # Kubernetes client setup
 try:
     from kubernetes import client as k8s_client, config as k8s_config

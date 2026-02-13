@@ -18,7 +18,6 @@ fastapi-platform is a multi-tenant platform where users write FastAPI/FastHTML c
 - **Multi-file projects** - up to 10 files, entrypoint-based, cross-file imports supported
 - **Automatic HTTPS** via Traefik IngressRoutes
 - **Inactivity cleanup** - background task deletes pods after 24h of no activity
-- **AI chat sidebar** for code assistance
 - **Runner architecture** - pre-built container image, code mounted via ConfigMap, exec'd in isolated namespace
 
 ## The Serverless Landscape (as of early 2025)
